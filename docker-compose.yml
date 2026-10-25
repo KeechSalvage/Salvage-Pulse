@@ -1,0 +1,24 @@
+services:
+  salvage-pulse:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: salvage-pulse-ai:latest
+    container_name: salvage-pulse-app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+    volumes:
+      # Persist dynamic state & uploads across container restarts
+      - app-data:/app/backend/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  app-data:

@@ -1,0 +1,214 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource-variable/manrope";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Salvage Pulse royal blue (from the logo, #2457E6) is the default accent. The UI is written with Tailwind's
+   amber-* classes, so the amber scale *is* the accent scale; a yard's own accent re-maps it again from JS. */
+@theme {
+    --color-amber-50: #EEF3FF;
+    --color-amber-100: #DBE5FF;
+    --color-amber-200: #BFD0FF;
+    --color-amber-300: #93B0FD;
+    --color-amber-400: #6E93F8;
+    --color-amber-500: #3A6AF0;
+    --color-amber-600: #2457E6;
+    --color-amber-700: #1C45C0;
+    --color-amber-800: #1D3B99;
+    --color-amber-900: #1D3579;
+    --color-amber-950: #142149;
+}
+
+@theme inline {
+    --font-heading: 'Manrope Variable', sans-serif;
+    --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --color-surface: var(--surface);
+    --color-surface-2: var(--surface-2);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root,
+.dark {
+    --background: #0B0F19;
+    --foreground: #F8FAFC;
+    --card: #111827;
+    --card-foreground: #F1F5F9;
+    --popover: #161F30;
+    --popover-foreground: #FFFFFF;
+    --primary: #3A6AF0;
+    --primary-foreground: #FFFFFF;
+    --secondary: #1E293B;
+    --secondary-foreground: #F1F5F9;
+    --muted: #1E293B;
+    --muted-foreground: #94A3B8;
+    --accent: #1E293B;
+    --accent-foreground: #F8FAFC;
+    --destructive: #EF4444;
+    --border: #1F2A3C;
+    --input: #283548;
+    --ring: #3A6AF0;
+    --chart-1: #3A6AF0;
+    --chart-2: #C9CED6;
+    --chart-silver: #C9CED6;
+    --chart-tick: #7C8AA0;
+    --chart-cursor: rgba(58, 106, 240, 0.08);
+    --chart-3: #34D399;
+    --chart-4: #A78BFA;
+    --chart-5: #F472B6;
+    --radius: 0.5rem;
+    --sidebar: #0D1424;
+    --sidebar-foreground: #E2E8F0;
+    --sidebar-primary: #3A6AF0;
+    --sidebar-primary-foreground: #FFFFFF;
+    --sidebar-accent: #161F30;
+    --sidebar-accent-foreground: #FFFFFF;
+    --sidebar-border: #1E293B;
+    --sidebar-ring: #3A6AF0;
+    --surface: #0D1424;
+    --surface-2: #131C2E;
+}
+
+/* ---------- Light mode (html.light). The app is authored dark-first, so light mode re-maps the
+   palette: slate scale inverted, white text → ink, pastel accent text → deep 700 shades. ---------- */
+html.light {
+    color-scheme: light;
+    --background: #F4F6FA;
+    --foreground: #0F172A;
+    --card: #FFFFFF;
+    --card-foreground: #0F172A;
+    --popover: #FFFFFF;
+    --popover-foreground: #0F172A;
+    --primary-foreground: #FFFFFF;
+    --secondary: #EEF2F7;
+    --secondary-foreground: #0F172A;
+    --muted: #EEF2F7;
+    --muted-foreground: #475569;
+    --accent: #EEF2F7;
+    --accent-foreground: #0F172A;
+    --border: #DCE3EC;
+    --input: #CBD5E1;
+    --sidebar: #FFFFFF;
+    --sidebar-foreground: #1E293B;
+    --sidebar-accent: #F1F5F9;
+    --sidebar-accent-foreground: #0F172A;
+    --sidebar-border: #E2E8F0;
+    --sidebar-primary-foreground: #FFFFFF;
+    --surface: #F8FAFC;
+    --surface-2: #EEF2F7;
+    --chart-silver: #7B8494;
+    --chart-tick: #64748B;
+    --chart-cursor: rgba(28, 69, 192, 0.06);
+    --color-white: #0F172A;
+    --color-slate-50: #020617; --color-slate-100: #0F172A; --color-slate-200: #1E293B; --color-slate-300: #334155;
+    --color-slate-400: #475569; --color-slate-500: #64748B; --color-slate-600: #94A3B8; --color-slate-700: #CBD5E1;
+    --color-slate-800: #E2E8F0; --color-slate-900: #F1F5F9; --color-slate-950: #F8FAFC;
+    --color-sky-200: #075985; --color-sky-300: #0369A1; --color-sky-400: #0369A1;
+    --color-emerald-200: #065F46; --color-emerald-300: #047857; --color-emerald-400: #047857;
+    --color-green-300: #15803D; --color-green-400: #15803D;
+    --color-orange-200: #9A3412; --color-orange-300: #C2410C; --color-orange-400: #C2410C;
+    --color-red-200: #991B1B; --color-red-300: #B91C1C; --color-red-400: #B91C1C;
+    --color-rose-300: #BE123C; --color-rose-400: #BE123C;
+    --color-fuchsia-200: #86198F; --color-fuchsia-300: #A21CAF;
+    --color-violet-300: #6D28D9; --color-violet-400: #6D28D9; --color-purple-300: #7E22CE;
+    --color-blue-300: #1D4ED8; --color-blue-400: #1D4ED8; --color-cyan-300: #0E7490;
+    --color-yellow-300: #A16207; --color-yellow-400: #A16207; --color-teal-300: #0F766E; --color-pink-300: #BE185D;
+    /* default accent (Salvage Pulse blue) readable on white; a custom accent overrides these from JS */
+    --color-amber-100: #142149; --color-amber-200: #1D3579; --color-amber-300: #1C45C0; --color-amber-400: #1C45C0;
+}
+html.light .bg-grid {
+  background-image:
+    linear-gradient(to right, rgba(15, 23, 42, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(15, 23, 42, 0.05) 1px, transparent 1px);
+}
+html, body, aside, header, main {
+  transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    font-size: 15px;
+    }
+  html {
+    @apply font-sans;
+    }
+  h1, h2, h3, h4 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.02em;
+  }
+}
+
+/* tactical grid backdrop */
+.bg-grid {
+  background-image:
+    linear-gradient(to right, rgba(148, 163, 184, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.05) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.0); }
+  50% { box-shadow: 0 0 18px 2px rgba(16, 185, 129, 0.35); }
+}
+.score-glow { animation: pulse-glow 2.4s ease-in-out infinite; }
+
+@keyframes scan {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+.scan-bar { animation: scan 1.6s ease-in-out infinite; }
+
+@keyframes blink-caret { 50% { opacity: 0; } }
+.caret { animation: blink-caret 1s step-end infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .score-glow, .scan-bar, .caret { animation: none; }
+}

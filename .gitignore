@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+backend/.venv/
+.venv/
+vendor/
+
+# Build outputs
+frontend/dist/
+dist/
+build/
+
+# Python cache & runtime
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Local databases & mutable runtime state (keep preview_seed.json committed!)
+*.db
+*.db-shm
+*.db-wal
+backend/preview_state.json
+backend/data/
+backend/uploads/
+
+# OS & IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment variables
+.env
+.env.local

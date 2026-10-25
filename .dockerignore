@@ -1,0 +1,27 @@
+# Dependencies & build caches
+node_modules/
+backend/.venv/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Local databases & state files
+*.db
+*.db-shm
+*.db-wal
+backend/preview_state.json
+backend/data/
+backend/uploads/
+
+# IDE & Editor files
+.git/
+.gitignore
+.DS_Store
+.idea/
+.vscode/
+.gemini/
+
+# Scratch & temporary artifacts
+scratch/
