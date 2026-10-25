@@ -139,8 +139,18 @@ def auth_login(req: LoginReq, response: Response) -> dict[str, Any]:
         if "manager" in email_clean:
             match = st["seed"]["_me"]
         else:
-            reps = [u for u in st["users_by_id"].values() if u.get("role") == "rep"]
+            reps = [u for u in st["users_by_id"].values() if u.get("role") == "rep" and not u.get("disabled")]
             match = reps[0] if reps else st["seed"]["_me"]
+
+    if match and match.get("disabled"):
+        raise HTTPException(status_code=403, detail="Account is disabled. Please contact your administrator.")
+
+    # Check if user's yard is blocked or canceled
+    u_org_id = match.get("org_id") if match else None
+    if u_org_id:
+        yard = next((o for o in st.get("admin_orgs", []) if o.get("id") == u_org_id), None)
+        if yard and (yard.get("blocked") or yard.get("status") == "canceled"):
+            raise HTTPException(status_code=403, detail="Yard is disabled. Please contact platform support.")
 
     set_session_cookie(response, match["id"])
     return match
@@ -2463,17 +2473,18 @@ def admin_get_orgs() -> list[dict[str, Any]]:
 
 
 @app.post("/api/admin/orgs")
-def admin_post_org(body: dict[str, Any]) -> dict[str, Any]:
+def admin_post_org(body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
+    actor = get_current_user(request)
     oid = str(uuid.uuid4())
     org = {
         "id": oid,
         "name": body["yard_name"],
         "plan": body.get("plan", "pro"),
         "status": body.get("status", "trialing"),
-        "trial_ends_at": dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=14),
+        "trial_ends_at": (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=14)).isoformat(),
         "created_at": store.now_iso(),
-        "users": 1,
+        "users": 1 if body.get("email") else 0,
         "calls": 0,
         "ringcentral_connected": False,
         "card_on_file": False,
@@ -2484,17 +2495,82 @@ def admin_post_org(body: dict[str, Any]) -> dict[str, Any]:
         "max_sites": 2,
         "extra_sites": 0,
     }
+    if body.get("email"):
+        uid = f"user-{uuid.uuid4().hex[:8]}"
+        st.setdefault("users_by_id", {})[uid] = {
+            "id": uid,
+            "email": body["email"].strip().lower(),
+            "name": body.get("manager_name") or "Manager",
+            "role": "manager",
+            "title": "Yard Manager",
+            "avatar_url": "",
+            "org_id": oid,
+            "impersonated_by": "",
+            "disabled": False,
+            "site_id": "",
+            "must_change_password": True,
+        }
     st.setdefault("admin_orgs", []).insert(0, org)
+    st.setdefault("admin_audit", []).insert(0, {
+        "at": store.now_iso(),
+        "actor": actor.get("name", "Admin"),
+        "action": f"created yard with plan {org['plan']}",
+        "target": org["name"],
+    })
     store.save_state()
     return {"org": org, "payment_link": f"/checkout/{oid}"}
 
 
 @app.patch("/api/admin/orgs/{oid}")
-def admin_patch_org(oid: str, body: dict[str, Any]) -> dict[str, Any]:
+def admin_patch_org(oid: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
+    actor = get_current_user(request)
     for o in st.get("admin_orgs", []):
         if o.get("id") == oid:
+            was_blocked = bool(o.get("blocked", False))
+            was_canceled = o.get("status") == "canceled"
+            was_disabled = was_blocked or was_canceled
+
             o.update(body)
+
+            now_blocked = bool(o.get("blocked", False))
+            now_canceled = o.get("status") == "canceled"
+            now_disabled = now_blocked or now_canceled
+
+            # Yard is being disabled (blocked or status canceled)
+            if now_disabled and not was_disabled:
+                affected = 0
+                for u in st.get("users_by_id", {}).values():
+                    if u.get("org_id") == oid and u.get("role") != "master":
+                        if not u.get("disabled"):
+                            u["disabled"] = True
+                            u["disabled_by_yard"] = True
+                            affected += 1
+                st.setdefault("admin_audit", []).insert(0, {
+                    "at": store.now_iso(),
+                    "actor": actor.get("name", "Admin"),
+                    "action": f"disabled yard and {affected} associated user(s)",
+                    "target": o.get("name", oid),
+                })
+
+            # Yard is being reopened or unblocked
+            elif (was_disabled and not now_disabled) or (was_blocked and body.get("blocked") is False):
+                if o.get("status") == "canceled" and "status" not in body:
+                    o["status"] = "active"
+                reopened = 0
+                for u in st.get("users_by_id", {}).values():
+                    if u.get("org_id") == oid and u.get("role") != "master":
+                        if u.get("disabled_by_yard") or u.get("disabled"):
+                            u["disabled"] = False
+                            u.pop("disabled_by_yard", None)
+                            reopened += 1
+                st.setdefault("admin_audit", []).insert(0, {
+                    "at": store.now_iso(),
+                    "actor": actor.get("name", "Admin"),
+                    "action": f"reopened yard and re-enabled {reopened} associated user(s)",
+                    "target": o.get("name", oid),
+                })
+
             store.save_state()
             return o
     raise HTTPException(status_code=404, detail="Org not found")
@@ -2513,13 +2589,31 @@ def admin_post_org_extend(oid: str, body: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.post("/api/admin/orgs/{oid}/cancel")
-def admin_post_org_cancel(oid: str, body: dict[str, Any]) -> dict[str, Any]:
+def admin_post_org_cancel(oid: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
+    actor = get_current_user(request)
     for o in st.get("admin_orgs", []):
         if o.get("id") == oid:
             o["status"] = "canceled"
-            o["cancel_reason"] = body.get("reason", "Cancelled by admin")
-            o["blocked"] = bool(body.get("block", False))
+            reason = body.get("reason", "Cancelled by admin")
+            o["cancel_reason"] = reason
+            o["blocked"] = bool(body.get("block", True))
+
+            # Disable all users associated with this yard
+            affected = 0
+            for u in st.get("users_by_id", {}).values():
+                if u.get("org_id") == oid and u.get("role") != "master":
+                    if not u.get("disabled"):
+                        u["disabled"] = True
+                        u["disabled_by_yard"] = True
+                        affected += 1
+
+            st.setdefault("admin_audit", []).insert(0, {
+                "at": store.now_iso(),
+                "actor": actor.get("name", "Admin"),
+                "action": f"canceled yard and disabled {affected} associated user(s): {reason}",
+                "target": o.get("name", oid),
+            })
             store.save_state()
             return o
     raise HTTPException(status_code=404, detail="Org not found")
@@ -2638,6 +2732,8 @@ def admin_impersonate(uid: str, response: Response, request: Request) -> dict[st
     target_user = st["users_by_id"].get(uid)
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
+    if target_user.get("disabled"):
+        raise HTTPException(status_code=400, detail="Cannot impersonate a disabled user")
     actor = get_current_user(request)
     target_user["impersonated_by"] = actor.get("name", "Admin")
     set_session_cookie(response, uid)

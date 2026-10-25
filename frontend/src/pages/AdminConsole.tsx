@@ -165,7 +165,7 @@ export default function AdminConsole() {
   });
   const cancelOrg = useMutation({
     mutationFn: ({ id, body }: { id: string; body: AdminCancel }) => apiPost<AdminOrg>(`/admin/orgs/${id}/cancel`, body),
-    onSuccess: (o) => (toast.success(`${o.name} canceled and locked`), inval()),
+    onSuccess: (o) => (toast.success(`${o.name} and associated users disabled`), inval()),
     onError: (e) => toast.error(errorMessage(e)),
   });
   const extend = useMutation({
@@ -207,13 +207,22 @@ export default function AdminConsole() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {orgs.data?.map((o, i) => (
-                <tr key={o.id} data-testid={`admin-org-row-${i}`} className={cn(orgId === o.id && "bg-sky-500/[0.06]")}>
-                  <td className="py-2 pr-3">
-                    <button data-testid={`admin-org-name-${i}`} className="font-medium text-white hover:underline" onClick={() => setOrgId(orgId === o.id ? "" : o.id)}>
-                      {o.name}
-                    </button>
-                  </td>
+              {orgs.data?.map((o, i) => {
+                const isOrgDisabled = Boolean(o.blocked || o.status === "canceled");
+                return (
+                  <tr key={o.id} data-testid={`admin-org-row-${i}`} className={cn(orgId === o.id && "bg-sky-500/[0.06]", isOrgDisabled && "opacity-75")}>
+                    <td className="py-2 pr-3">
+                      <div className="flex items-center gap-2">
+                        <button data-testid={`admin-org-name-${i}`} className="font-medium text-white hover:underline" onClick={() => setOrgId(orgId === o.id ? "" : o.id)}>
+                          {o.name}
+                        </button>
+                        {isOrgDisabled && (
+                          <span className="rounded bg-red-500/20 px-1.5 py-0.5 font-mono text-[10px] text-red-300">
+                            Disabled
+                          </span>
+                        )}
+                      </div>
+                    </td>
                   <td className="pr-3">
                     <select data-testid={`admin-org-plan-${i}`} className={sel} value={o.plan} onChange={(e) => updOrg.mutate({ id: o.id, body: { plan: e.target.value as PlanId } })}>
                       {PLANS.map((p) => <option key={p} value={p}>{PLAN_LABEL[p]}</option>)}
@@ -269,7 +278,7 @@ export default function AdminConsole() {
                         </Button>
                       )}
                       {o.blocked ? (
-                        <Button size="sm" variant="ghost" data-testid={`admin-org-reopen-${i}`} onClick={() => updOrg.mutate({ id: o.id, body: { blocked: false } })}>
+                        <Button size="sm" variant="ghost" data-testid={`admin-org-reopen-${i}`} onClick={() => updOrg.mutate({ id: o.id, body: { blocked: false, status: "active" } })}>
                           Reopen
                         </Button>
                       ) : (
@@ -282,7 +291,8 @@ export default function AdminConsole() {
                     </div>
                   </td>
                 </tr>
-              ))}
+              );
+            })}
             </tbody>
           </table>
         </div>
@@ -387,7 +397,14 @@ export default function AdminConsole() {
                 return (
                   <tr key={u.id} data-testid={`admin-user-row-${i}`} className={cn(u.disabled && "opacity-50")}>
                     <td className="py-2 pr-3">
-                      <p className="font-medium text-white">{u.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-white">{u.name}</p>
+                        {u.disabled && (
+                          <span className="rounded bg-red-500/20 px-1.5 py-0.5 font-mono text-[10px] text-red-300">
+                            Disabled
+                          </span>
+                        )}
+                      </div>
                       <p className="font-mono text-[11px] text-slate-500">{u.email}</p>
                     </td>
                     <td className="pr-3 text-slate-300">
