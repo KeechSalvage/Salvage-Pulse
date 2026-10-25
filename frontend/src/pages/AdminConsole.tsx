@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import DiscountButton, { DiscountRevenuePanel } from "@/components/AdminDiscount";
 import { Copy, LogIn, Plus } from "lucide-react";
@@ -115,6 +115,37 @@ export default function AdminConsole() {
     queryKey: ["admin", "users", orgId, q],
     queryFn: () => apiGet<AdminUser[]>(`/admin/users?${new URLSearchParams({ ...(orgId ? { org_id: orgId } : {}), q })}`),
   });
+
+  type SortKey = "yard-asc" | "yard-desc" | "name-asc" | "name-desc" | "role";
+  const [sortKey, setSortKey] = useState<SortKey>("yard-asc");
+
+  const sortedUsers = useMemo(() => {
+    const list = [...(users.data ?? [])];
+    const roleRank: Record<string, number> = { master: 0, admin: 1, manager: 2, rep: 3 };
+    list.sort((a, b) => {
+      if (sortKey === "yard-asc") {
+        const c = (a.org_name || "").localeCompare(b.org_name || "");
+        return c !== 0 ? c : (a.name || "").localeCompare(b.name || "");
+      }
+      if (sortKey === "yard-desc") {
+        const c = (b.org_name || "").localeCompare(a.org_name || "");
+        return c !== 0 ? c : (a.name || "").localeCompare(b.name || "");
+      }
+      if (sortKey === "name-asc") {
+        return (a.name || "").localeCompare(b.name || "");
+      }
+      if (sortKey === "name-desc") {
+        return (b.name || "").localeCompare(a.name || "");
+      }
+      if (sortKey === "role") {
+        const rA = roleRank[a.role] ?? 99;
+        const rB = roleRank[b.role] ?? 99;
+        return rA !== rB ? rA - rB : (a.name || "").localeCompare(b.name || "");
+      }
+      return 0;
+    });
+    return list;
+  }, [users.data, sortKey]);
   const audit = useQuery({ queryKey: ["admin", "audit"], queryFn: () => apiGet<AuditEntry[]>("/admin/audit") });
   const inval = () => qc.invalidateQueries({ queryKey: ["admin"] });
   const updOrg = useMutation({
@@ -215,7 +246,16 @@ export default function AdminConsole() {
                     )}
                   </td>
                   <td className="pr-3"><DiscountButton org={o} index={i} /></td>
-                  <td className="pr-3 font-mono">{o.users}</td>
+                  <td className="pr-3 font-mono">
+                    <button
+                      type="button"
+                      className="transition-colors hover:text-amber-300 hover:underline cursor-pointer"
+                      title={`Filter users by ${o.name}`}
+                      onClick={() => setOrgId(orgId === o.id ? "" : o.id)}
+                    >
+                      {o.users}
+                    </button>
+                  </td>
                   <td className="pr-3 font-mono">{o.calls}</td>
                   <td className="pr-3 text-xs">{o.ringcentral_connected ? <span className="text-emerald-300">connected</span> : <span className="text-slate-500">—</span>}</td>
                   <td>
@@ -260,14 +300,89 @@ export default function AdminConsole() {
       <ChangePasswordPanel />
 
       <Panel testId="admin-users-panel" className="mt-6">
-        <div className="flex flex-wrap items-center gap-3">
-          <h3 className="text-xl font-bold text-white">Users {orgId && `· ${orgs.data?.find((o) => o.id === orgId)?.name}`}</h3>
-          <Input data-testid="admin-user-search" placeholder="Search name or email" value={q} onChange={(e) => setQ(e.target.value)} className="ml-auto h-9 w-64 bg-surface" />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <h3 className="text-xl font-bold text-white">Users</h3>
+            {orgId && (
+              <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-300">
+                Yard: {orgs.data?.find((o) => o.id === orgId)?.name ?? "Selected Yard"}
+              </span>
+            )}
+          </div>
+          <Input data-testid="admin-user-search" placeholder="Search name or email" value={q} onChange={(e) => setQ(e.target.value)} className="h-9 w-64 bg-surface" />
         </div>
+
+        {/* Dropdown controls under the Users box header */}
+        <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg border border-border/70 bg-surface/50 p-3">
+          <div className="flex items-center gap-2">
+            <Label htmlFor="admin-user-yard-filter" className="font-mono text-xs text-slate-400">Yard:</Label>
+            <select
+              id="admin-user-yard-filter"
+              data-testid="admin-user-yard-filter"
+              className={sel}
+              value={orgId}
+              onChange={(e) => setOrgId(e.target.value)}
+            >
+              <option value="">All yards ({orgs.data?.length ?? 0})</option>
+              {orgs.data?.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Label htmlFor="admin-user-sort" className="font-mono text-xs text-slate-400">Sort by:</Label>
+            <select
+              id="admin-user-sort"
+              data-testid="admin-user-sort"
+              className={sel}
+              value={sortKey}
+              onChange={(e) => setSortKey(e.target.value as SortKey)}
+            >
+              <option value="yard-asc">Yard name (A → Z)</option>
+              <option value="yard-desc">Yard name (Z → A)</option>
+              <option value="name-asc">User name (A → Z)</option>
+              <option value="name-desc">User name (Z → A)</option>
+              <option value="role">Role (Master → Manager → Rep)</option>
+            </select>
+          </div>
+
+          {orgId && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 text-xs text-amber-300 hover:text-amber-200"
+              onClick={() => setOrgId("")}
+            >
+              Clear yard filter
+            </Button>
+          )}
+
+          <span className="ml-auto font-mono text-xs text-slate-400">
+            {sortedUsers.length} user{sortedUsers.length === 1 ? "" : "s"} shown
+          </span>
+        </div>
+
         <div className="mt-4 max-h-[520px] overflow-y-auto">
           <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-left font-mono text-[11px] uppercase tracking-wider text-slate-400">
+                <th className="pb-2 pr-3">User</th>
+                <th
+                  className="pb-2 pr-3 cursor-pointer select-none transition-colors hover:text-amber-300"
+                  title="Click to toggle Yard sort order"
+                  onClick={() => setSortKey(sortKey === "yard-asc" ? "yard-desc" : "yard-asc")}
+                >
+                  Yard {sortKey === "yard-asc" ? "▲" : sortKey === "yard-desc" ? "▼" : ""}
+                </th>
+                <th className="pb-2 pr-3">Role</th>
+                <th className="pb-2 pr-3 text-right">Actions</th>
+              </tr>
+            </thead>
             <tbody className="divide-y divide-border">
-              {users.data?.map((u, i) => {
+              {sortedUsers.map((u, i) => {
                 const staff = u.role === "master" || u.role === "admin";
                 return (
                   <tr key={u.id} data-testid={`admin-user-row-${i}`} className={cn(u.disabled && "opacity-50")}>
@@ -275,7 +390,16 @@ export default function AdminConsole() {
                       <p className="font-medium text-white">{u.name}</p>
                       <p className="font-mono text-[11px] text-slate-500">{u.email}</p>
                     </td>
-                    <td className="pr-3 text-slate-400">{u.org_name}</td>
+                    <td className="pr-3 text-slate-300">
+                      <button
+                        type="button"
+                        className="transition-colors hover:text-amber-300 hover:underline cursor-pointer text-left"
+                        title={`Filter by ${u.org_name}`}
+                        onClick={() => setOrgId(u.org_id)}
+                      >
+                        {u.org_name}
+                      </button>
+                    </td>
                     <td className="pr-3">
                       {staff ? (
                         <span className="font-mono text-xs uppercase text-sky-300">{u.role}</span>

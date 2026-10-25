@@ -206,12 +206,29 @@ export default function Team() {
   const loginLog = useLoginLog();
   const sites = useSites();
   const [siteId, setSiteId] = useState("");
+  const [repSort, setRepSort] = useState<"name" | "site" | "calls" | "score">("name");
   const shown = (reps.data ?? []).filter((r) => !siteId || r.site_id === siteId);
   const lastChange = (id: string) => loginLog.data?.find((e) => e.rep_id === id);
   const tagChampion = useTagChampion();
   const stat = (id: string) => ov.data?.leaderboard.find((l) => l.rep_id === id);
   const assignments = useAssignments();
   const overdueFor = (id: string) => (assignments.data ?? []).filter((a) => a.rep_id === id && a.status === "overdue");
+
+  const sortedReps = [...shown].sort((a, b) => {
+    if (repSort === "site") {
+      const siteA = sites.data?.sites.find((s) => s.id === a.site_id)?.name ?? "Main Yard";
+      const siteB = sites.data?.sites.find((s) => s.id === b.site_id)?.name ?? "Main Yard";
+      const c = siteA.localeCompare(siteB);
+      return c !== 0 ? c : a.name.localeCompare(b.name);
+    }
+    if (repSort === "calls") {
+      return (stat(b.id)?.calls ?? 0) - (stat(a.id)?.calls ?? 0);
+    }
+    if (repSort === "score") {
+      return (stat(b.id)?.avg_score ?? 0) - (stat(a.id)?.avg_score ?? 0);
+    }
+    return a.name.localeCompare(b.name);
+  });
 
   const truckChamps = new Set((truckWinner.data?.winners ?? []).map((w) => w.rep_id));
   const tagChamps = new Set((tagChampion.data?.winners ?? []).map((w) => w.user_id));
@@ -234,9 +251,31 @@ export default function Team() {
           { id: "sites", label: "Locations", node: <SitesPanel /> },
           { id: "reps", label: "Rep cards", node: (
             <div>
-            {(sites.data?.sites.length ?? 0) > 1 && <div className="mb-3"><SiteFilter value={siteId} onChange={setSiteId} testId="team-site-filter" /></div>}
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {shown.map((r) => {
+              <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-border/70 bg-surface/50 p-3">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs text-slate-400">Yard / Location:</span>
+                  <SiteFilter value={siteId} onChange={setSiteId} testId="team-site-filter" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs text-slate-400">Sort by:</span>
+                  <select
+                    data-testid="team-rep-sort"
+                    className="h-9 rounded-md border border-border bg-surface px-2 text-sm text-slate-200"
+                    value={repSort}
+                    onChange={(e) => setRepSort(e.target.value as any)}
+                  >
+                    <option value="name">Name (A → Z)</option>
+                    <option value="site">Yard / Location</option>
+                    <option value="calls">Most Calls</option>
+                    <option value="score">Highest Score</option>
+                  </select>
+                </div>
+                <span className="ml-auto font-mono text-xs text-slate-400">
+                  {sortedReps.length} rep{sortedReps.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {sortedReps.map((r) => {
                 const s = stat(r.id);
                 return (
                   <Link

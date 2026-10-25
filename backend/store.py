@@ -195,6 +195,76 @@ def _build_initial_state() -> dict[str, Any]:
     }
     users_by_id[master_user["id"]] = master_user
 
+    # Sample yards & users for multi-yard management & sorting
+    org_northside_id = "org-northside-salvage"
+    org_apex_id = "org-apex-trucks"
+
+    users_by_id["user-dave-miller"] = {
+        "id": "user-dave-miller",
+        "email": "dave@northsideauto.com",
+        "name": "Dave Miller",
+        "role": "manager",
+        "title": "Yard Manager",
+        "avatar_url": "",
+        "org_id": org_northside_id,
+        "impersonated_by": "",
+        "disabled": False,
+        "site_id": "",
+        "must_change_password": False,
+    }
+    users_by_id["user-sarah-jenkins"] = {
+        "id": "user-sarah-jenkins",
+        "email": "sarah@northsideauto.com",
+        "name": "Sarah Jenkins",
+        "role": "rep",
+        "title": "Inside Sales",
+        "avatar_url": "",
+        "org_id": org_northside_id,
+        "impersonated_by": "",
+        "disabled": False,
+        "site_id": "",
+        "must_change_password": False,
+    }
+    users_by_id["user-carlos-gomez"] = {
+        "id": "user-carlos-gomez",
+        "email": "carlos@northsideauto.com",
+        "name": "Carlos Gomez",
+        "role": "rep",
+        "title": "Parts Specialist",
+        "avatar_url": "",
+        "org_id": org_northside_id,
+        "impersonated_by": "",
+        "disabled": False,
+        "site_id": "",
+        "must_change_password": False,
+    }
+    users_by_id["user-tom-bradley"] = {
+        "id": "user-tom-bradley",
+        "email": "tom@apextruckparts.com",
+        "name": "Tom Bradley",
+        "role": "manager",
+        "title": "Operations Manager",
+        "avatar_url": "",
+        "org_id": org_apex_id,
+        "impersonated_by": "",
+        "disabled": False,
+        "site_id": "",
+        "must_change_password": False,
+    }
+    users_by_id["user-jake-evans"] = {
+        "id": "user-jake-evans",
+        "email": "jake@apextruckparts.com",
+        "name": "Jake Evans",
+        "role": "rep",
+        "title": "Drivetrain Sales",
+        "avatar_url": "",
+        "org_id": org_apex_id,
+        "impersonated_by": "",
+        "disabled": False,
+        "site_id": "",
+        "must_change_password": False,
+    }
+
     calls: list[dict[str, Any]] = seed.get("/calls", [])
     full_calls: dict[str, dict[str, Any]] = seed.get("_full_calls", {})
 
@@ -211,7 +281,7 @@ def _build_initial_state() -> dict[str, Any]:
         "status": org_info.get("status", "active"),
         "trial_ends_at": org_info.get("trial_ends_at"),
         "created_at": "2026-06-01T12:00:00Z",
-        "users": len(reps) + len(managers),
+        "users": len([u for u in users_by_id.values() if u.get("org_id") == org_id]),
         "calls": len(calls),
         "ringcentral_connected": True,
         "card_on_file": True,
@@ -221,6 +291,42 @@ def _build_initial_state() -> dict[str, Any]:
         "sites": 0,
         "max_sites": org_info.get("max_sites", 2),
         "extra_sites": org_info.get("extra_sites", 0),
+    }
+    admin_org_northside = {
+        "id": org_northside_id,
+        "name": "Northside Auto Salvage",
+        "plan": "pro",
+        "status": "active",
+        "trial_ends_at": None,
+        "created_at": "2026-07-15T10:00:00Z",
+        "users": 3,
+        "calls": 420,
+        "ringcentral_connected": True,
+        "card_on_file": True,
+        "blocked": False,
+        "cancel_reason": "",
+        "discount": None,
+        "sites": 1,
+        "max_sites": 1,
+        "extra_sites": 0,
+    }
+    admin_org_apex = {
+        "id": org_apex_id,
+        "name": "Apex Truck & Auto Parts",
+        "plan": "starter",
+        "status": "trialing",
+        "trial_ends_at": "2026-11-01T23:59:59Z",
+        "created_at": "2026-10-18T14:30:00Z",
+        "users": 2,
+        "calls": 115,
+        "ringcentral_connected": False,
+        "card_on_file": False,
+        "blocked": False,
+        "cancel_reason": "",
+        "discount": None,
+        "sites": 1,
+        "max_sites": 1,
+        "extra_sites": 0,
     }
 
     state: dict[str, Any] = {
@@ -303,7 +409,7 @@ def _build_initial_state() -> dict[str, Any]:
             "changed_by": "Ben Keech",
             "changed_at": "2026-10-01T12:00:00Z",
         },
-        "admin_orgs": [admin_org_default],
+        "admin_orgs": [admin_org_default, admin_org_northside, admin_org_apex],
         "admin_audit": [
             {"at": "2026-10-24T15:30:00Z", "actor": "Linda Carter", "action": "synced RingCentral call log", "target": "Salvage Pulse Pro"},
             {"at": "2026-10-22T10:15:00Z", "actor": "Ben Keech", "action": "enabled Enterprise plan", "target": "Salvage Pulse Pro"},

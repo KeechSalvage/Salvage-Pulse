@@ -2588,8 +2588,12 @@ def admin_get_discounts_summary() -> dict[str, Any]:
 def admin_get_users(org_id: Optional[str] = Query(None), q: Optional[str] = Query(None)) -> list[dict[str, Any]]:
     st = store.get_state()
     out = []
+    org_map = {o["id"]: o.get("name", "Yard") for o in st.get("admin_orgs", [])}
+    default_org_name = st.get("org", {}).get("name", "Salvage Pulse Pro")
+
     for u in st["users_by_id"].values():
-        if org_id and u.get("org_id") != org_id:
+        u_org_id = u.get("org_id", "")
+        if org_id and u_org_id != org_id:
             continue
         if q:
             term = q.lower()
@@ -2601,8 +2605,8 @@ def admin_get_users(org_id: Optional[str] = Query(None), q: Optional[str] = Quer
             "name": u["name"],
             "role": u.get("role", "rep"),
             "title": u.get("title", ""),
-            "org_id": u.get("org_id", ""),
-            "org_name": st.get("org", {}).get("name", "Salvage Pulse Pro"),
+            "org_id": u_org_id,
+            "org_name": org_map.get(u_org_id, default_org_name),
             "disabled": u.get("disabled", False),
         })
     return out
