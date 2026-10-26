@@ -85,11 +85,11 @@ const repNav = [
 
 const adminNav = [
   { to: "/admin#admin-yards", hash: "#admin-yards", label: "Yards", icon: Building2, id: "admin-yards" },
-  { to: "/admin#admin-users", hash: "#admin-users", label: "Users", icon: Users, id: "admin-users" },
   { to: "/admin#admin-discounts", hash: "#admin-discounts", label: "Discounts & Revenue", icon: Percent, id: "admin-discounts" },
   { to: "/admin#admin-growth", hash: "#admin-growth", label: "Growth & Trials", icon: TrendingUp, id: "admin-growth" },
   { to: "/admin#admin-messages", hash: "#admin-messages", label: "Support Messages", icon: MessageSquare, id: "admin-messages" },
   { to: "/admin#admin-security", hash: "#admin-security", label: "Staff & Security", icon: ShieldCheck, id: "admin-security" },
+  { to: "/admin#admin-users", hash: "#admin-users", label: "Users", icon: Users, id: "admin-users" },
   { to: "/admin#admin-activity", hash: "#admin-activity", label: "Activity Log", icon: History, id: "admin-activity" },
 ];
 
@@ -228,7 +228,7 @@ function Sidebar({ me, org, isStaff, branding, badges }: { me: User; org?: OrgIn
 
   useEffect(() => {
     if (!isStaff || loc.pathname !== "/admin") return;
-    const sections = ["#admin-yards", "#admin-users", "#admin-discounts", "#admin-growth", "#admin-messages", "#admin-security", "#admin-activity"];
+    const sections = ["#admin-yards", "#admin-discounts", "#admin-growth", "#admin-messages", "#admin-security", "#admin-users", "#admin-activity"];
     const onScroll = () => {
       for (const s of sections) {
         const el = document.querySelector(s);
