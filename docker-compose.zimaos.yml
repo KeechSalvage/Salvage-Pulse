@@ -25,6 +25,29 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
+    x-casaos:
+      envs:
+        - container: PORT
+          description:
+            en_us: Port the application listens on
+        - container: INITIAL_MASTER_EMAIL
+          description:
+            en_us: Master Administrator email address
+      ports:
+        - container: "8000"
+          description:
+            en_us: Web UI & API Port
+      volumes:
+        - container: /app/backend/data
+          description:
+            en_us: Persistent application database and uploads
+      icon: https://raw.githubusercontent.com/Keechb/Salvage-Pulse/main/salvage-pulse-logo.png
+      title:
+        en_us: Salvage Pulse
+      tagline:
+        en_us: Auto Recycler Call Intelligence & CRM
+      scheme: http
+      index: /
 
 volumes:
   salvage-pulse-data:
