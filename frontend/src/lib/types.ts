@@ -1,5 +1,64 @@
 // Hand-written mirrors of backend/models/schemas.py — keep in sync.
-export type Role = "manager" | "rep" | "master" | "admin";
+export type YardRole = "owner" | "sales_manager" | "inventory_manager" | "rep";
+export type StaffRole = "master" | "admin";
+export type Role =
+  | "owner"
+  | "sales_manager"
+  | "inventory_manager"
+  | "rep"
+  | "manager"
+  | "sales_rep"
+  | "master"
+  | "admin";
+
+export const YARD_ROLES: { value: YardRole; label: string; description: string }[] = [
+  { value: "owner", label: "Owner", description: "Full yard administration, billing, and team management" },
+  { value: "sales_manager", label: "Sales Manager", description: "Oversees reps, coaching, calls, and performance" },
+  { value: "inventory_manager", label: "Inventory Manager", description: "Manages incoming vehicles, parts stock, and lot tagging" },
+  { value: "rep", label: "Sales Representative", description: "Handles customer calls, quotes, callbacks, and sales" },
+];
+
+export function roleLabel(role?: string): string {
+  switch (role) {
+    case "owner":
+      return "Owner";
+    case "sales_manager":
+      return "Sales Manager";
+    case "inventory_manager":
+      return "Inventory Manager";
+    case "rep":
+    case "sales_rep":
+      return "Sales Representative";
+    case "master":
+      return "Master";
+    case "admin":
+      return "Admin";
+    case "manager":
+      return "General Manager";
+    default:
+      return role || "Sales Representative";
+  }
+}
+
+export function isManagerLike(role?: string): boolean {
+  return role === "owner" || role === "sales_manager" || role === "inventory_manager" || role === "manager";
+}
+
+export function isOwner(role?: string): boolean {
+  return role === "owner";
+}
+
+export function isSalesManager(role?: string): boolean {
+  return role === "sales_manager" || role === "owner" || role === "manager";
+}
+
+export function isInventoryManager(role?: string): boolean {
+  return role === "inventory_manager" || role === "owner" || role === "manager";
+}
+
+export function isRep(role?: string): boolean {
+  return role === "rep" || role === "sales_rep";
+}
 
 export interface User {
   id: string;
@@ -109,6 +168,7 @@ export interface RepCreate {
   email: string;
   password: string;
   title: string;
+  role?: Role;
 }
 
 export interface Turn {
@@ -1108,7 +1168,7 @@ export interface AdminUser {
 export interface AdminUserUpdate {
   name?: string;
   email?: string;
-  role?: "manager" | "rep";
+  role?: Role;
   title?: string;
   password?: string;
   disabled?: boolean;
@@ -1519,7 +1579,7 @@ export interface GoogleSessionRequest {
 }
 
 export interface DemoLoginRequest {
-  role: "manager" | "rep";
+  role: "owner" | "sales_manager" | "inventory_manager" | "rep" | "manager";
 }
 
 export interface DemoLoginStatus {

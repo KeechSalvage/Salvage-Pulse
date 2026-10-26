@@ -12,7 +12,8 @@ import { apiGet, apiPatch, apiPost, errorMessage } from "@/lib/api";
 import { useMe } from "@/lib/hooks";
 import { queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
-import type { AdminOrg, AdminOrgCreate, AdminOrgCreated, AdminOrgUpdate, AdminUser, AdminUserUpdate, AuditEntry, OrgStatus, PlanId, User, AdminCancel, ExtendTrial } from "@/lib/types";
+import type { AdminOrg, AdminOrgCreate, AdminOrgCreated, AdminOrgUpdate, AdminUser, AdminUserUpdate, AuditEntry, OrgStatus, PlanId, User, AdminCancel, ExtendTrial, Role } from "@/lib/types";
+import { roleLabel } from "@/lib/types";
 import { DemoLoginPanel, FreeDayPanel, FunnelPanel, RemindersPanel } from "@/components/AdminGrowth";
 import { MessagesPanel } from "@/components/ContactUs";
 import { ChangePasswordPanel, StaffDevicesPanel, StaffLockdownPanel } from "@/components/StaffSecurity";
@@ -121,7 +122,16 @@ export default function AdminConsole() {
 
   const sortedUsers = useMemo(() => {
     const list = [...(users.data ?? [])];
-    const roleRank: Record<string, number> = { master: 0, admin: 1, manager: 2, rep: 3 };
+    const roleRank: Record<string, number> = {
+      master: 0,
+      admin: 1,
+      owner: 2,
+      sales_manager: 3,
+      manager: 3,
+      inventory_manager: 4,
+      rep: 5,
+      sales_rep: 5,
+    };
     list.sort((a, b) => {
       if (sortKey === "yard-asc") {
         const c = (a.org_name || "").localeCompare(b.org_name || "");
@@ -355,7 +365,7 @@ export default function AdminConsole() {
               <option value="yard-desc">Yard name (Z → A)</option>
               <option value="name-asc">User name (A → Z)</option>
               <option value="name-desc">User name (Z → A)</option>
-              <option value="role">Role (Master → Manager → Rep)</option>
+              <option value="role">Role (Master → Owner → Sales Mgr → Inv Mgr → Rep)</option>
             </select>
           </div>
 
@@ -421,9 +431,11 @@ export default function AdminConsole() {
                       {staff ? (
                         <span className="font-mono text-xs uppercase text-sky-300">{u.role}</span>
                       ) : (
-                        <select data-testid={`admin-user-role-${i}`} className={sel} value={u.role} onChange={(e) => updUser.mutate({ id: u.id, body: { role: e.target.value as "manager" | "rep" } })}>
-                          <option>manager</option>
-                          <option>rep</option>
+                        <select data-testid={`admin-user-role-${i}`} className={sel} value={u.role} onChange={(e) => updUser.mutate({ id: u.id, body: { role: e.target.value as Role } })}>
+                          <option value="owner">Owner</option>
+                          <option value="sales_manager">Sales Manager</option>
+                          <option value="inventory_manager">Inventory Manager</option>
+                          <option value="rep">Sales Representative</option>
                         </select>
                       )}
                     </td>

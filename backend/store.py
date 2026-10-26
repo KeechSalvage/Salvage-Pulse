@@ -179,7 +179,38 @@ def _build_initial_state() -> dict[str, Any]:
     if manager_user["id"] not in users_by_id:
         users_by_id[manager_user["id"]] = dict(manager_user)
 
-    # Ensure Linda Carter also has access to Admin Console if needed, plus a dedicated master account
+    # Primary yard Owner & Managers
+    users_by_id[manager_user["id"]]["role"] = "owner"
+    users_by_id[manager_user["id"]]["title"] = "Owner & General Manager"
+
+    users_by_id["user-marcus-reed"] = {
+        "id": "user-marcus-reed",
+        "email": "marcus@salvagepulse.com",
+        "name": "Marcus Reed",
+        "role": "sales_manager",
+        "title": "Sales Manager",
+        "avatar_url": "",
+        "org_id": org_id,
+        "impersonated_by": "",
+        "disabled": False,
+        "site_id": "",
+        "must_change_password": False,
+    }
+    users_by_id["user-rick-martinez"] = {
+        "id": "user-rick-martinez",
+        "email": "rick@salvagepulse.com",
+        "name": "Rick Martinez",
+        "role": "inventory_manager",
+        "title": "Inventory Manager",
+        "avatar_url": "",
+        "org_id": org_id,
+        "impersonated_by": "",
+        "disabled": False,
+        "site_id": "",
+        "must_change_password": False,
+    }
+
+    # Ensure dedicated master account
     master_user = {
         "id": "master-ben-keech",
         "email": "benkeech800@gmail.com",
@@ -195,7 +226,11 @@ def _build_initial_state() -> dict[str, Any]:
     }
     users_by_id[master_user["id"]] = master_user
 
-    # Sample yards & users for multi-yard management & sorting
+    # Sample yards & users with 4 distinct roles per yard:
+    # 1. Owner
+    # 2. Sales Manager
+    # 3. Inventory Manager
+    # 4. Sales Representative
     org_northside_id = "org-northside-salvage"
     org_apex_id = "org-apex-trucks"
 
@@ -203,8 +238,8 @@ def _build_initial_state() -> dict[str, Any]:
         "id": "user-dave-miller",
         "email": "dave@northsideauto.com",
         "name": "Dave Miller",
-        "role": "manager",
-        "title": "Yard Manager",
+        "role": "owner",
+        "title": "Yard Owner",
         "avatar_url": "",
         "org_id": org_northside_id,
         "impersonated_by": "",
@@ -216,8 +251,8 @@ def _build_initial_state() -> dict[str, Any]:
         "id": "user-sarah-jenkins",
         "email": "sarah@northsideauto.com",
         "name": "Sarah Jenkins",
-        "role": "rep",
-        "title": "Inside Sales",
+        "role": "sales_manager",
+        "title": "Sales Manager",
         "avatar_url": "",
         "org_id": org_northside_id,
         "impersonated_by": "",
@@ -229,8 +264,8 @@ def _build_initial_state() -> dict[str, Any]:
         "id": "user-carlos-gomez",
         "email": "carlos@northsideauto.com",
         "name": "Carlos Gomez",
-        "role": "rep",
-        "title": "Parts Specialist",
+        "role": "inventory_manager",
+        "title": "Inventory Manager",
         "avatar_url": "",
         "org_id": org_northside_id,
         "impersonated_by": "",
@@ -238,12 +273,52 @@ def _build_initial_state() -> dict[str, Any]:
         "site_id": "",
         "must_change_password": False,
     }
+    users_by_id["user-leo-vance"] = {
+        "id": "user-leo-vance",
+        "email": "leo@northsideauto.com",
+        "name": "Leo Vance",
+        "role": "rep",
+        "title": "Sales Representative",
+        "avatar_url": "",
+        "org_id": org_northside_id,
+        "impersonated_by": "",
+        "disabled": False,
+        "site_id": "",
+        "must_change_password": False,
+    }
+
     users_by_id["user-tom-bradley"] = {
         "id": "user-tom-bradley",
         "email": "tom@apextruckparts.com",
         "name": "Tom Bradley",
-        "role": "manager",
-        "title": "Operations Manager",
+        "role": "owner",
+        "title": "Yard Owner",
+        "avatar_url": "",
+        "org_id": org_apex_id,
+        "impersonated_by": "",
+        "disabled": False,
+        "site_id": "",
+        "must_change_password": False,
+    }
+    users_by_id["user-bill-cooper"] = {
+        "id": "user-bill-cooper",
+        "email": "bill@apextruckparts.com",
+        "name": "Bill Cooper",
+        "role": "sales_manager",
+        "title": "Sales Manager",
+        "avatar_url": "",
+        "org_id": org_apex_id,
+        "impersonated_by": "",
+        "disabled": False,
+        "site_id": "",
+        "must_change_password": False,
+    }
+    users_by_id["user-sam-rivera"] = {
+        "id": "user-sam-rivera",
+        "email": "sam@apextruckparts.com",
+        "name": "Sam Rivera",
+        "role": "inventory_manager",
+        "title": "Inventory Manager",
         "avatar_url": "",
         "org_id": org_apex_id,
         "impersonated_by": "",
@@ -256,7 +331,7 @@ def _build_initial_state() -> dict[str, Any]:
         "email": "jake@apextruckparts.com",
         "name": "Jake Evans",
         "role": "rep",
-        "title": "Drivetrain Sales",
+        "title": "Sales Representative",
         "avatar_url": "",
         "org_id": org_apex_id,
         "impersonated_by": "",
@@ -299,7 +374,7 @@ def _build_initial_state() -> dict[str, Any]:
         "status": "active",
         "trial_ends_at": None,
         "created_at": "2026-07-15T10:00:00Z",
-        "users": 3,
+        "users": len([u for u in users_by_id.values() if u.get("org_id") == org_northside_id]),
         "calls": 420,
         "ringcentral_connected": True,
         "card_on_file": True,
@@ -317,7 +392,7 @@ def _build_initial_state() -> dict[str, Any]:
         "status": "trialing",
         "trial_ends_at": "2026-11-01T23:59:59Z",
         "created_at": "2026-10-18T14:30:00Z",
-        "users": 2,
+        "users": len([u for u in users_by_id.values() if u.get("org_id") == org_apex_id]),
         "calls": 115,
         "ringcentral_connected": False,
         "card_on_file": False,
@@ -444,6 +519,55 @@ def _build_initial_state() -> dict[str, Any]:
     return state
 
 
+def _migrate_roles(st: dict[str, Any]) -> dict[str, Any]:
+    users = st.get("users_by_id", {})
+    for uid, u in users.items():
+        if u.get("role") == "manager":
+            if u.get("name") in ("Linda Carter", "Dave Miller", "Tom Bradley") or "Owner" in u.get("title", ""):
+                u["role"] = "owner"
+                u["title"] = "Owner & General Manager" if u.get("name") == "Linda Carter" else (u.get("title") or "Yard Owner")
+            elif u.get("name") in ("Sarah Jenkins", "Bill Cooper", "Ray Dawson") or "Sales" in u.get("title", ""):
+                u["role"] = "sales_manager"
+                u["title"] = "Sales Manager"
+            elif u.get("name") in ("Carlos Gomez", "Sam Rivera") or "Inventory" in u.get("title", ""):
+                u["role"] = "inventory_manager"
+                u["title"] = "Inventory Manager"
+            else:
+                u["role"] = "sales_manager"
+                u["title"] = "Sales Manager"
+
+    org_id = st.get("org", {}).get("id") or (st.get("seed", {}).get("_me", {}).get("org_id"))
+    if "user-marcus-reed" not in users and org_id:
+        users["user-marcus-reed"] = {
+            "id": "user-marcus-reed",
+            "email": "marcus@salvagepulse.com",
+            "name": "Marcus Reed",
+            "role": "sales_manager",
+            "title": "Sales Manager",
+            "avatar_url": "",
+            "org_id": org_id,
+            "impersonated_by": "",
+            "disabled": False,
+            "site_id": "",
+            "must_change_password": False,
+        }
+    if "user-rick-martinez" not in users and org_id:
+        users["user-rick-martinez"] = {
+            "id": "user-rick-martinez",
+            "email": "rick@salvagepulse.com",
+            "name": "Rick Martinez",
+            "role": "inventory_manager",
+            "title": "Inventory Manager",
+            "avatar_url": "",
+            "org_id": org_id,
+            "impersonated_by": "",
+            "disabled": False,
+            "site_id": "",
+            "must_change_password": False,
+        }
+    return st
+
+
 def get_state() -> dict[str, Any]:
     global _STATE
     with _LOCK:
@@ -456,6 +580,7 @@ def get_state() -> dict[str, Any]:
                     _STATE = _build_initial_state()
             else:
                 _STATE = _build_initial_state()
+            _migrate_roles(_STATE)
         return _STATE
 
 

@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { apiGet, apiPost, errorMessage } from "@/lib/api";
 import { useMe, useOrg } from "@/lib/hooks";
 import type { CheckoutRequest, EnterpriseUpgrade, Plan } from "@/lib/types";
+import { isManagerLike } from "@/lib/types";
 
 /** Pro managers: Enterprise preview has ≤2 days left → one-tap upgrade. */
 export default function PreviewEndingBanner() {
@@ -21,7 +22,7 @@ export default function PreviewEndingBanner() {
     },
     onError: (e) => toast.error(errorMessage(e, "Couldn't upgrade")),
   });
-  if (me?.role !== "manager" || !org?.preview_ending) return null;
+  if (!isManagerLike(me?.role) || !org?.preview_ending) return null;
   const days = org.preview_days_left ?? 1;
   return (
     <div data-testid="preview-ending-banner" className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-sky-500/40 bg-sky-500/15 px-6 py-2 text-sm text-sky-100">

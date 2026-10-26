@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { useChampions, useTeamPlayers } from "@/components/ChampionBadges";
 import { HeartHandshake, MapPin, Printer } from "lucide-react";
 import type { ChampionCategory, DeliveryLeaderboard, ListLeaderboard, PosterSendResult, TaggingLeaderboard } from "@/lib/types";
+import { isManagerLike } from "@/lib/types";
 
 const TABS = [
   { id: "trophies", label: "Trophy case" },
@@ -77,7 +78,7 @@ function TrophyCase({ lot }: { lot: string }) {
               <Printer className="size-3.5" /> This lot's break-room poster
             </a>
           )}
-          {me?.role === "manager" && !lot && (
+          {isManagerLike(me?.role) && !lot && (
             <Button size="sm" variant="outline" className="ml-auto" data-testid="posters-send-now" disabled={posters.isPending} onClick={() => posters.mutate()}>
               <Mail className="size-3.5" /> Email last month's posters
             </Button>

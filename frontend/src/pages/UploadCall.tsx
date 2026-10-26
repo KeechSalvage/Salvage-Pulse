@@ -16,6 +16,7 @@ import { useMe, useReps } from "@/lib/hooks";
 import ImportVehicleSummary from "@/components/ImportVehicleSummary";
 import { cn } from "@/lib/utils";
 import type { BulkAudioResult, Call, CallCoverage, ImportResult, TranscriptCreate } from "@/lib/types";
+import { isManagerLike } from "@/lib/types";
 
 const fmtDay = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "—");
 
@@ -35,7 +36,7 @@ export default function UploadCall() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const { data: me } = useMe();
-  const isManager = me?.role === "manager";
+  const isManager = isManagerLike(me?.role);
   const reps = useReps(isManager);
   const [mode, setMode] = useState<"audio" | "transcript" | "ringcentral">("audio");
   const [sheet, setSheet] = useState<File | null>(null);

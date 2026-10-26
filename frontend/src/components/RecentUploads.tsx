@@ -7,6 +7,7 @@ import { apiDelete, apiGet, errorMessage } from "@/lib/api";
 import { useMe } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 import type { RecentUpload } from "@/lib/types";
+import { isManagerLike } from "@/lib/types";
 
 const when = (s: string) => new Date(s).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 const STATUS: Record<string, string> = { processing: "text-sky-300", analyzed: "text-emerald-300", failed: "text-red-300" };
@@ -14,7 +15,7 @@ const STATUS: Record<string, string> = { processing: "text-sky-300", analyzed: "
 /** Upload Call page: the last 5 uploads (reps: their own; managers: the yard's), each removable (restorable for 7 days). */
 export default function RecentUploads() {
   const qc = useQueryClient();
-  const isManager = useMe().data?.role === "manager";
+  const isManager = isManagerLike(useMe().data?.role);
   const { data } = useQuery({
     queryKey: ["calls", "uploads", "recent"],
     queryFn: () => apiGet<RecentUpload[]>("/calls/uploads/recent"),

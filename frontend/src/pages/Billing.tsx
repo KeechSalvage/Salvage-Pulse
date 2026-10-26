@@ -15,6 +15,7 @@ import EnterprisePreviewCard from "@/components/EnterprisePreview";
 import { apiGet, apiPost, errorMessage } from "@/lib/api";
 import { useMe } from "@/lib/hooks";
 import type { CheckoutRequest, CheckoutResponse, OrgInfo, PaymentStatus, Plan, PlanId, BillingInterval } from "@/lib/types";
+import { isManagerLike } from "@/lib/types";
 
 const STATUS: Record<string, string> = { incomplete: "Card needed", trialing: "Free trial", active: "Active", past_due: "Payment overdue", canceled: "Canceled" };
 const day = (s: string | null) => (s ? new Date(s).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "");
@@ -41,7 +42,7 @@ export default function Billing() {
     },
     onError: (e) => toast.error(errorMessage(e, "Couldn't start your paid plan")),
   });
-  const isManager = me?.role === "manager";
+  const isManager = isManagerLike(me?.role);
   const { data: plans } = useQuery({ queryKey: ["plans"], queryFn: () => apiGet<Plan[]>("/billing/plans"), staleTime: Infinity });
   const trialWithCard = org?.status === "trialing" && org.card_on_file;
   const trialNoCard = org?.status === "trialing" && !org.card_on_file;

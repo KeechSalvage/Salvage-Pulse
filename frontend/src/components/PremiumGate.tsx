@@ -5,6 +5,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { useMe, useOrg } from "@/lib/hooks";
 import { PreviewButton } from "@/components/EnterprisePreview";
 import type { PremiumFeature } from "@/lib/types";
+import { isManagerLike } from "@/lib/types";
 
 const NAMES: Record<PremiumFeature, string> = {
   monthly_trends: "Monthly trends",
@@ -55,8 +56,8 @@ export default function PremiumGate({ feature, children, hidden = false, classNa
               : "Premium features are limited for the last days of your free trial. Upgrade to unlock them right away — your data is all still here."}
           </p>
         </div>
-        {me?.role === "manager" && planLock && !proLock && org.preview_available && <PreviewButton testId={`premium-preview-${feature}`} />}
-        {me?.role === "manager" ? (
+        {isManagerLike(me?.role) && planLock && !proLock && org.preview_available && <PreviewButton testId={`premium-preview-${feature}`} />}
+        {isManagerLike(me?.role) ? (
           <Link to="/billing" data-testid={`premium-upgrade-${feature}`} className={buttonVariants()}>
             {proLock ? "See Pro" : planLock ? "See Enterprise" : "Upgrade now"}
           </Link>

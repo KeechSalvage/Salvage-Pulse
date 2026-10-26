@@ -18,6 +18,7 @@ import { useMe } from "@/lib/hooks";
 import { SiteFilter } from "@/components/Sites";
 import { cn } from "@/lib/utils";
 import type { DrillQuery, MonthlyReportResult, Report, ReportCount } from "@/lib/types";
+import { isManagerLike } from "@/lib/types";
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000);
@@ -86,7 +87,7 @@ function CountList({ rows, testId, onPick, showWon = true }: { rows: ReportCount
 
 export default function Reports() {
   const { data: me } = useMe();
-  const isManager = me?.role === "manager";
+  const isManager = isManagerLike(me?.role);
   const drill = useDrill();
   const [preset, setPreset] = useState("this-month");
   const [siteId, setSiteId] = useState("");

@@ -20,12 +20,12 @@ function PhoneAndTexts() {
 }
 
 const TABS = [
-  { id: "upload", label: "Upload Call", icon: Upload, page: UploadCall, roles: ["manager", "rep"] },
-  { id: "phone", label: "Phone & texts", icon: Smartphone, page: PhoneAndTexts, roles: ["rep"] },
-  { id: "connectors", label: "Phone Connectors", icon: Plug, page: Connectors, roles: ["manager"] },
-  { id: "billing", label: "Billing", icon: CreditCard, page: Billing, roles: ["manager"] },
-  { id: "appearance", label: "Appearance", icon: Palette, page: Appearance, roles: ["manager"] },
-  { id: "devices", label: "Devices", icon: MonitorSmartphone, page: MyDevices, roles: ["manager"] },
+  { id: "upload", label: "Upload Call", icon: Upload, page: UploadCall, roles: ["owner", "sales_manager", "inventory_manager", "rep", "manager", "sales_rep"] },
+  { id: "phone", label: "Phone & texts", icon: Smartphone, page: PhoneAndTexts, roles: ["rep", "sales_rep"] },
+  { id: "connectors", label: "Phone Connectors", icon: Plug, page: Connectors, roles: ["owner", "sales_manager", "manager"] },
+  { id: "billing", label: "Billing", icon: CreditCard, page: Billing, roles: ["owner", "manager"] },
+  { id: "appearance", label: "Appearance", icon: Palette, page: Appearance, roles: ["owner", "sales_manager", "manager"] },
+  { id: "devices", label: "Devices", icon: MonitorSmartphone, page: MyDevices, roles: ["owner", "sales_manager", "inventory_manager", "manager"] },
 ] as const;
 
 /** Settings (/settings/:tab). Managers: Upload Call, Phone Connectors, Billing, Appearance, Devices. Reps: Upload Call, Phone & texts. */
@@ -58,7 +58,7 @@ export default function Settings() {
 export function BillingRoute() {
   const { data: me } = useMe();
   if (!me) return null;
-  return me.role === "manager" ? <ToSettings tab="billing" /> : <Billing />;
+  return (me.role === "owner" || me.role === "manager") ? <ToSettings tab="billing" /> : <Billing />;
 }
 
 /** Old /billing, /connectors, /appearance links (Stripe returns, emails) land on the matching Settings tab. */

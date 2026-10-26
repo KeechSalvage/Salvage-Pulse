@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { apiGet, apiPut, errorMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { MonthlyReportSettings, MonthlyReportSettingsOut } from "@/lib/types";
+import { isManagerLike } from "@/lib/types";
 
 /** Manager: who gets the 1st-of-month report email, plus extra addresses (owner, bookkeeper). */
 export default function ReportEmailSettings() {
@@ -79,7 +80,7 @@ function Form({ data, onSaved }: { data: MonthlyReportSettingsOut; onSaved: (d: 
                   <span className="block truncate text-white">{p.name}</span>
                   <span className="block truncate font-mono text-[11px] text-slate-500">{p.email}</span>
                 </span>
-                <span className="font-mono text-[10px] uppercase text-slate-500">{p.role === "manager" ? "yard report" : "own calls"}</span>
+                <span className="font-mono text-[10px] uppercase text-slate-500">{isManagerLike(p.role) ? "yard report" : "own calls"}</span>
               </label>
             </li>
           ))}

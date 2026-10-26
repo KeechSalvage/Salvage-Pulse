@@ -15,6 +15,7 @@ const fmtDue = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString(undef
 import { useMe } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 import type { CallSummary, CallbackItem, CallbackList, CallbackListUpdate, CallbackUpdate, OverdueAlertResult } from "@/lib/types";
+import { isManagerLike } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 
 type Tab = "open" | "resolved";
@@ -31,7 +32,7 @@ export default function Callbacks() {
   const [selling, setSelling] = useState<string | null>(null);
   const [source, setSource] = useState("");
   const [newList, setNewList] = useState(false);
-  const isManager = me?.role === "manager";
+  const isManager = isManagerLike(me?.role);
   const lists = useCallbackLists();
   const { data, isError } = useQuery({
     queryKey: ["callbacks", tab, source],
@@ -78,7 +79,7 @@ export default function Callbacks() {
 
   return (
     <>
-      <PageHeader overline="Missed call alerts" title={me?.role === "manager" ? "Callbacks queue" : "My callbacks"}>
+      <PageHeader overline="Missed call alerts" title={isManagerLike(me?.role) ? "Callbacks queue" : "My callbacks"}>
         <div className="grid grid-cols-2 gap-1 rounded-lg bg-surface p-1">
           {(["open", "resolved"] as const).map((t) => (
             <button
@@ -191,7 +192,7 @@ export default function Callbacks() {
                   </p>
                 )}
                 <p className="mt-1 font-mono text-xs text-slate-500">
-                  {fmtDate(c.created_at)} · {me?.role === "manager" ? `${c.rep_name} · ` : ""}
+                  {fmtDate(c.created_at)} · {isManagerLike(me?.role) ? `${c.rep_name} · ` : ""}
                   {resolvedBy && <span className="text-emerald-400">{resolvedBy}</span>}
                 </p>
               </div>

@@ -13,6 +13,7 @@ import { apiDelete, apiGet, apiPost, apiStream, errorMessage } from "@/lib/api";
 import { useMe, useMeta, useOrg } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 import type { RoleplaySession, Scenario } from "@/lib/types";
+import { isManagerLike } from "@/lib/types";
 
 const DIFF: Record<string, string> = {
   Easy: "text-emerald-400 border-emerald-500/30",
@@ -30,7 +31,7 @@ export default function Roleplay() {
   const [streaming, setStreaming] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { data: me } = useMe();
-  const isManager = me?.role === "manager";
+  const isManager = isManagerLike(me?.role);
   const org = useOrg();
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<Scenario | null>(null);

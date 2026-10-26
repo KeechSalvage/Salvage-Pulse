@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import VehicleEditor from "@/components/VehicleEditor";
 import { CustomerCallsPanel, SaleBox } from "@/components/CustomerCalls";
 import AddToCallbacks from "@/components/AddToCallbacks";
+import { isManagerLike } from "@/lib/types";
 import DeliveryScoreCard from "@/components/DeliveryScoreCard";
 import { PriceMissingBadge, priceMissing } from "@/components/PriceMissing";
 import type { Call, CallSummary } from "@/lib/types";
@@ -236,8 +237,8 @@ export default function CallDetail() {
               <RefreshCw className={cn("size-4", processing && "animate-spin")} /> Re-analyze
             </Button>
           )}
-          {me?.role === "manager" && <AddToCallbacks callIds={[call.id]} size="default" />}
-          {me?.role === "manager" && (
+          {isManagerLike(me?.role) && <AddToCallbacks callIds={[call.id]} size="default" />}
+          {isManagerLike(me?.role) && (
             <Button
               variant="destructive"
               data-testid="call-delete-button"

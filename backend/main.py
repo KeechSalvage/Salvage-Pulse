@@ -103,15 +103,24 @@ class DemoLoginReq(BaseModel):
 @app.post("/api/auth/demo-login")
 def auth_demo_login(req: DemoLoginReq, response: Response) -> dict[str, Any]:
     st = store.get_state()
-    target_role = req.role.lower()
+    target_role = req.role.lower().strip()
 
-    if target_role == "rep":
-        # Tyler Grant or first rep
-        reps = [u for u in st["users_by_id"].values() if u.get("role") == "rep" and not u.get("disabled")]
+    if target_role in ("rep", "sales_rep"):
+        reps = [u for u in st["users_by_id"].values() if u.get("role") in ("rep", "sales_rep") and not u.get("disabled")]
         user = reps[0] if reps else st["seed"]["_me"]
+    elif target_role == "owner":
+        owners = [u for u in st["users_by_id"].values() if u.get("role") == "owner" and not u.get("disabled")]
+        user = owners[0] if owners else st["seed"]["_me"]
+    elif target_role in ("sales_manager", "sales"):
+        sms = [u for u in st["users_by_id"].values() if u.get("role") == "sales_manager" and not u.get("disabled")]
+        if not sms:
+            sms = [u for u in st["users_by_id"].values() if u.get("role") == "manager" and not u.get("disabled")]
+        user = sms[0] if sms else st["seed"]["_me"]
+    elif target_role in ("inventory_manager", "inventory"):
+        ims = [u for u in st["users_by_id"].values() if u.get("role") == "inventory_manager" and not u.get("disabled")]
+        user = ims[0] if ims else st["seed"]["_me"]
     else:
-        # Linda Carter or manager
-        managers = [u for u in st["users_by_id"].values() if u.get("role") in ("manager", "master", "admin")]
+        managers = [u for u in st["users_by_id"].values() if u.get("role") in ("owner", "sales_manager", "inventory_manager", "manager", "master", "admin") and not u.get("disabled")]
         user = managers[0] if managers else st["seed"]["_me"]
 
     set_session_cookie(response, user["id"])
@@ -135,12 +144,18 @@ def auth_login(req: LoginReq, response: Response) -> dict[str, Any]:
             break
 
     if not match:
-        # Match demo rep or manager
-        if "manager" in email_clean:
-            match = st["seed"]["_me"]
+        # Match demo roles by keyword in email
+        if "owner" in email_clean:
+            match = next((u for u in st["users_by_id"].values() if u.get("role") == "owner" and not u.get("disabled")), None)
+        elif "inventory" in email_clean:
+            match = next((u for u in st["users_by_id"].values() if u.get("role") == "inventory_manager" and not u.get("disabled")), None)
+        elif "sales" in email_clean or "manager" in email_clean:
+            match = next((u for u in st["users_by_id"].values() if u.get("role") in ("sales_manager", "manager") and not u.get("disabled")), None)
         else:
-            reps = [u for u in st["users_by_id"].values() if u.get("role") == "rep" and not u.get("disabled")]
-            match = reps[0] if reps else st["seed"]["_me"]
+            reps = [u for u in st["users_by_id"].values() if u.get("role") in ("rep", "sales_rep") and not u.get("disabled")]
+            match = reps[0] if reps else None
+        if not match:
+            match = st["seed"]["_me"]
 
     if match and match.get("disabled"):
         raise HTTPException(status_code=403, detail="Account is disabled. Please contact your administrator.")
@@ -180,8 +195,8 @@ def auth_signup(req: SignupReq, response: Response) -> dict[str, Any]:
         "id": new_id,
         "email": req.email,
         "name": req.name,
-        "role": "manager",
-        "title": "General Manager",
+        "role": "owner",
+        "title": "Yard Owner",
         "avatar_url": "",
         "org_id": org_id,
         "impersonated_by": "",
@@ -555,7 +570,7 @@ def get_users_reps(include_disabled: bool = Query(False)) -> list[dict[str, Any]
     st = store.get_state()
     out = []
     for u in st["users_by_id"].values():
-        if u.get("role") == "rep":
+        if u.get("role") in ("rep", "sales_rep"):
             if include_disabled or not u.get("disabled"):
                 out.append(u)
     return sorted(out, key=lambda x: x.get("name", ""))
@@ -566,12 +581,19 @@ def create_rep(body: dict[str, Any]) -> dict[str, Any]:
     st = store.get_state()
     new_id = str(uuid.uuid4())
     org_id = st["seed"]["_me"]["org_id"]
+    role = body.get("role") or "rep"
+    role_titles = {
+        "owner": "Yard Owner",
+        "sales_manager": "Sales Manager",
+        "inventory_manager": "Inventory Manager",
+        "rep": "Sales Representative",
+    }
     new_rep = {
         "id": new_id,
         "email": body["email"],
         "name": body["name"],
-        "role": "rep",
-        "title": body.get("title") or "Sales",
+        "role": role,
+        "title": body.get("title") or role_titles.get(role, "Sales Representative"),
         "avatar_url": "",
         "org_id": org_id,
         "impersonated_by": "",
@@ -729,7 +751,7 @@ def delete_site(site_id: str) -> dict[str, Any]:
 @app.get("/api/sites/managers")
 def get_site_managers() -> list[dict[str, Any]]:
     st = store.get_state()
-    return [u for u in st["users_by_id"].values() if u.get("role") in ("manager", "master", "admin")]
+    return [u for u in st["users_by_id"].values() if u.get("role") in ("owner", "sales_manager", "inventory_manager", "manager", "master", "admin")]
 
 
 @app.get("/api/sites/leaderboard")
@@ -2500,9 +2522,9 @@ def admin_post_org(body: dict[str, Any], request: Request) -> dict[str, Any]:
         st.setdefault("users_by_id", {})[uid] = {
             "id": uid,
             "email": body["email"].strip().lower(),
-            "name": body.get("manager_name") or "Manager",
-            "role": "manager",
-            "title": "Yard Manager",
+            "name": body.get("manager_name") or "Owner",
+            "role": body.get("role") or "owner",
+            "title": body.get("title") or "Yard Owner",
             "avatar_url": "",
             "org_id": oid,
             "impersonated_by": "",

@@ -12,11 +12,12 @@ import VehicleDemandPanel from "@/components/VehicleDemand";
 import WatchlistPanel from "@/components/Watchlist";
 import { useMe } from "@/lib/hooks";
 import type { VehicleRank } from "@/lib/types";
+import { isManagerLike } from "@/lib/types";
 
 /** Vehicles tab: vehicle arrivals for everyone; demand, didn't-buy, stock alerts and the watchlist for managers. */
 export default function Vehicles() {
   const { data: me } = useMe();
-  const isManager = me?.role === "manager";
+  const isManager = isManagerLike(me?.role);
   const [rank, setRank] = useState<VehicleRank>("calls");
   return (
     <>

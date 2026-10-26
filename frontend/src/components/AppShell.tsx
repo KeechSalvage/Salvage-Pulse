@@ -37,41 +37,63 @@ import { endSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { useAssignments } from "@/components/AssignmentNudge";
 import type { Branding, OrgInfo, ResendResult, Role, User } from "@/lib/types";
+import { isManagerLike, roleLabel } from "@/lib/types";
 
 const PLAN_NAMES: Record<string, string> = { starter: "Starter", pro: "Pro", pro_unlimited: "Pro Platinum", enterprise: "Enterprise", enterprise_platinum: "Enterprise Platinum" };
+
+const yardManagerNav = [
+  { to: "/dashboard", label: "Team Dashboard", icon: BarChart3, id: "dashboard" },
+  { to: "/calls", label: "Call Library", icon: PhoneIncoming, id: "calls" },
+  { to: "/callbacks", label: "Callbacks", icon: PhoneMissed, id: "callbacks" },
+  { to: "/team", label: "Reps", icon: Users, id: "team" },
+  { to: "/vehicles", label: "Vehicles", icon: Car, id: "vehicles" },
+  { to: "/tag-vehicles", label: "Tag Vehicles", icon: CarFront, id: "tag-vehicles" },
+  { to: "/reports", label: "Reports", icon: FileBarChart, id: "reports" },
+  { to: "/leaderboards", label: "Leaderboards", icon: Trophy, id: "leaderboards" },
+  { to: "/calendar", label: "Shift calendar", icon: CalendarDays, id: "calendar" },
+  { to: "/keywords", label: "Keyword Tracker", icon: Tags, id: "keywords" },
+  { to: "/roleplay", label: "Role-Play Trainer", icon: Bot, id: "roleplay" },
+  { to: "/settings", label: "Settings", icon: Settings, id: "settings" },
+];
+
+const inventoryManagerNav = [
+  { to: "/vehicles", label: "Vehicles & Stock", icon: Car, id: "vehicles" },
+  { to: "/tag-vehicles", label: "Tag Vehicles", icon: CarFront, id: "tag-vehicles" },
+  { to: "/dashboard", label: "Yard Dashboard", icon: BarChart3, id: "dashboard" },
+  { to: "/calls", label: "Call Library", icon: PhoneIncoming, id: "calls" },
+  { to: "/reports", label: "Reports", icon: FileBarChart, id: "reports" },
+  { to: "/calendar", label: "Shift calendar", icon: CalendarDays, id: "calendar" },
+  { to: "/settings", label: "Settings", icon: Settings, id: "settings" },
+];
+
+const repNav = [
+  { to: "/me", label: "My Performance", icon: Gauge, id: "me" },
+  { to: "/calls", label: "My Calls", icon: PhoneIncoming, id: "calls" },
+  { to: "/callbacks", label: "Callbacks", icon: PhoneMissed, id: "callbacks" },
+  { to: "/vehicles", label: "Vehicle Arrivals", icon: Truck, id: "vehicles" },
+  { to: "/tag-vehicles", label: "Tag Vehicles", icon: CarFront, id: "tag-vehicles" },
+  { to: "/reports", label: "Reports", icon: FileBarChart, id: "reports" },
+  { to: "/leaderboards", label: "Leaderboards", icon: Trophy, id: "leaderboards" },
+  { to: "/roleplay", label: "Role-Play Trainer", icon: Bot, id: "roleplay" },
+  { to: "/settings", label: "Settings", icon: Settings, id: "settings" },
+];
 
 const NAV: Record<Role, { to: string; label: string; icon: typeof Gauge; id: string }[]> = {
   master: [{ to: "/admin", label: "Platform Console", icon: Building2, id: "admin" }],
   admin: [{ to: "/admin", label: "Platform Console", icon: Building2, id: "admin" }],
-  manager: [
-    { to: "/dashboard", label: "Team Dashboard", icon: BarChart3, id: "dashboard" },
-    { to: "/calls", label: "Call Library", icon: PhoneIncoming, id: "calls" },
-    { to: "/callbacks", label: "Callbacks", icon: PhoneMissed, id: "callbacks" },
-    { to: "/team", label: "Reps", icon: Users, id: "team" },
-    { to: "/vehicles", label: "Vehicles", icon: Car, id: "vehicles" },
-    { to: "/tag-vehicles", label: "Tag Vehicles", icon: CarFront, id: "tag-vehicles" },
-    { to: "/reports", label: "Reports", icon: FileBarChart, id: "reports" },
-    { to: "/leaderboards", label: "Leaderboards", icon: Trophy, id: "leaderboards" },
-    { to: "/calendar", label: "Shift calendar", icon: CalendarDays, id: "calendar" },
-    { to: "/keywords", label: "Keyword Tracker", icon: Tags, id: "keywords" },
-    { to: "/roleplay", label: "Role-Play Trainer", icon: Bot, id: "roleplay" },
-    { to: "/settings", label: "Settings", icon: Settings, id: "settings" },
-  ],
-  rep: [
-    { to: "/me", label: "My Performance", icon: Gauge, id: "me" },
-    { to: "/calls", label: "My Calls", icon: PhoneIncoming, id: "calls" },
-    { to: "/callbacks", label: "Callbacks", icon: PhoneMissed, id: "callbacks" },
-    { to: "/vehicles", label: "Vehicle Arrivals", icon: Truck, id: "vehicles" },
-    { to: "/tag-vehicles", label: "Tag Vehicles", icon: CarFront, id: "tag-vehicles" },
-    { to: "/reports", label: "Reports", icon: FileBarChart, id: "reports" },
-    { to: "/leaderboards", label: "Leaderboards", icon: Trophy, id: "leaderboards" },
-    { to: "/roleplay", label: "Role-Play Trainer", icon: Bot, id: "roleplay" },
-    { to: "/settings", label: "Settings", icon: Settings, id: "settings" },
-  ],
+  owner: yardManagerNav,
+  sales_manager: yardManagerNav,
+  manager: yardManagerNav,
+  inventory_manager: inventoryManagerNav,
+  rep: repNav,
+  sales_rep: repNav,
 };
 
 export function homeFor(role: Role) {
-  return role === "master" || role === "admin" ? "/admin" : role === "manager" ? "/dashboard" : "/me";
+  if (role === "master" || role === "admin") return "/admin";
+  if (role === "inventory_manager") return "/vehicles";
+  if (isManagerLike(role)) return "/dashboard";
+  return "/me";
 }
 
 /** Everything the shell needs about the signed-in user and their yard. */
@@ -111,8 +133,8 @@ function redirectFor(d: ShellData, path: string, managerOnly: boolean, platform:
   const user = d.me.data;
   if (d.me.isError || !user) return "/login";
   if (platform !== d.isStaff) return homeFor(user.role);
-  if (managerOnly && user.role !== "manager") return homeFor(user.role);
-  const billing = user.role === "manager" ? "/settings/billing" : "/billing";
+  if (managerOnly && !isManagerLike(user.role)) return homeFor(user.role);
+  const billing = isManagerLike(user.role) ? "/settings/billing" : "/billing";
   if (d.org && !d.org.access && !user.impersonated_by && path !== billing) return billing;
   return null;
 }
@@ -156,7 +178,7 @@ export default function AppShell({ managerOnly = false, platform = false }: { ma
             <DemoLimitDialog />
           </>
         )}
-        {d.org?.status === "trialing" && d.org.access && <TrialBanner org={d.org} isManager={me.role === "manager"} />}
+        {d.org?.status === "trialing" && d.org.access && <TrialBanner org={d.org} isManager={isManagerLike(me.role)} />}
         <div className="mx-auto max-w-[1400px] px-4 py-8 md:px-8 md:py-10">
           <DrillProvider>
             <Outlet />
@@ -188,7 +210,7 @@ function Sidebar({ me, org, isStaff, branding, badges }: { me: User; org?: OrgIn
         </div>
       </div>
       <nav className="mt-4 flex-1 space-y-1 px-3">
-        {NAV[me.role].map((n) => (
+        {(NAV[me.role] || NAV.rep).map((n) => (
           <NavLink
             key={n.to}
             to={n.to}
@@ -202,7 +224,7 @@ function Sidebar({ me, org, isStaff, branding, badges }: { me: User; org?: OrgIn
           >
             <n.icon className="size-4 transition-transform duration-150 group-hover:scale-110" />
             {n.label}
-            <NavBadge id={n.id} isRep={me.role === "rep"} badges={badges} />
+            <NavBadge id={n.id} isRep={me.role === "rep" || me.role === "sales_rep"} badges={badges} />
           </NavLink>
         ))}
       </nav>
@@ -242,7 +264,7 @@ function UserCard({ me }: { me: User }) {
             {me.name}
           </p>
           <p data-testid="current-user-role" className="font-mono text-[10px] uppercase tracking-wider text-amber-400/80">
-            {me.role}
+            {roleLabel(me.role)}
           </p>
         </div>
       </div>
@@ -265,7 +287,7 @@ function MobileBar({ me, branding }: { me: User; branding?: Branding }) {
   return (
     <header className="sticky top-0 z-30 flex items-center gap-3 overflow-x-auto border-b border-border bg-sidebar/95 px-4 py-3 backdrop-blur lg:hidden">
       <BrandLogo branding={branding} className="h-7 w-auto shrink-0" testId="mobile-brand-logo" />
-      {NAV[me.role].map((n) => (
+      {(NAV[me.role] || NAV.rep).map((n) => (
         <NavLink
           key={n.to}
           to={n.to}

@@ -7,6 +7,7 @@ import { apiDelete, apiUpload, errorMessage } from "@/lib/api";
 import { useMe, useOrg } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 import type { BulkAudioResult, ImportResult, OrgInfo } from "@/lib/types";
+import { isManagerLike } from "@/lib/types";
 
 const SHEET = [".csv", ".xlsx", ".xls"];
 const AUDIO = [".mp3", ".mp4", ".mpeg", ".mpga", ".m4a", ".wav", ".webm"];
@@ -58,7 +59,7 @@ export default function SampleDataBanner({ empty = false }: { empty?: boolean })
     onError: (e) => toast.error(errorMessage(e)),
   });
 
-  if (!org || me?.role !== "manager" || (!org.sample_data && !empty)) return null;
+  if (!org || !isManagerLike(me?.role) || (!org.sample_data && !empty)) return null;
   return (
     <div data-testid="sample-data-banner" className="mb-6 grid gap-4 lg:grid-cols-[1fr_1.2fr]">
       <div className="rounded-xl border border-sky-500/30 bg-sky-500/[0.07] p-5">

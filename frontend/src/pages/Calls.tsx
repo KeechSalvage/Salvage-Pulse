@@ -18,6 +18,7 @@ import { SiteFilter } from "@/components/Sites";
 import CallCleanup from "@/components/CallCleanup";
 import { cn } from "@/lib/utils";
 import type { BulkDelete, BulkDeleteResult, CallSummary, VehicleOptions } from "@/lib/types";
+import { isManagerLike } from "@/lib/types";
 
 const DIR_LABELS: Record<string, string> = { all: "In & outbound", inbound: "Inbound", outbound: "Outbound" };
 const PAGE = 100;
@@ -27,7 +28,7 @@ const SCORE_LABELS: Record<string, string> = { all: "Any score", "85": "85+ Exce
 export default function Calls() {
   const nav = useNavigate();
   const { data: me } = useMe();
-  const isManager = me?.role === "manager";
+  const isManager = isManagerLike(me?.role);
   const meta = useMeta();
   const reps = useAllReps(isManager);
   const [search, setSearch] = useState("");

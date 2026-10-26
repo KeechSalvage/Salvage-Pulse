@@ -27,7 +27,8 @@ import { useAllReps } from "@/lib/hooks";
 import { RepSiteSelect, SiteFilter, SitesPanel, useSites } from "@/components/Sites";
 import RepLoginToggle, { RepLoginLog, useLoginLog, whenShort } from "@/components/RepLoginToggle";
 import { cn } from "@/lib/utils";
-import type { BusinessSettings, DigestResult, DigestSettings, Overview, RepCreate, User } from "@/lib/types";
+import type { BusinessSettings, DigestResult, DigestSettings, Overview, RepCreate, Role, User } from "@/lib/types";
+import { roleLabel } from "@/lib/types";
 
 function OrderValuePanel() {
   const qc = useQueryClient();
@@ -181,7 +182,7 @@ function DigestPanel() {
   );
 }
 
-const EMPTY: RepCreate = { name: "", email: "", password: "", title: "" };
+const EMPTY: RepCreate = { name: "", email: "", password: "", title: "", role: "rep" };
 
 export default function Team() {
   const qc = useQueryClient();
@@ -287,8 +288,20 @@ export default function Team() {
                     <div className="flex items-center gap-4">
                       <Avatar name={r.name} url={r.avatar_url} size={48} />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate font-heading text-lg font-bold text-white">{r.name}</p>
-                        <p className="text-sm text-slate-400">{r.title || "Sales rep"}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="truncate font-heading text-lg font-bold text-white">{r.name}</p>
+                          {r.role && r.role !== "rep" && (
+                            <span className={cn(
+                              "rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase",
+                              r.role === "owner" && "bg-amber-500/20 text-amber-300 border border-amber-500/30",
+                              r.role === "sales_manager" && "bg-sky-500/20 text-sky-300 border border-sky-500/30",
+                              r.role === "inventory_manager" && "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                            )}>
+                              {roleLabel(r.role)}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-slate-400">{r.title || roleLabel(r.role)}</p>
                         <p className="font-mono text-[11px] text-slate-500">{r.email}</p>
                       </div>
                       {s && s.calls > 0 && <ScoreBadge score={Math.round(s.avg_score)} />}
@@ -353,7 +366,7 @@ export default function Team() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent data-testid="add-rep-dialog">
           <DialogHeader>
-            <DialogTitle>Add a sales rep</DialogTitle>
+            <DialogTitle>Add team member</DialogTitle>
           </DialogHeader>
           <form
             className="space-y-4"
@@ -362,6 +375,21 @@ export default function Team() {
               create.mutate();
             }}
           >
+            <div className="space-y-1.5">
+              <Label htmlFor="rep-role">Role</Label>
+              <select
+                id="rep-role"
+                data-testid="add-rep-role-select"
+                className="h-10 w-full rounded-md border border-border bg-surface px-3 text-sm text-slate-200"
+                value={form.role || "rep"}
+                onChange={(e) => setForm({ ...form, role: e.target.value as Role })}
+              >
+                <option value="owner">Owner</option>
+                <option value="sales_manager">Sales Manager</option>
+                <option value="inventory_manager">Inventory Manager</option>
+                <option value="rep">Sales Representative</option>
+              </select>
+            </div>
             {(
               [
                 ["name", "Full name", "text"],
@@ -384,7 +412,7 @@ export default function Team() {
             ))}
             <DialogFooter>
               <Button type="submit" data-testid="add-rep-submit-button" disabled={create.isPending}>
-                {create.isPending && <Loader2 className="size-4 animate-spin" />} Create rep login
+                {create.isPending && <Loader2 className="size-4 animate-spin" />} Create user login
               </Button>
             </DialogFooter>
           </form>

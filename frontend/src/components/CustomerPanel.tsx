@@ -10,6 +10,7 @@ import { useMe } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 import { OUTCOMES } from "@/components/WinBackResults";
 import type { BulkTagResult, BulkTagUpdate, CustomerInsights, CustomerStat, CustomerTag, SuggestedContact, WinBackMark, WinBackOutcome, WinBackResult } from "@/lib/types";
+import { isManagerLike } from "@/lib/types";
 
 type Tab = "suggested" | "value" | "calls" | "orders" | "winback" | "all";
 const BULK_TAGS: CustomerTag[] = ["body_shop", "mechanic", "fleet", "retail"];
@@ -211,7 +212,7 @@ export default function CustomerPanel({ repId, team = false }: { repId?: string;
       else n.add(k);
       return n;
     });
-  const canBulk = me?.role === "manager";
+  const canBulk = isManagerLike(me?.role);
 
   return (
     <Panel className="xl:col-span-12" testId="customer-panel">

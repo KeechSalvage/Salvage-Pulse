@@ -10,6 +10,7 @@ import { apiDelete, apiGet, apiPut, errorMessage } from "@/lib/api";
 import { useMe } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 import type { LayoutTarget, TileLayout, TileLayoutSave } from "@/lib/types";
+import { isManagerLike } from "@/lib/types";
 
 export interface TileDef {
   id: string; // stable kebab-case id saved in layouts
@@ -33,8 +34,8 @@ function applyOrder(tiles: TileDef[], order: string[]): TileDef[] {
 export default function TileGrid({ page, tiles, className, label = "tiles", selfArrange = false }: { page: string; tiles: TileDef[]; className: string; label?: string; selfArrange?: boolean }) {
   const qc = useQueryClient();
   const { data: me } = useMe();
-  const self = selfArrange && me?.role === "rep"; // reps arrange only their own copy
-  const isManager = me?.role === "manager" || self;
+  const self = selfArrange && (me?.role === "rep" || me?.role === "sales_rep"); // reps arrange only their own copy
+  const isManager = isManagerLike(me?.role) || self;
   const layout = useQuery({ queryKey: ["layouts", page], queryFn: () => apiGet<TileLayout>(`/layouts/${page}`), staleTime: 60_000 });
   const [arranging, setArranging] = useState(false);
   const [pickedTarget, setTarget] = useState("yard");

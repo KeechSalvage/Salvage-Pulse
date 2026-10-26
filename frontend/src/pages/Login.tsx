@@ -4,7 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { fadeUpLg, settle } from "@/lib/motion";
-import { Loader2, ShieldCheck, UserRound } from "lucide-react";
+import { Loader2, ShieldCheck, UserRound, Crown, Briefcase, Package } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -198,26 +198,58 @@ export default function Login() {
                 <p className="font-mono text-[11px] uppercase tracking-wider text-slate-500">
                   Try the demo yard
                 </p>
-                <div className="mt-3 grid grid-cols-2 gap-3">
+                <div className="mt-3 grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    data-testid="demo-manager-button"
+                    data-testid="demo-owner-button"
                     disabled={demoLogin.isPending}
-                    onClick={() => demoLogin.mutate("manager")}
-                    className="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2.5 text-left text-sm text-slate-200 transition-colors duration-150 hover:border-amber-500/60"
+                    onClick={() => demoLogin.mutate("owner")}
+                    className="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-left text-xs text-slate-200 transition-colors duration-150 hover:border-amber-500/60"
                   >
-                    <ShieldCheck className="size-4 text-amber-400" />
-                    Manager
+                    <Crown className="size-4 text-amber-400 shrink-0" />
+                    <div>
+                      <p className="font-medium text-white leading-tight">Owner</p>
+                      <p className="text-[10px] text-slate-400">Linda Carter</p>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="demo-sales-manager-button"
+                    disabled={demoLogin.isPending}
+                    onClick={() => demoLogin.mutate("sales_manager")}
+                    className="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-left text-xs text-slate-200 transition-colors duration-150 hover:border-sky-500/60"
+                  >
+                    <Briefcase className="size-4 text-sky-400 shrink-0" />
+                    <div>
+                      <p className="font-medium text-white leading-tight">Sales Mgr</p>
+                      <p className="text-[10px] text-slate-400">Marcus Reed</p>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="demo-inventory-manager-button"
+                    disabled={demoLogin.isPending}
+                    onClick={() => demoLogin.mutate("inventory_manager")}
+                    className="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-left text-xs text-slate-200 transition-colors duration-150 hover:border-emerald-500/60"
+                  >
+                    <Package className="size-4 text-emerald-400 shrink-0" />
+                    <div>
+                      <p className="font-medium text-white leading-tight">Inv Mgr</p>
+                      <p className="text-[10px] text-slate-400">Rick Martinez</p>
+                    </div>
                   </button>
                   <button
                     type="button"
                     data-testid="demo-rep-button"
                     disabled={demoLogin.isPending}
                     onClick={() => demoLogin.mutate("rep")}
-                    className="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2.5 text-left text-sm text-slate-200 transition-colors duration-150 hover:border-amber-500/60"
+                    className="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-left text-xs text-slate-200 transition-colors duration-150 hover:border-indigo-500/60"
                   >
-                    <UserRound className="size-4 text-sky-400" />
-                    Sales Rep
+                    <UserRound className="size-4 text-indigo-400 shrink-0" />
+                    <div>
+                      <p className="font-medium text-white leading-tight">Sales Rep</p>
+                      <p className="text-[10px] text-slate-400">Tyler Grant</p>
+                    </div>
                   </button>
                 </div>
               </>

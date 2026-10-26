@@ -6,6 +6,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { apiPost, errorMessage } from "@/lib/api";
 import { useMe, useOrg } from "@/lib/hooks";
 import type { ExtraLogins, OrgInfo } from "@/lib/types";
+import { isManagerLike } from "@/lib/types";
 
 /** Pro managers: warn when the yard is 1 login (or 0) from its rep limit, with a one-tap "add 2 more". */
 export default function LoginUsageAlert({ className = "" }: { className?: string }) {
@@ -21,7 +22,7 @@ export default function LoginUsageAlert({ className = "" }: { className?: string
     },
     onError: (e) => toast.error(errorMessage(e)),
   });
-  if (me?.role !== "manager" || !org || org.plan !== "pro" || org.max_reps == null || org.reps < org.max_reps - 1) return null;
+  if (!isManagerLike(me?.role) || !org || org.plan !== "pro" || org.max_reps == null || org.reps < org.max_reps - 1) return null;
   const left = Math.max(0, org.max_reps - org.reps);
   const atCap = org.extra_rep_packs >= org.max_extra_packs;
   return (
