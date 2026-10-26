@@ -252,6 +252,26 @@ export default function Login() {
                     </div>
                   </button>
                 </div>
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    data-testid="demo-master-button"
+                    disabled={demoLogin.isPending}
+                    onClick={() => demoLogin.mutate("master")}
+                    className="flex w-full items-center justify-between rounded-lg border border-purple-500/40 bg-purple-950/20 px-3 py-2 text-left text-xs text-purple-200 transition-colors duration-150 hover:border-purple-400 hover:bg-purple-900/30"
+                  >
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="size-4 text-purple-400 shrink-0" />
+                      <div>
+                        <p className="font-medium text-white leading-tight">Master Admin</p>
+                        <p className="text-[10px] text-purple-300/80">Ben Keech · Platform Console</p>
+                      </div>
+                    </div>
+                    <span className="rounded bg-purple-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-purple-300">
+                      Platform
+                    </span>
+                  </button>
+                </div>
               </>
             )}
           </div>

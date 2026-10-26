@@ -1579,7 +1579,7 @@ export interface GoogleSessionRequest {
 }
 
 export interface DemoLoginRequest {
-  role: "owner" | "sales_manager" | "inventory_manager" | "rep" | "manager";
+  role: "owner" | "sales_manager" | "inventory_manager" | "rep" | "manager" | "master" | "admin";
 }
 
 export interface DemoLoginStatus {

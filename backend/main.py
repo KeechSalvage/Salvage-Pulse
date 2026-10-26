@@ -105,7 +105,13 @@ def auth_demo_login(req: DemoLoginReq, response: Response) -> dict[str, Any]:
     st = store.get_state()
     target_role = req.role.lower().strip()
 
-    if target_role in ("rep", "sales_rep"):
+    if target_role == "master":
+        masters = [u for u in st["users_by_id"].values() if u.get("role") == "master" and not u.get("disabled")]
+        user = masters[0] if masters else st["seed"]["_me"]
+    elif target_role == "admin":
+        admins = [u for u in st["users_by_id"].values() if u.get("role") in ("admin", "master") and not u.get("disabled")]
+        user = admins[0] if admins else st["seed"]["_me"]
+    elif target_role in ("rep", "sales_rep"):
         reps = [u for u in st["users_by_id"].values() if u.get("role") in ("rep", "sales_rep") and not u.get("disabled")]
         user = reps[0] if reps else st["seed"]["_me"]
     elif target_role == "owner":
@@ -145,7 +151,11 @@ def auth_login(req: LoginReq, response: Response) -> dict[str, Any]:
 
     if not match:
         # Match demo roles by keyword in email
-        if "owner" in email_clean:
+        if "master" in email_clean:
+            match = next((u for u in st["users_by_id"].values() if u.get("role") == "master" and not u.get("disabled")), None)
+        elif "admin" in email_clean:
+            match = next((u for u in st["users_by_id"].values() if u.get("role") in ("admin", "master") and not u.get("disabled")), None)
+        elif "owner" in email_clean:
             match = next((u for u in st["users_by_id"].values() if u.get("role") == "owner" and not u.get("disabled")), None)
         elif "inventory" in email_clean:
             match = next((u for u in st["users_by_id"].values() if u.get("role") == "inventory_manager" and not u.get("disabled")), None)
