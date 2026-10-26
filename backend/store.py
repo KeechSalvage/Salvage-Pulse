@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import copy
 import datetime as dt
+import hashlib
 import io
 import json
 import math
 import os
+import secrets
 import struct
 import threading
 import uuid
@@ -24,10 +26,27 @@ STATE_PATH = os.path.join(DATA_DIR, "preview_state.json")
 
 INITIAL_MASTER_EMAIL = os.environ.get("INITIAL_MASTER_EMAIL", "brettk@salvagepulsepro.com").strip().lower()
 INITIAL_MASTER_NAME = os.environ.get("INITIAL_MASTER_NAME", "Brett K").strip()
+INITIAL_MASTER_PASSWORD = os.environ.get("INITIAL_MASTER_PASSWORD", "").strip()
+
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_hex(8)
+    h = hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
+    return f"{salt}:{h}"
+
+
+def verify_password(password: str, stored: str | None) -> bool:
+    if not stored:
+        return True
+    if ":" in stored:
+        salt, h = stored.split(":", 1)
+        return hashlib.sha256((salt + password).encode("utf-8")).hexdigest() == h
+    return password == stored
 
 
 _LOCK = threading.RLock()
 _STATE: dict[str, Any] | None = None
+_STATE_MTIME: float = 0.0
 
 
 def now_iso() -> str:
@@ -187,6 +206,7 @@ def _build_initial_state() -> dict[str, Any]:
         "disabled": False,
         "site_id": "",
         "must_change_password": False,
+        "password_hash": hash_password(INITIAL_MASTER_PASSWORD) if INITIAL_MASTER_PASSWORD else "",
     }
 
     users_by_id: dict[str, dict[str, Any]] = {
@@ -329,15 +349,18 @@ def _migrate_roles(st: dict[str, Any]) -> dict[str, Any]:
 
 
 def get_state() -> dict[str, Any]:
-    global _STATE
+    global _STATE, _STATE_MTIME
     with _LOCK:
-        if _STATE is None:
+        file_mtime = os.path.getmtime(STATE_PATH) if os.path.exists(STATE_PATH) else 0.0
+        if _STATE is None or (file_mtime > 0 and file_mtime > _STATE_MTIME):
             if os.path.exists(STATE_PATH):
                 try:
                     with open(STATE_PATH, "r", encoding="utf-8") as fh:
                         _STATE = json.load(fh)
+                        _STATE_MTIME = file_mtime
                 except Exception:
-                    _STATE = _build_initial_state()
+                    if _STATE is None:
+                        _STATE = _build_initial_state()
             else:
                 _STATE = _build_initial_state()
             _migrate_roles(_STATE)
@@ -345,6 +368,7 @@ def get_state() -> dict[str, Any]:
 
 
 def save_state() -> None:
+    global _STATE_MTIME
     with _LOCK:
         if _STATE is None:
             return
@@ -352,5 +376,6 @@ def save_state() -> None:
         try:
             with open(STATE_PATH, "w", encoding="utf-8") as fh:
                 json.dump(_STATE, fh)
+            _STATE_MTIME = os.path.getmtime(STATE_PATH) if os.path.exists(STATE_PATH) else 0.0
         except Exception:
             pass

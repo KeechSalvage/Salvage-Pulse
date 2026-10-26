@@ -91,7 +91,7 @@ export default function Dashboard() {
             <StatCard
               label="Close rate"
               value={ov ? `${ov.conversion_rate}%` : "—"}
-              sub={ov ? `${ov.won} won of ${ov.won + ov.lost + ov.pending} sales calls` : ""}
+              sub={ov ? `${ov.won ?? 0} won of ${(ov.won ?? 0) + (ov.lost ?? 0) + (ov.pending ?? 0)} sales calls` : ""}
               testId="stat-conversion"
             />
           ) },
@@ -168,7 +168,7 @@ export default function Dashboard() {
             <Panel className="xl:col-span-5" testId="category-panel">
               <Overline>Call mix</Overline>
               <h3 className="mb-4 mt-1 text-xl font-bold text-white">Incoming call categories</h3>
-              {ov ? <CategoryDonut data={ov.category_breakdown} /> : <p className="text-sm text-slate-500">No data.</p>}
+              {ov ? <CategoryDonut data={ov.category_breakdown ?? []} /> : <p className="text-sm text-slate-500">No data.</p>}
             </Panel>
           ) },
           { id: "customers", label: "Customers", span: "xl:col-span-12", node: (
@@ -193,21 +193,21 @@ export default function Dashboard() {
                   <span data-testid="volume-voicemail" className="flex items-center gap-1.5 text-slate-400"><Voicemail className="size-3.5" />{ov?.voicemails ?? 0} vm</span>
                 </div>
               </div>
-              {ov && <HourlyVolume data={ov.hourly} />}
+              {ov && <HourlyVolume data={ov.hourly ?? []} />}
             </Panel>
           ) },
           { id: "topics", label: "Caller topics", span: "xl:col-span-5", node: (
             <Panel className="xl:col-span-5" testId="topics-panel">
               <Overline>Insights</Overline>
               <h3 className="mb-4 mt-1 text-xl font-bold text-white">What callers talk about</h3>
-              {ov && <TopicList data={ov.topic_stats.slice(0, 10)} testId="topic-list" />}
+              {ov && <TopicList data={(ov.topic_stats ?? []).slice(0, 10)} testId="topic-list" />}
             </Panel>
           ) },
           { id: "score-trend", label: "QA score by day", span: "xl:col-span-7", node: (
             <Panel className="xl:col-span-7" testId="trend-panel">
               <Overline>Trend</Overline>
               <h3 className="mb-4 mt-1 text-xl font-bold text-white">QA score by day</h3>
-              {ov && <ScoreTrend data={ov.trend} />}
+              {ov && <ScoreTrend data={ov.trend ?? []} />}
             </Panel>
           ) },
           { id: "metrics", label: "Metric averages", span: "xl:col-span-5", node: (
@@ -215,7 +215,7 @@ export default function Dashboard() {
               <Overline>Skill gaps</Overline>
               <h3 className="mb-2 mt-1 text-xl font-bold text-white">Team metric averages</h3>
               {ov && ov.scored_calls > 0 ? (
-                <MetricBarChart data={ov.metric_averages} />
+                <MetricBarChart data={ov.metric_averages ?? []} />
               ) : (
                 <p data-testid="metric-panel-empty" className="mt-4 text-sm leading-relaxed text-slate-400">
                   The 7-metric breakdown needs a transcript or recording. Open any imported call and attach one to unlock AI coaching.
@@ -249,7 +249,7 @@ export default function Dashboard() {
                     </div>
                   </Link>
                 ))}
-                {ov && !ov.coaching_flags.length && <p className="text-sm text-slate-500">No low-scoring calls. Nice work, team.</p>}
+                {ov && !(ov.coaching_flags ?? []).length && <p className="text-sm text-slate-500">No low-scoring calls. Nice work, team.</p>}
               </div>
             </Panel>
           ) },

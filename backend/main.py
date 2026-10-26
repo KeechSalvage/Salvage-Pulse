@@ -20,7 +20,7 @@ from fastapi import (
     status,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 import store
@@ -192,6 +192,15 @@ def auth_login(req: LoginReq, response: Response) -> dict[str, Any]:
     if match and match.get("disabled"):
         raise HTTPException(status_code=403, detail="Account is disabled. Please contact your administrator.")
 
+    # Check password if configured
+    stored_hash = match.get("password_hash") or match.get("password")
+    if stored_hash:
+        if not store.verify_password(req.password or "", stored_hash):
+            raise HTTPException(status_code=401, detail="Incorrect password. Please verify your credentials.")
+    elif req.password:
+        match["password_hash"] = store.hash_password(req.password)
+        store.save_state()
+
     # Check if user's yard is blocked or canceled
     u_org_id = match.get("org_id") if match else None
     if u_org_id:
@@ -262,9 +271,21 @@ def auth_google(response: Response) -> dict[str, Any]:
     return auth_demo_login(DemoLoginReq(role="manager"), response)
 
 
+class ChangePasswordReq(BaseModel):
+    current_password: Optional[str] = ""
+    new_password: str
+
+
 @app.post("/api/auth/change-password")
-def auth_change_password(request: Request) -> dict[str, Any]:
+def auth_change_password(req: ChangePasswordReq, request: Request) -> dict[str, Any]:
     u = get_current_user(request)
+    stored_hash = u.get("password_hash") or u.get("password")
+    if stored_hash and req.current_password:
+        if not store.verify_password(req.current_password, stored_hash):
+            raise HTTPException(status_code=400, detail="Current password is incorrect")
+    if len(req.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    u["password_hash"] = store.hash_password(req.new_password)
     u["must_change_password"] = False
     store.save_state()
     return {"ok": True, "message": "Password updated successfully"}
@@ -281,12 +302,73 @@ def auth_resend_verification() -> dict[str, Any]:
     return {"ok": True, "sent": True}
 
 
+def _find_master_or_actor(impersonator_id: str | None = None) -> dict[str, Any]:
+    st = store.get_state()
+    users = st.get("users_by_id", {})
+    if impersonator_id and impersonator_id in users and not users[impersonator_id].get("disabled"):
+        return users[impersonator_id]
+    masters = [u for u in users.values() if u.get("role") == "master" and not u.get("disabled")]
+    if masters:
+        return masters[0]
+    admins = [u for u in users.values() if u.get("role") == "admin" and not u.get("disabled")]
+    if admins:
+        return admins[0]
+    if users:
+        return list(users.values())[0]
+    return {
+        "id": "master-brettk",
+        "email": "brettk@salvagepulsepro.com",
+        "name": "Brett K",
+        "role": "master",
+    }
+
+
 @app.post("/api/auth/stop-impersonating")
-def auth_stop_impersonating(request: Request) -> dict[str, Any]:
+def auth_stop_impersonating(request: Request, response: Response) -> dict[str, Any]:
     u = get_current_user(request)
+    impersonator_id = u.pop("impersonator_id", None)
     u["impersonated_by"] = ""
+    admin_user = _find_master_or_actor(impersonator_id)
+    set_session_cookie(response, admin_user["id"])
     store.save_state()
-    return u
+    return admin_user
+
+
+@app.get("/api/auth/stop-impersonating")
+def auth_stop_impersonating_get(request: Request) -> RedirectResponse:
+    u = get_current_user(request)
+    impersonator_id = u.pop("impersonator_id", None)
+    u["impersonated_by"] = ""
+    admin_user = _find_master_or_actor(impersonator_id)
+    resp = RedirectResponse(url="/admin", status_code=303)
+    set_session_cookie(resp, admin_user["id"])
+    store.save_state()
+    return resp
+
+
+@app.get("/api/auth/recover")
+def auth_recover() -> RedirectResponse:
+    st = store.get_state()
+    for user in st.get("users_by_id", {}).values():
+        user["impersonated_by"] = ""
+        user.pop("impersonator_id", None)
+    admin_user = _find_master_or_actor()
+    resp = RedirectResponse(url="/admin", status_code=303)
+    set_session_cookie(resp, admin_user["id"])
+    store.save_state()
+    return resp
+
+
+@app.post("/api/auth/recover")
+def auth_recover_post(response: Response) -> dict[str, Any]:
+    st = store.get_state()
+    for user in st.get("users_by_id", {}).values():
+        user["impersonated_by"] = ""
+        user.pop("impersonator_id", None)
+    admin_user = _find_master_or_actor()
+    set_session_cookie(response, admin_user["id"])
+    store.save_state()
+    return admin_user
 
 
 @app.post("/api/auth/not-me")
@@ -368,9 +450,83 @@ def get_meta() -> dict[str, Any]:
 
 
 @app.get("/api/org/me")
-def get_org_me() -> dict[str, Any]:
+def get_org_me(request: Request) -> dict[str, Any]:
     st = store.get_state()
-    return st["org"]
+    u = get_current_user(request)
+    u_org_id = u.get("org_id")
+    if u_org_id:
+        yard = next((o for o in st.get("admin_orgs", []) if o.get("id") == u_org_id), None)
+        if yard:
+            return {
+                "id": yard.get("id", ""),
+                "name": yard.get("name", "Yard"),
+                "plan": yard.get("plan", "pro"),
+                "status": yard.get("status", "active"),
+                "no_card_trial": yard.get("status") == "trialing" and not yard.get("card_on_file"),
+                "email_verified": True,
+                "trial_ends_at": yard.get("trial_ends_at"),
+                "days_left": 7,
+                "access": not bool(yard.get("blocked") or yard.get("status") == "canceled"),
+                "reps": yard.get("users", 1),
+                "max_reps": 10,
+                "card_on_file": bool(yard.get("card_on_file", False)),
+                "trial_limited": False,
+                "limited_starts_at": None,
+                "locked_features": [],
+                "roleplay_daily_cap": 25,
+                "suggestion_cap": 50,
+                "sample_data": False,
+                "blocked": bool(yard.get("blocked", False)),
+                "plan_locked": [],
+                "extra_rep_packs": 0,
+                "max_extra_packs": 5,
+                "extra_pack_price": 50,
+                "preview_ends_at": None,
+                "preview_days_left": None,
+                "preview_available": False,
+                "preview_ending": False,
+                "show_enterprise_tour": False,
+                "billing_interval": "monthly",
+                "discount": yard.get("discount"),
+                "max_sites": yard.get("max_sites", 2),
+                "extra_sites": yard.get("extra_sites", 0),
+                "sites_used": 1,
+            }
+    return {
+        "id": "",
+        "name": "Salvage Pulse",
+        "plan": "enterprise",
+        "status": "active",
+        "no_card_trial": False,
+        "email_verified": True,
+        "trial_ends_at": None,
+        "days_left": None,
+        "access": True,
+        "reps": 1,
+        "max_reps": 10,
+        "card_on_file": True,
+        "trial_limited": False,
+        "limited_starts_at": None,
+        "locked_features": [],
+        "roleplay_daily_cap": 50,
+        "suggestion_cap": 100,
+        "sample_data": False,
+        "blocked": False,
+        "plan_locked": [],
+        "extra_rep_packs": 0,
+        "max_extra_packs": 5,
+        "extra_pack_price": 50,
+        "preview_ends_at": None,
+        "preview_days_left": None,
+        "preview_available": False,
+        "preview_ending": False,
+        "show_enterprise_tour": False,
+        "billing_interval": "monthly",
+        "discount": None,
+        "max_sites": 2,
+        "extra_sites": 0,
+        "sites_used": 1,
+    }
 
 
 @app.delete("/api/org/sample-data")
@@ -1312,6 +1468,38 @@ def get_delivery_stats() -> dict[str, Any]:
 # ==========================================
 # Analytics, Customers, Vehicles, Watchlist
 # ==========================================
+DEFAULT_OVERVIEW: dict[str, Any] = {
+    "total_calls": 0,
+    "avg_score": 0,
+    "avg_duration_sec": 0,
+    "warranty_pitch_rate": 0,
+    "conversion_rate": 0,
+    "won": 0,
+    "lost": 0,
+    "pending": 0,
+    "inbound": 0,
+    "outbound": 0,
+    "scored_calls": 0,
+    "open_callbacks": 0,
+    "metric_averages": [
+        {"name": "Greeting", "avg": 0},
+        {"name": "Parts Lookup", "avg": 0},
+        {"name": "Pricing", "avg": 0},
+        {"name": "Warranty", "avg": 0},
+        {"name": "Delivery Option", "avg": 0},
+        {"name": "Closing / Next Steps", "avg": 0},
+        {"name": "Professionalism", "avg": 0},
+    ],
+    "category_breakdown": [],
+    "hourly": [],
+    "trend": [],
+    "topic_stats": [],
+    "focus_areas": [],
+    "coaching_flags": [],
+    "rep": None,
+}
+
+
 @app.get("/api/analytics/overview")
 def get_analytics_overview(
     rep_id: Optional[str] = Query(None),
@@ -1319,7 +1507,9 @@ def get_analytics_overview(
     site_id: Optional[str] = Query(None),
 ) -> dict[str, Any]:
     st = store.get_state()
-    base = dict(st["seed"].get("/analytics/overview", {}))
+    base = dict(DEFAULT_OVERVIEW)
+    if "seed" in st and "/analytics/overview" in st["seed"]:
+        base.update(st["seed"]["/analytics/overview"])
 
     # Calculate dynamic open callbacks count
     base["open_callbacks"] = len(st.get("callbacks_open", []))
@@ -2760,14 +2950,61 @@ def admin_get_users(org_id: Optional[str] = Query(None), q: Optional[str] = Quer
     return out
 
 
-@app.patch("/api/admin/users/{uid}")
-def admin_patch_user(uid: str, body: dict[str, Any]) -> dict[str, Any]:
+class AdminPasswordReq(BaseModel):
+    password: str
+    must_change_password: bool = False
+
+
+@app.post("/api/admin/users/{uid}/password")
+def admin_set_user_password(uid: str, req: AdminPasswordReq, request: Request) -> dict[str, Any]:
     st = store.get_state()
+    actor = get_current_user(request)
+    if actor.get("role") not in ("master", "admin"):
+        raise HTTPException(status_code=403, detail="Platform staff only")
+
     u = st["users_by_id"].get(uid)
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
+
+    if len(req.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
+    u["password_hash"] = store.hash_password(req.password)
+    u["must_change_password"] = req.must_change_password
+    st.setdefault("admin_audit", []).insert(0, {
+        "at": store.now_iso(),
+        "actor": actor.get("name", "Admin"),
+        "action": f"manually updated password for user {u.get('email')}",
+        "target": u.get("name", uid),
+    })
+    store.save_state()
+    return {"ok": True, "message": f"Password for {u['name']} updated successfully"}
+
+
+@app.patch("/api/admin/users/{uid}")
+def admin_patch_user(uid: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    actor = get_current_user(request)
+    u = st["users_by_id"].get(uid)
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if "password" in body and body["password"]:
+        pw = str(body.pop("password"))
+        if len(pw) < 6:
+            raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+        u["password_hash"] = store.hash_password(pw)
+        u["must_change_password"] = False
+        st.setdefault("admin_audit", []).insert(0, {
+            "at": store.now_iso(),
+            "actor": actor.get("name", "Admin"),
+            "action": f"reset password for user {u.get('email')}",
+            "target": u.get("name", uid),
+        })
+
     u.update(body)
     store.save_state()
+    org_map = {o["id"]: o.get("name", "Yard") for o in st.get("admin_orgs", [])}
     return {
         "id": u["id"],
         "email": u["email"],
@@ -2775,7 +3012,7 @@ def admin_patch_user(uid: str, body: dict[str, Any]) -> dict[str, Any]:
         "role": u.get("role", "rep"),
         "title": u.get("title", ""),
         "org_id": u.get("org_id", ""),
-        "org_name": st.get("org", {}).get("name", "Salvage Pulse Pro"),
+        "org_name": org_map.get(u.get("org_id", ""), "Platform") if not u.get("org_id") else org_map.get(u.get("org_id", ""), "Yard"),
         "disabled": u.get("disabled", False),
     }
 
@@ -2790,6 +3027,7 @@ def admin_impersonate(uid: str, response: Response, request: Request) -> dict[st
         raise HTTPException(status_code=400, detail="Cannot impersonate a disabled user")
     actor = get_current_user(request)
     target_user["impersonated_by"] = actor.get("name", "Admin")
+    target_user["impersonator_id"] = actor.get("id", "")
     set_session_cookie(response, uid)
     return target_user
 

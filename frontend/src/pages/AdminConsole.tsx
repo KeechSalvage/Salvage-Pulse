@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import DiscountButton, { DiscountRevenuePanel } from "@/components/AdminDiscount";
-import { Copy, LogIn, Plus } from "lucide-react";
+import { Copy, KeyRound, LogIn, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,7 @@ import { DemoLoginPanel, FreeDayPanel, FunnelPanel, RemindersPanel } from "@/com
 import { MessagesPanel } from "@/components/ContactUs";
 import { ChangePasswordPanel, StaffDevicesPanel, StaffLockdownPanel } from "@/components/StaffSecurity";
 import StaffAccountsPanel from "@/components/StaffAccounts";
+import { homeFor } from "@/components/AppShell";
 
 const PLANS: PlanId[] = ["starter", "pro", "pro_unlimited", "enterprise", "enterprise_platinum"];
 const PLAN_LABEL: Record<PlanId, string> = { starter: "starter", pro: "pro", pro_unlimited: "pro platinum", enterprise: "enterprise", enterprise_platinum: "enterprise platinum" };
@@ -105,12 +106,94 @@ function NewYardDialog({ open, onClose }: { open: boolean; onClose: () => void }
   );
 }
 
+function SetPasswordDialog({ user, onClose }: { user: AdminUser | null; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [newPassword, setNewPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+
+  const setPw = useMutation({
+    mutationFn: (body: { password: string }) => apiPost(`/admin/users/${user?.id}/password`, body),
+    onSuccess: (data: any) => {
+      toast.success(data?.message || `Password for ${user?.name} updated successfully`);
+      qc.invalidateQueries({ queryKey: ["admin", "users"] });
+      onClose();
+      setNewPassword("");
+    },
+    onError: (e) => toast.error(errorMessage(e, "Failed to update password")),
+  });
+
+  if (!user) return null;
+
+  return (
+    <Dialog open={Boolean(user)} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-bold text-white">Set Password for {user.name}</DialogTitle>
+          <p className="text-xs text-slate-400">
+            {user.email} · <span className="font-mono uppercase text-sky-400">{roleLabel(user.role)}</span>
+          </p>
+        </DialogHeader>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (newPassword.length < 6) {
+              toast.error("Password must be at least 6 characters");
+              return;
+            }
+            setPw.mutate({ password: newPassword });
+          }}
+          className="space-y-4 py-2"
+        >
+          <div>
+            <Label htmlFor="admin-new-pw" className="text-xs text-slate-300">
+              New Password
+            </Label>
+            <div className="relative mt-1">
+              <Input
+                id="admin-new-pw"
+                type={showPassword ? "text" : "password"}
+                placeholder="Enter new password (min. 6 characters)"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="bg-surface pr-16"
+                autoFocus
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-white"
+              >
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </div>
+            <p className="mt-1 text-[11px] text-slate-500">
+              This user will immediately be able to sign in with this password.
+            </p>
+          </div>
+
+          <DialogFooter className="gap-2 pt-2">
+            <Button type="button" variant="ghost" onClick={onClose} disabled={setPw.isPending}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={newPassword.length < 6 || setPw.isPending}>
+              {setPw.isPending ? "Saving..." : "Save Password"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function AdminConsole() {
   const { data: me } = useMe();
   const qc = useQueryClient();
   const [orgId, setOrgId] = useState<string>("");
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
+  const [passwordUser, setPasswordUser] = useState<AdminUser | null>(null);
   const orgs = useQuery({ queryKey: ["admin", "orgs"], queryFn: () => apiGet<AdminOrg[]>("/admin/orgs") });
   const users = useQuery({
     queryKey: ["admin", "users", orgId, q],
@@ -191,7 +274,7 @@ export default function AdminConsole() {
     mutationFn: (id: string) => apiPost<User>(`/admin/impersonate/${id}`),
     onSuccess: (u) => {
       queryClient.cancelQueries(); // full page load below drops every cached admin query
-      window.location.assign(u.role === "manager" ? "/dashboard" : "/me");
+      window.location.assign(homeFor(u.role));
     },
     onError: (e) => toast.error(errorMessage(e)),
   });
@@ -224,6 +307,7 @@ export default function AdminConsole() {
         </Button>
       </PageHeader>
       <NewYardDialog open={open} onClose={() => setOpen(false)} />
+      <SetPasswordDialog user={passwordUser} onClose={() => setPasswordUser(null)} />
 
       <Panel testId="admin-orgs-panel" id="admin-yards" className="scroll-mt-8">
         <h3 className="text-xl font-bold text-white">Yards ({orgs.data?.length ?? 0})</h3>
@@ -485,16 +569,18 @@ export default function AdminConsole() {
                       )}
                     </td>
                     <td className="space-x-1 whitespace-nowrap text-right">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        data-testid={`admin-user-set-pw-${i}`}
+                        className="text-xs hover:text-amber-300"
+                        title="Set password manually"
+                        onClick={() => setPasswordUser(u)}
+                      >
+                        <KeyRound className="mr-1 size-3.5" /> Set password
+                      </Button>
                       {!staff && (
                         <>
-                          <Button size="sm" variant="ghost" data-testid={`admin-user-reset-${i}`}
-                            onClick={() => {
-                              const pw = window.prompt(`New password for ${u.name} (8+ characters)`);
-                              if (pw) updUser.mutate({ id: u.id, body: { password: pw } });
-                            }}
-                          >
-                            Reset password
-                          </Button>
                           <Button size="sm" variant="ghost" data-testid={`admin-user-disable-${i}`} onClick={() => updUser.mutate({ id: u.id, body: { disabled: !u.disabled } })}>
                             {u.disabled ? "Enable" : "Disable"}
                           </Button>

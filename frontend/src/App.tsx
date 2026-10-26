@@ -3,6 +3,7 @@ import { GoogleCallback } from "@/components/GoogleSignIn";
 import PremiumGate from "@/components/PremiumGate";
 import { Toaster } from "@/components/ui/sonner";
 import AppShell, { homeFor } from "@/components/AppShell";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import { useMe } from "@/lib/hooks";
 import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
@@ -47,7 +48,7 @@ export default function App() {
     );
   }
   return (
-    <>
+    <ErrorBoundary>
       <Routes>
         <Route path="/" element={<HomeRedirect />} />
         <Route path="/login" element={<Login />} />
@@ -91,6 +92,6 @@ export default function App() {
         <Route path="*" element={<HomeRedirect />} />
       </Routes>
       <Toaster richColors />
-    </>
+    </ErrorBoundary>
   );
 }

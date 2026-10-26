@@ -49,8 +49,9 @@ export default function Performance() {
   const name = ov?.rep?.name ?? me?.name ?? "";
   const isSelf = !repId;
 
-  const weakest = ov ? [...ov.metric_averages].sort((a, b) => a.avg - b.avg)[0] : undefined;
-  const strongest = ov ? [...ov.metric_averages].sort((a, b) => b.avg - a.avg)[0] : undefined;
+  const metricList = ov?.metric_averages ?? [];
+  const weakest = metricList.length ? [...metricList].sort((a, b) => a.avg - b.avg)[0] : undefined;
+  const strongest = metricList.length ? [...metricList].sort((a, b) => b.avg - a.avg)[0] : undefined;
 
   return (
     <>
@@ -111,7 +112,7 @@ export default function Performance() {
             <StatCard
               label="Close rate"
               value={ov ? `${ov.conversion_rate}%` : "—"}
-              sub={ov ? `${ov.won} won of ${ov.won + ov.lost + ov.pending} sales calls${team.data ? ` · team ${team.data.conversion_rate}%` : ""}` : ""}
+              sub={ov ? `${ov.won ?? 0} won of ${(ov.won ?? 0) + (ov.lost ?? 0) + (ov.pending ?? 0)} sales calls${team.data ? ` · team ${team.data.conversion_rate}%` : ""}` : ""}
               testId="rep-stat-conversion"
             />
           ) },
@@ -191,12 +192,12 @@ export default function Performance() {
                     <span className="text-[15px] leading-relaxed text-slate-200">{f}</span>
                   </li>
                 ))}
-                {ov && !ov.focus_areas.length && <p className="text-sm text-slate-500">No AI focus areas yet — attach transcripts or recordings to calls.</p>}
+                {ov && !(ov.focus_areas ?? []).length && <p className="text-sm text-slate-500">No AI focus areas yet — attach transcripts or recordings to calls.</p>}
               </ol>
-              {ov && ov.topic_stats.length > 0 && (
+              {ov && (ov.topic_stats ?? []).length > 0 && (
                 <div className="mt-6">
                   <Overline className="mb-3">Top topics on your calls</Overline>
-                  <TopicList data={ov.topic_stats.slice(0, 6)} testId="rep-topic-list" drill={repId ? { rep_id: repId } : {}} />
+                  <TopicList data={(ov.topic_stats ?? []).slice(0, 6)} testId="rep-topic-list" drill={repId ? { rep_id: repId } : {}} />
                 </div>
               )}
             </Panel>
@@ -205,14 +206,14 @@ export default function Performance() {
             <Panel className="xl:col-span-5" testId="rep-category-panel">
               <Overline>Call makeup</Overline>
               <h3 className="mb-4 mt-1 text-xl font-bold text-white">What you handle</h3>
-              {ov && ov.category_breakdown.length ? <CategoryDonut data={ov.category_breakdown} drill={repId ? { rep_id: repId } : {}} /> : <p className="text-sm text-slate-500">No calls yet.</p>}
+              {ov && (ov.category_breakdown ?? []).length ? <CategoryDonut data={ov.category_breakdown ?? []} drill={repId ? { rep_id: repId } : {}} /> : <p className="text-sm text-slate-500">No calls yet.</p>}
             </Panel>
           ) },
           { id: "score-trend", label: "QA score by day", span: "xl:col-span-7", node: (
             <Panel className="xl:col-span-7" testId="rep-trend-panel">
               <Overline>Trend</Overline>
               <h3 className="mb-4 mt-1 text-xl font-bold text-white">Score over time</h3>
-              {ov && <ScoreTrend data={ov.trend} drill={repId ? { rep_id: repId } : {}} />}
+              {ov && <ScoreTrend data={ov.trend ?? []} drill={repId ? { rep_id: repId } : {}} />}
             </Panel>
           ) },
           { id: "recent-calls", label: "Recent calls", span: "xl:col-span-12", node: (
