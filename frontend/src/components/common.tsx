@@ -85,9 +85,9 @@ export function PageHeader({ overline, title, children }: { overline: string; ti
   );
 }
 
-export function Panel({ children, className, testId }: { children: ReactNode; className?: string; testId?: string }) {
+export function Panel({ children, className, testId, id }: { children: ReactNode; className?: string; testId?: string; id?: string }) {
   return (
-    <div data-testid={testId} className={cn("rounded-xl border border-border bg-card p-5 md:p-6", className)}>
+    <div id={id} data-testid={testId} className={cn("rounded-xl border border-border bg-card p-5 md:p-6", className)}>
       {children}
     </div>
   );

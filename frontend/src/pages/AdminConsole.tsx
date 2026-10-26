@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import DiscountButton, { DiscountRevenuePanel } from "@/components/AdminDiscount";
 import { Copy, LogIn, Plus } from "lucide-react";
@@ -196,6 +196,26 @@ export default function AdminConsole() {
     onError: (e) => toast.error(errorMessage(e)),
   });
 
+  useEffect(() => {
+    const handleHash = () => {
+      const hash = window.location.hash;
+      if (hash) {
+        const el = document.querySelector(hash);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "start" });
+          el.classList.add("ring-2", "ring-amber-500/50");
+          setTimeout(() => el.classList.remove("ring-2", "ring-amber-500/50"), 1200);
+        }
+      }
+    };
+    const t = setTimeout(handleHash, 150);
+    window.addEventListener("hashchange", handleHash);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("hashchange", handleHash);
+    };
+  }, []);
+
   return (
     <>
       <PageHeader overline={`Salvage Pulse · ${me?.role === "master" ? "Master" : "Administrator"}`} title="Platform console">
@@ -205,7 +225,7 @@ export default function AdminConsole() {
       </PageHeader>
       <NewYardDialog open={open} onClose={() => setOpen(false)} />
 
-      <Panel testId="admin-orgs-panel">
+      <Panel testId="admin-orgs-panel" id="admin-yards" className="scroll-mt-8">
         <h3 className="text-xl font-bold text-white">Yards ({orgs.data?.length ?? 0})</h3>
         <div className="mt-4 overflow-x-auto">
           <table className="w-full text-sm">
@@ -308,18 +328,29 @@ export default function AdminConsole() {
         </div>
       </Panel>
 
-      <DiscountRevenuePanel />
-      <DemoLoginPanel />
-      <FreeDayPanel />
-      <FunnelPanel />
-      <MessagesPanel />
-      <RemindersPanel isMaster={me?.role === "master"} />
-      <StaffLockdownPanel isMaster={me?.role === "master"} />
-      {me?.role === "master" && <StaffAccountsPanel />}
-      <StaffDevicesPanel isMaster={me?.role === "master"} />
-      <ChangePasswordPanel />
+      <div id="admin-discounts" className="scroll-mt-8">
+        <DiscountRevenuePanel />
+      </div>
 
-      <Panel testId="admin-users-panel" className="mt-6">
+      <div id="admin-growth" className="scroll-mt-8 space-y-6">
+        <DemoLoginPanel />
+        <FreeDayPanel />
+        <FunnelPanel />
+        <RemindersPanel isMaster={me?.role === "master"} />
+      </div>
+
+      <div id="admin-messages" className="scroll-mt-8">
+        <MessagesPanel />
+      </div>
+
+      <div id="admin-security" className="scroll-mt-8 space-y-6">
+        <StaffLockdownPanel isMaster={me?.role === "master"} />
+        {me?.role === "master" && <StaffAccountsPanel />}
+        <StaffDevicesPanel isMaster={me?.role === "master"} />
+        <ChangePasswordPanel />
+      </div>
+
+      <Panel testId="admin-users-panel" id="admin-users" className="mt-6 scroll-mt-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <h3 className="text-xl font-bold text-white">Users</h3>
@@ -469,7 +500,7 @@ export default function AdminConsole() {
         </div>
       </Panel>
 
-      <Panel testId="admin-audit-panel" className="mt-6">
+      <Panel testId="admin-audit-panel" id="admin-activity" className="mt-6 scroll-mt-8">
         <h3 className="text-xl font-bold text-white">Activity log</h3>
         <div className="mt-3 max-h-64 divide-y divide-border overflow-y-auto text-sm">
           {audit.data?.length === 0 && <p className="py-3 text-slate-500">No admin activity yet.</p>}

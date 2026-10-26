@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { DrillProvider } from "@/components/CallsDrill";
 import { NavLink, Navigate, Outlet, useLocation, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -27,6 +27,11 @@ import {
   Truck,
   Palette,
   Settings,
+  History,
+  MessageSquare,
+  Percent,
+  ShieldCheck,
+  TrendingUp,
 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost, errorMessage } from "@/lib/api";
@@ -78,9 +83,19 @@ const repNav = [
   { to: "/settings", label: "Settings", icon: Settings, id: "settings" },
 ];
 
-const NAV: Record<Role, { to: string; label: string; icon: typeof Gauge; id: string }[]> = {
-  master: [{ to: "/admin", label: "Platform Console", icon: Building2, id: "admin" }],
-  admin: [{ to: "/admin", label: "Platform Console", icon: Building2, id: "admin" }],
+const adminNav = [
+  { to: "/admin#admin-yards", hash: "#admin-yards", label: "Yards", icon: Building2, id: "admin-yards" },
+  { to: "/admin#admin-users", hash: "#admin-users", label: "Users", icon: Users, id: "admin-users" },
+  { to: "/admin#admin-discounts", hash: "#admin-discounts", label: "Discounts & Revenue", icon: Percent, id: "admin-discounts" },
+  { to: "/admin#admin-growth", hash: "#admin-growth", label: "Growth & Trials", icon: TrendingUp, id: "admin-growth" },
+  { to: "/admin#admin-messages", hash: "#admin-messages", label: "Support Messages", icon: MessageSquare, id: "admin-messages" },
+  { to: "/admin#admin-security", hash: "#admin-security", label: "Staff & Security", icon: ShieldCheck, id: "admin-security" },
+  { to: "/admin#admin-activity", hash: "#admin-activity", label: "Activity Log", icon: History, id: "admin-activity" },
+];
+
+const NAV: Record<Role, { to: string; label: string; icon: typeof Gauge; id: string; hash?: string }[]> = {
+  master: adminNav,
+  admin: adminNav,
   owner: yardManagerNav,
   sales_manager: yardManagerNav,
   manager: yardManagerNav,
@@ -200,6 +215,52 @@ function ShellLoading() {
 }
 
 function Sidebar({ me, org, isStaff, branding, badges }: { me: User; org?: OrgInfo; isStaff: boolean; branding?: Branding; badges: NavBadges }) {
+  const loc = useLocation();
+  const [activeHash, setActiveHash] = useState(loc.hash || "#admin-yards");
+
+  useEffect(() => {
+    const onHashChange = () => {
+      setActiveHash(window.location.hash || "#admin-yards");
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  useEffect(() => {
+    if (!isStaff || loc.pathname !== "/admin") return;
+    const sections = ["#admin-yards", "#admin-users", "#admin-discounts", "#admin-growth", "#admin-messages", "#admin-security", "#admin-activity"];
+    const onScroll = () => {
+      for (const s of sections) {
+        const el = document.querySelector(s);
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          if (rect.top <= 240 && rect.bottom >= 120) {
+            setActiveHash(s);
+            break;
+          }
+        }
+      }
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [isStaff, loc.pathname]);
+
+  const handleNavClick = (e: React.MouseEvent, n: { to: string; hash?: string }) => {
+    if (n.hash && loc.pathname === "/admin") {
+      e.preventDefault();
+      setActiveHash(n.hash);
+      if (window.location.hash !== n.hash) {
+        window.history.pushState(null, "", n.hash);
+      }
+      const el = document.querySelector(n.hash);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        el.classList.add("ring-2", "ring-amber-500/50");
+        setTimeout(() => el.classList.remove("ring-2", "ring-amber-500/50"), 1200);
+      }
+    }
+  };
+
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
       <div className="flex items-center gap-2.5 px-6 py-6">
@@ -210,23 +271,30 @@ function Sidebar({ me, org, isStaff, branding, badges }: { me: User; org?: OrgIn
         </div>
       </div>
       <nav className="mt-4 flex-1 space-y-1 px-3">
-        {(NAV[me.role] || NAV.rep).map((n) => (
-          <NavLink
-            key={n.to}
-            to={n.to}
-            data-testid={`nav-${n.id}`}
-            className={({ isActive }) =>
-              cn(
-                "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors duration-150",
-                isActive ? "bg-sidebar-accent text-white shadow-[inset_2px_0_0_var(--color-amber-500)]" : "text-slate-400 hover:bg-sidebar-accent/60 hover:text-white",
-              )
-            }
-          >
-            <n.icon className="size-4 transition-transform duration-150 group-hover:scale-110" />
-            {n.label}
-            <NavBadge id={n.id} isRep={me.role === "rep" || me.role === "sales_rep"} badges={badges} />
-          </NavLink>
-        ))}
+        {(NAV[me.role] || NAV.rep).map((n) => {
+          const isAnchor = Boolean(n.hash && isStaff && loc.pathname === "/admin");
+          const active = isAnchor ? activeHash === n.hash : undefined;
+          return (
+            <NavLink
+              key={n.to}
+              to={n.to}
+              data-testid={`nav-${n.id}`}
+              onClick={(e) => handleNavClick(e, n)}
+              className={({ isActive }) =>
+                cn(
+                  "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors duration-150",
+                  (isAnchor ? active : isActive)
+                    ? "bg-sidebar-accent text-white shadow-[inset_2px_0_0_var(--color-amber-500)]"
+                    : "text-slate-400 hover:bg-sidebar-accent/60 hover:text-white",
+                )
+              }
+            >
+              <n.icon className="size-4 transition-transform duration-150 group-hover:scale-110" />
+              {n.label}
+              <NavBadge id={n.id} isRep={me.role === "rep" || me.role === "sales_rep"} badges={badges} />
+            </NavLink>
+          );
+        })}
       </nav>
       <UserCard me={me} />
     </aside>
@@ -284,6 +352,8 @@ function UserCard({ me }: { me: User }) {
 }
 
 function MobileBar({ me, branding }: { me: User; branding?: Branding }) {
+  const loc = useLocation();
+  const isStaff = me.role === "master" || me.role === "admin";
   return (
     <header className="sticky top-0 z-30 flex items-center gap-3 overflow-x-auto border-b border-border bg-sidebar/95 px-4 py-3 backdrop-blur lg:hidden">
       <BrandLogo branding={branding} className="h-7 w-auto shrink-0" testId="mobile-brand-logo" />
@@ -292,6 +362,18 @@ function MobileBar({ me, branding }: { me: User; branding?: Branding }) {
           key={n.to}
           to={n.to}
           data-testid={`mobile-nav-${n.id}`}
+          onClick={(e) => {
+            if (n.hash && isStaff && loc.pathname === "/admin") {
+              e.preventDefault();
+              window.history.pushState(null, "", n.hash);
+              const el = document.querySelector(n.hash);
+              if (el) {
+                el.scrollIntoView({ behavior: "smooth", block: "start" });
+                el.classList.add("ring-2", "ring-amber-500/50");
+                setTimeout(() => el.classList.remove("ring-2", "ring-amber-500/50"), 1200);
+              }
+            }
+          }}
           className={({ isActive }) => cn("whitespace-nowrap text-sm", isActive ? "text-amber-400" : "text-slate-400")}
         >
           {n.label}
