@@ -22,6 +22,9 @@ os.makedirs(DATA_DIR, exist_ok=True)
 SEED_PATH = os.path.join(BACKEND_DIR, "preview_seed.json")
 STATE_PATH = os.path.join(DATA_DIR, "preview_state.json")
 
+INITIAL_MASTER_EMAIL = os.environ.get("INITIAL_MASTER_EMAIL", "brettk@salvagepulsepro.com").strip().lower()
+INITIAL_MASTER_NAME = os.environ.get("INITIAL_MASTER_NAME", "Brett K").strip()
+
 
 _LOCK = threading.RLock()
 _STATE: dict[str, Any] | None = None
@@ -164,284 +167,76 @@ def synthesize_call_details(call_summary: dict[str, Any], full_existing: dict[st
 
 
 def _build_initial_state() -> dict[str, Any]:
-    with open(SEED_PATH, "r", encoding="utf-8") as fh:
-        seed = json.load(fh)
+    seed: dict[str, Any] = {}
+    if os.path.exists(SEED_PATH):
+        try:
+            with open(SEED_PATH, "r", encoding="utf-8") as fh:
+                seed = json.load(fh)
+        except Exception:
+            seed = {}
 
-    manager_user = seed["_me"]
-    org_id = manager_user["org_id"]
-    reps: list[dict[str, Any]] = seed.get("/users/reps?include_disabled=true") or seed.get("/users/reps") or []
-    managers: list[dict[str, Any]] = seed.get("/sites/managers") or [manager_user]
-
-    # Build users map (all managers + reps + platform master admin)
-    users_by_id: dict[str, dict[str, Any]] = {}
-    for u in managers + reps:
-        users_by_id[u["id"]] = dict(u)
-    if manager_user["id"] not in users_by_id:
-        users_by_id[manager_user["id"]] = dict(manager_user)
-
-    # Primary yard Owner & Managers
-    users_by_id[manager_user["id"]]["role"] = "owner"
-    users_by_id[manager_user["id"]]["title"] = "Owner & General Manager"
-
-    users_by_id["user-marcus-reed"] = {
-        "id": "user-marcus-reed",
-        "email": "marcus@salvagepulse.com",
-        "name": "Marcus Reed",
-        "role": "sales_manager",
-        "title": "Sales Manager",
-        "avatar_url": "",
-        "org_id": org_id,
-        "impersonated_by": "",
-        "disabled": False,
-        "site_id": "",
-        "must_change_password": False,
-    }
-    users_by_id["user-rick-martinez"] = {
-        "id": "user-rick-martinez",
-        "email": "rick@salvagepulse.com",
-        "name": "Rick Martinez",
-        "role": "inventory_manager",
-        "title": "Inventory Manager",
-        "avatar_url": "",
-        "org_id": org_id,
-        "impersonated_by": "",
-        "disabled": False,
-        "site_id": "",
-        "must_change_password": False,
-    }
-
-    # Ensure dedicated master account
     master_user = {
-        "id": "master-ben-keech",
-        "email": "benkeech800@gmail.com",
-        "name": "Ben Keech",
+        "id": "master-brettk",
+        "email": INITIAL_MASTER_EMAIL,
+        "name": INITIAL_MASTER_NAME,
         "role": "master",
         "title": "Founder & Master Admin",
         "avatar_url": "",
-        "org_id": org_id,
-        "impersonated_by": "",
-        "disabled": False,
-        "site_id": "",
-        "must_change_password": False,
-    }
-    users_by_id[master_user["id"]] = master_user
-
-    # Sample yards & users with 4 distinct roles per yard:
-    # 1. Owner
-    # 2. Sales Manager
-    # 3. Inventory Manager
-    # 4. Sales Representative
-    org_northside_id = "org-northside-salvage"
-    org_apex_id = "org-apex-trucks"
-
-    users_by_id["user-dave-miller"] = {
-        "id": "user-dave-miller",
-        "email": "dave@northsideauto.com",
-        "name": "Dave Miller",
-        "role": "owner",
-        "title": "Yard Owner",
-        "avatar_url": "",
-        "org_id": org_northside_id,
-        "impersonated_by": "",
-        "disabled": False,
-        "site_id": "",
-        "must_change_password": False,
-    }
-    users_by_id["user-sarah-jenkins"] = {
-        "id": "user-sarah-jenkins",
-        "email": "sarah@northsideauto.com",
-        "name": "Sarah Jenkins",
-        "role": "sales_manager",
-        "title": "Sales Manager",
-        "avatar_url": "",
-        "org_id": org_northside_id,
-        "impersonated_by": "",
-        "disabled": False,
-        "site_id": "",
-        "must_change_password": False,
-    }
-    users_by_id["user-carlos-gomez"] = {
-        "id": "user-carlos-gomez",
-        "email": "carlos@northsideauto.com",
-        "name": "Carlos Gomez",
-        "role": "inventory_manager",
-        "title": "Inventory Manager",
-        "avatar_url": "",
-        "org_id": org_northside_id,
-        "impersonated_by": "",
-        "disabled": False,
-        "site_id": "",
-        "must_change_password": False,
-    }
-    users_by_id["user-leo-vance"] = {
-        "id": "user-leo-vance",
-        "email": "leo@northsideauto.com",
-        "name": "Leo Vance",
-        "role": "rep",
-        "title": "Sales Representative",
-        "avatar_url": "",
-        "org_id": org_northside_id,
+        "org_id": "",
         "impersonated_by": "",
         "disabled": False,
         "site_id": "",
         "must_change_password": False,
     }
 
-    users_by_id["user-tom-bradley"] = {
-        "id": "user-tom-bradley",
-        "email": "tom@apextruckparts.com",
-        "name": "Tom Bradley",
-        "role": "owner",
-        "title": "Yard Owner",
-        "avatar_url": "",
-        "org_id": org_apex_id,
-        "impersonated_by": "",
-        "disabled": False,
-        "site_id": "",
-        "must_change_password": False,
-    }
-    users_by_id["user-bill-cooper"] = {
-        "id": "user-bill-cooper",
-        "email": "bill@apextruckparts.com",
-        "name": "Bill Cooper",
-        "role": "sales_manager",
-        "title": "Sales Manager",
-        "avatar_url": "",
-        "org_id": org_apex_id,
-        "impersonated_by": "",
-        "disabled": False,
-        "site_id": "",
-        "must_change_password": False,
-    }
-    users_by_id["user-sam-rivera"] = {
-        "id": "user-sam-rivera",
-        "email": "sam@apextruckparts.com",
-        "name": "Sam Rivera",
-        "role": "inventory_manager",
-        "title": "Inventory Manager",
-        "avatar_url": "",
-        "org_id": org_apex_id,
-        "impersonated_by": "",
-        "disabled": False,
-        "site_id": "",
-        "must_change_password": False,
-    }
-    users_by_id["user-jake-evans"] = {
-        "id": "user-jake-evans",
-        "email": "jake@apextruckparts.com",
-        "name": "Jake Evans",
-        "role": "rep",
-        "title": "Sales Representative",
-        "avatar_url": "",
-        "org_id": org_apex_id,
-        "impersonated_by": "",
-        "disabled": False,
-        "site_id": "",
-        "must_change_password": False,
-    }
-
-    calls: list[dict[str, Any]] = seed.get("/calls", [])
-    full_calls: dict[str, dict[str, Any]] = seed.get("_full_calls", {})
-
-    # Enrich the first 15 calls so there are also "analyzed" audio/transcript calls with high visibility
-    for idx, c in enumerate(calls[:15]):
-        cid = c["id"]
-        full_calls[cid] = synthesize_call_details(c, full_calls.get(cid))
-
-    org_info = seed.get("/org/me", {})
-    admin_org_default = {
-        "id": org_id,
-        "name": org_info.get("name", "Salvage Pulse Pro"),
-        "plan": org_info.get("plan", "enterprise"),
-        "status": org_info.get("status", "active"),
-        "trial_ends_at": org_info.get("trial_ends_at"),
-        "created_at": "2026-06-01T12:00:00Z",
-        "users": len([u for u in users_by_id.values() if u.get("org_id") == org_id]),
-        "calls": len(calls),
-        "ringcentral_connected": True,
-        "card_on_file": True,
-        "blocked": False,
-        "cancel_reason": "",
-        "discount": None,
-        "sites": 0,
-        "max_sites": org_info.get("max_sites", 2),
-        "extra_sites": org_info.get("extra_sites", 0),
-    }
-    admin_org_northside = {
-        "id": org_northside_id,
-        "name": "Northside Auto Salvage",
-        "plan": "pro",
-        "status": "active",
-        "trial_ends_at": None,
-        "created_at": "2026-07-15T10:00:00Z",
-        "users": len([u for u in users_by_id.values() if u.get("org_id") == org_northside_id]),
-        "calls": 420,
-        "ringcentral_connected": True,
-        "card_on_file": True,
-        "blocked": False,
-        "cancel_reason": "",
-        "discount": None,
-        "sites": 1,
-        "max_sites": 1,
-        "extra_sites": 0,
-    }
-    admin_org_apex = {
-        "id": org_apex_id,
-        "name": "Apex Truck & Auto Parts",
-        "plan": "starter",
-        "status": "trialing",
-        "trial_ends_at": "2026-11-01T23:59:59Z",
-        "created_at": "2026-10-18T14:30:00Z",
-        "users": len([u for u in users_by_id.values() if u.get("org_id") == org_apex_id]),
-        "calls": 115,
-        "ringcentral_connected": False,
-        "card_on_file": False,
-        "blocked": False,
-        "cancel_reason": "",
-        "discount": None,
-        "sites": 1,
-        "max_sites": 1,
-        "extra_sites": 0,
+    users_by_id: dict[str, dict[str, Any]] = {
+        master_user["id"]: master_user,
     }
 
     state: dict[str, Any] = {
         "seed": seed,
-        "current_user_id": manager_user["id"],
+        "current_user_id": None,
         "sessions": {},
         "users_by_id": users_by_id,
-        "org": org_info,
-        "branding": seed.get("/branding", {
-            "yard_name": "Salvage Pulse Pro",
+        "org": {
+            "id": "",
+            "name": "Salvage Pulse",
+            "plan": "enterprise",
+            "status": "active",
+            "access": True,
+        },
+        "branding": {
+            "yard_name": "Salvage Pulse",
             "accent": "",
             "default_mode": "dark",
             "logo_url": "",
             "user_mode": "dark",
             "mode": "dark",
-        }),
-        "calls": calls,
-        "full_calls": full_calls,
-        "full_customers": seed.get("_full_customers", {}),
+        },
+        "calls": [],
+        "full_calls": {},
+        "full_customers": {},
         "customer_notes": {},
         "customer_tags": {},
-        "arrivals": seed.get("/arrivals", []),
-        "callbacks_open": seed.get("/callbacks?status=open", []),
-        "callbacks_resolved": seed.get("/callbacks?status=resolved", []),
-        "callback_lists": seed.get("/callback-lists", []),
-        "keywords": seed.get("/keywords", []),
-        "keyword_suggestions": seed.get("/keywords/suggestions", []),
-        "watchlist": seed.get("/watchlist", []),
-        "watchlist_email": seed.get("/watchlist/email", {"enabled": True, "recipient_email": "", "last_sent_at": None}),
-        "roleplay_scenarios": seed.get("/roleplay/scenarios", []),
-        "roleplay_sessions": seed.get("/roleplay/sessions", []),
-        "roleplay_assignments": seed.get("/roleplay/assignments", []),
-        "roleplay_scoreboard": seed.get("/roleplay/scoreboard", {"scenarios": [], "rows": []}),
-        "sites_data": seed.get("/sites", {"sites": [], "limit": 2, "plan_name": "Enterprise", "my_site_id": ""}),
-        "settings_business": seed.get("/settings/business", {"avg_order_value": None, "yard_name": None}),
-        "settings_coverage": seed.get("/settings/coverage", {"max_away": 2, "warn_days_ahead": 3}),
-        "settings_delivery_tips": seed.get("/settings/delivery-tips", {"date_given": "", "address_confirmed": "", "thanked": ""}),
-        "settings_digest": seed.get("/settings/digest", {"recipient_email": "", "enabled": False}),
-        "settings_monthly_report": seed.get("/settings/monthly-report", {"enabled": True, "user_ids": None, "extra_emails": [], "people": []}),
-        "me_mobile": seed.get("/me/mobile", {
+        "arrivals": [],
+        "callbacks_open": [],
+        "callbacks_resolved": [],
+        "callback_lists": [],
+        "keywords": [],
+        "keyword_suggestions": [],
+        "watchlist": [],
+        "watchlist_email": {"enabled": True, "recipient_email": "", "last_sent_at": None},
+        "roleplay_scenarios": [],
+        "roleplay_sessions": [],
+        "roleplay_assignments": [],
+        "roleplay_scoreboard": {"scenarios": [], "rows": []},
+        "sites_data": {"sites": [], "limit": 2, "plan_name": "Enterprise", "my_site_id": ""},
+        "settings_business": {"avg_order_value": None, "yard_name": None},
+        "settings_coverage": {"max_away": 2, "warn_days_ahead": 3},
+        "settings_delivery_tips": {"date_given": "", "address_confirmed": "", "thanked": ""},
+        "settings_digest": {"recipient_email": "", "enabled": False},
+        "settings_monthly_report": {"enabled": True, "user_ids": None, "extra_emails": [], "people": []},
+        "me_mobile": {
             "mobile": "",
             "days_off": [],
             "vacation_start": None,
@@ -449,10 +244,10 @@ def _build_initial_state() -> dict[str, Any]:
             "shift_start": "",
             "shift_end": "",
             "held": 0,
-        }),
-        "devices": seed.get("/auth/devices", []),
-        "connect_status": seed.get("/connect/status", {
-            "webhook_url": "https://recycler-call-scorer.preview.emergentagent.com/api/connect/webhook/jA9v51FOjGic1dNsqLoP0zzSE9Dd-8l-",
+        },
+        "devices": [],
+        "connect_status": {
+            "webhook_url": "",
             "ringcentral": {
                 "configured": False,
                 "connected": False,
@@ -460,44 +255,43 @@ def _build_initial_state() -> dict[str, Any]:
                 "last_sync_at": None,
                 "last_result": "",
             },
-        }),
-        "sms_status": seed.get("/sms/status", {
+        },
+        "sms_status": {
             "live": False,
-            "from_number": "…3742",
-            "problem": "The 'text from' number isn't a phone number on your Twilio account — buy or port a number in Twilio, then update it.",
-        }),
+            "from_number": "",
+            "problem": "",
+        },
         "layouts": {
-            "dashboard": seed.get("/layouts/dashboard", {"page": "dashboard", "order": [], "source": "default"}),
-            "performance": seed.get("/layouts/performance", {"page": "performance", "order": [], "source": "default"}),
+            "dashboard": {"page": "dashboard", "order": [], "source": "default"},
+            "performance": {"page": "performance", "order": [], "source": "default"},
             "reports": {"page": "reports", "order": [], "source": "default"},
         },
         "custom_layouts": {},
-        "time_off": seed.get("/time-off?month=2026-04", []),
-        "cover_requests": seed.get("/cover-requests", []),
-        "contact_messages": seed.get("/contact/mine", []),
-        "cleanup_batches": seed.get("/call-cleanup/batches", []),
-        "cleanup_trash": seed.get("/call-cleanup/trash", []),
-        "recent_uploads": seed.get("/calls/uploads/recent", []),
-        "rep_login_log": seed.get("/users/reps/login-log", []),
+        "time_off": [],
+        "cover_requests": [],
+        "contact_messages": [],
+        "cleanup_batches": [],
+        "cleanup_trash": [],
+        "recent_uploads": [],
+        "rep_login_log": [],
         "demo_login_switch": {
-            "enabled": True,
-            "changed_by": "Ben Keech",
-            "changed_at": "2026-10-01T12:00:00Z",
+            "enabled": False,
+            "changed_by": master_user["name"],
+            "changed_at": now_iso(),
         },
-        "admin_orgs": [admin_org_default, admin_org_northside, admin_org_apex],
+        "admin_orgs": [],
         "admin_audit": [
-            {"at": "2026-10-24T15:30:00Z", "actor": "Linda Carter", "action": "synced RingCentral call log", "target": "Salvage Pulse Pro"},
-            {"at": "2026-10-22T10:15:00Z", "actor": "Ben Keech", "action": "enabled Enterprise plan", "target": "Salvage Pulse Pro"},
+            {"at": now_iso(), "actor": master_user["name"], "action": "initialized fresh platform instance", "target": "Platform Console"},
         ],
         "admin_staff": [
             {
-                "id": "master-ben-keech",
-                "email": "benkeech800@gmail.com",
-                "name": "Ben Keech",
+                "id": master_user["id"],
+                "email": master_user["email"],
+                "name": master_user["name"],
                 "role": "master",
                 "disabled": False,
                 "must_change_password": False,
-                "created_at": "2026-05-01T00:00:00Z",
+                "created_at": now_iso(),
                 "you": True,
                 "google_linked": True,
                 "email_bounced_at": None,
@@ -507,7 +301,7 @@ def _build_initial_state() -> dict[str, Any]:
         "staff_lockdown": {
             "enabled": False,
             "you_signed_in_with_google": True,
-            "staff_domain": "salvagepulse.com",
+            "staff_domain": master_user["email"].split("@")[-1] if "@" in master_user["email"] else "salvagepulsepro.com",
             "google_linked": 1,
             "staff_total": 1,
         },
@@ -523,48 +317,14 @@ def _migrate_roles(st: dict[str, Any]) -> dict[str, Any]:
     users = st.get("users_by_id", {})
     for uid, u in users.items():
         if u.get("role") == "manager":
-            if u.get("name") in ("Linda Carter", "Dave Miller", "Tom Bradley") or "Owner" in u.get("title", ""):
+            if "Owner" in u.get("title", ""):
                 u["role"] = "owner"
-                u["title"] = "Owner & General Manager" if u.get("name") == "Linda Carter" else (u.get("title") or "Yard Owner")
-            elif u.get("name") in ("Sarah Jenkins", "Bill Cooper", "Ray Dawson") or "Sales" in u.get("title", ""):
+            elif "Sales" in u.get("title", ""):
                 u["role"] = "sales_manager"
-                u["title"] = "Sales Manager"
-            elif u.get("name") in ("Carlos Gomez", "Sam Rivera") or "Inventory" in u.get("title", ""):
+            elif "Inventory" in u.get("title", ""):
                 u["role"] = "inventory_manager"
-                u["title"] = "Inventory Manager"
             else:
                 u["role"] = "sales_manager"
-                u["title"] = "Sales Manager"
-
-    org_id = st.get("org", {}).get("id") or (st.get("seed", {}).get("_me", {}).get("org_id"))
-    if "user-marcus-reed" not in users and org_id:
-        users["user-marcus-reed"] = {
-            "id": "user-marcus-reed",
-            "email": "marcus@salvagepulse.com",
-            "name": "Marcus Reed",
-            "role": "sales_manager",
-            "title": "Sales Manager",
-            "avatar_url": "",
-            "org_id": org_id,
-            "impersonated_by": "",
-            "disabled": False,
-            "site_id": "",
-            "must_change_password": False,
-        }
-    if "user-rick-martinez" not in users and org_id:
-        users["user-rick-martinez"] = {
-            "id": "user-rick-martinez",
-            "email": "rick@salvagepulse.com",
-            "name": "Rick Martinez",
-            "role": "inventory_manager",
-            "title": "Inventory Manager",
-            "avatar_url": "",
-            "org_id": org_id,
-            "impersonated_by": "",
-            "disabled": False,
-            "site_id": "",
-            "must_change_password": False,
-        }
     return st
 
 

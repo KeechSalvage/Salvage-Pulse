@@ -237,6 +237,13 @@ export default function AdminConsole() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
+              {orgs.data?.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="py-8 text-center text-sm text-slate-400">
+                    No yards registered yet. Click <span className="font-semibold text-amber-300">&ldquo;+ Add Yard&rdquo;</span> above to create your first yard.
+                  </td>
+                </tr>
+              )}
               {orgs.data?.map((o, i) => {
                 const isOrgDisabled = Boolean(o.blocked || o.status === "canceled");
                 return (
@@ -433,6 +440,13 @@ export default function AdminConsole() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
+              {sortedUsers.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="py-8 text-center text-sm text-slate-400">
+                    No users found.
+                  </td>
+                </tr>
+              )}
               {sortedUsers.map((u, i) => {
                 const staff = u.role === "master" || u.role === "admin";
                 return (

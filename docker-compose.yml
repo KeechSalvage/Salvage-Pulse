@@ -10,6 +10,9 @@ services:
       - "8000:8000"
     environment:
       - PORT=8000
+      - DATA_DIR=/app/backend/data
+      - INITIAL_MASTER_EMAIL=brettk@salvagepulsepro.com
+      - INITIAL_MASTER_NAME=Brett K
     volumes:
       # Persist dynamic state & uploads across container restarts
       - app-data:/app/backend/data

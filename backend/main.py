@@ -51,8 +51,17 @@ def get_current_user(request: Request) -> dict[str, Any]:
     if uid and uid in st.get("users_by_id", {}):
         return st["users_by_id"][uid]
 
-    manager = st.get("seed", {}).get("_me", {})
-    return manager
+    masters = [u for u in st.get("users_by_id", {}).values() if u.get("role") == "master" and not u.get("disabled")]
+    if masters:
+        return masters[0]
+    if st.get("users_by_id"):
+        return list(st["users_by_id"].values())[0]
+    return {
+        "id": "master-brettk",
+        "email": "brettk@salvagepulsepro.com",
+        "name": "Brett K",
+        "role": "master",
+    }
 
 
 def set_session_cookie(response: Response, user_id: str) -> str:
@@ -87,13 +96,25 @@ def health() -> dict[str, Any]:
 # ==========================================
 @app.get("/api/auth/me")
 def auth_me(request: Request) -> dict[str, Any]:
-    return get_current_user(request)
+    st = store.get_state()
+    cookie_token = request.cookies.get("sp_session")
+    if cookie_token and cookie_token in st.get("sessions", {}):
+        uid = st["sessions"][cookie_token]
+        if uid in st.get("users_by_id", {}):
+            return st["users_by_id"][uid]
+
+    uid = st.get("current_user_id")
+    if uid and uid in st.get("users_by_id", {}):
+        return st["users_by_id"][uid]
+
+    # Return 401 if unauthenticated so frontend sends visitor to /login
+    raise HTTPException(status_code=401, detail="Not authenticated")
 
 
 @app.get("/api/auth/demo-login")
 def auth_demo_login_status() -> dict[str, Any]:
     st = store.get_state()
-    return st.get("demo_login_switch", {"enabled": True})
+    return st.get("demo_login_switch", {"enabled": False})
 
 
 class DemoLoginReq(BaseModel):
@@ -107,27 +128,27 @@ def auth_demo_login(req: DemoLoginReq, response: Response) -> dict[str, Any]:
 
     if target_role == "master":
         masters = [u for u in st["users_by_id"].values() if u.get("role") == "master" and not u.get("disabled")]
-        user = masters[0] if masters else st["seed"]["_me"]
+        user = masters[0] if masters else list(st["users_by_id"].values())[0]
     elif target_role == "admin":
         admins = [u for u in st["users_by_id"].values() if u.get("role") in ("admin", "master") and not u.get("disabled")]
-        user = admins[0] if admins else st["seed"]["_me"]
+        user = admins[0] if admins else list(st["users_by_id"].values())[0]
     elif target_role in ("rep", "sales_rep"):
         reps = [u for u in st["users_by_id"].values() if u.get("role") in ("rep", "sales_rep") and not u.get("disabled")]
-        user = reps[0] if reps else st["seed"]["_me"]
+        user = reps[0] if reps else list(st["users_by_id"].values())[0]
     elif target_role == "owner":
         owners = [u for u in st["users_by_id"].values() if u.get("role") == "owner" and not u.get("disabled")]
-        user = owners[0] if owners else st["seed"]["_me"]
+        user = owners[0] if owners else list(st["users_by_id"].values())[0]
     elif target_role in ("sales_manager", "sales"):
         sms = [u for u in st["users_by_id"].values() if u.get("role") == "sales_manager" and not u.get("disabled")]
         if not sms:
             sms = [u for u in st["users_by_id"].values() if u.get("role") == "manager" and not u.get("disabled")]
-        user = sms[0] if sms else st["seed"]["_me"]
+        user = sms[0] if sms else list(st["users_by_id"].values())[0]
     elif target_role in ("inventory_manager", "inventory"):
         ims = [u for u in st["users_by_id"].values() if u.get("role") == "inventory_manager" and not u.get("disabled")]
-        user = ims[0] if ims else st["seed"]["_me"]
+        user = ims[0] if ims else list(st["users_by_id"].values())[0]
     else:
         managers = [u for u in st["users_by_id"].values() if u.get("role") in ("owner", "sales_manager", "inventory_manager", "manager", "master", "admin") and not u.get("disabled")]
-        user = managers[0] if managers else st["seed"]["_me"]
+        user = managers[0] if managers else list(st["users_by_id"].values())[0]
 
     set_session_cookie(response, user["id"])
     return user
@@ -150,8 +171,8 @@ def auth_login(req: LoginReq, response: Response) -> dict[str, Any]:
             break
 
     if not match:
-        # Match demo roles by keyword in email
-        if "master" in email_clean:
+        # Match master/admin keywords or demo roles
+        if "master" in email_clean or "brettk" in email_clean:
             match = next((u for u in st["users_by_id"].values() if u.get("role") == "master" and not u.get("disabled")), None)
         elif "admin" in email_clean:
             match = next((u for u in st["users_by_id"].values() if u.get("role") in ("admin", "master") and not u.get("disabled")), None)
@@ -164,8 +185,9 @@ def auth_login(req: LoginReq, response: Response) -> dict[str, Any]:
         else:
             reps = [u for u in st["users_by_id"].values() if u.get("role") in ("rep", "sales_rep") and not u.get("disabled")]
             match = reps[0] if reps else None
-        if not match:
-            match = st["seed"]["_me"]
+
+    if not match:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
     if match and match.get("disabled"):
         raise HTTPException(status_code=403, detail="Account is disabled. Please contact your administrator.")
@@ -590,7 +612,7 @@ def get_users_reps(include_disabled: bool = Query(False)) -> list[dict[str, Any]
 def create_rep(body: dict[str, Any]) -> dict[str, Any]:
     st = store.get_state()
     new_id = str(uuid.uuid4())
-    org_id = st["seed"]["_me"]["org_id"]
+    org_id = body.get("org_id") or st.get("org", {}).get("id") or ""
     role = body.get("role") or "rep"
     role_titles = {
         "owner": "Yard Owner",
@@ -2715,7 +2737,7 @@ def admin_get_users(org_id: Optional[str] = Query(None), q: Optional[str] = Quer
     st = store.get_state()
     out = []
     org_map = {o["id"]: o.get("name", "Yard") for o in st.get("admin_orgs", [])}
-    default_org_name = st.get("org", {}).get("name", "Salvage Pulse Pro")
+    default_org_name = st.get("org", {}).get("name", "Salvage Pulse")
 
     for u in st["users_by_id"].values():
         u_org_id = u.get("org_id", "")
@@ -2732,7 +2754,7 @@ def admin_get_users(org_id: Optional[str] = Query(None), q: Optional[str] = Quer
             "role": u.get("role", "rep"),
             "title": u.get("title", ""),
             "org_id": u_org_id,
-            "org_name": org_map.get(u_org_id, default_org_name),
+            "org_name": org_map.get(u_org_id, "Platform") if not u_org_id else org_map.get(u_org_id, default_org_name),
             "disabled": u.get("disabled", False),
         })
     return out

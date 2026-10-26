@@ -22,12 +22,16 @@ WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PORT=8000
+    PORT=8000 \
+    DATA_DIR=/app/backend/data \
+    INITIAL_MASTER_EMAIL=brettk@salvagepulsepro.com \
+    INITIAL_MASTER_NAME="Brett K"
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /app/backend/data
 
 # Install python requirements
 COPY backend/requirements.txt ./backend/requirements.txt

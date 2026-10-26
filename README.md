@@ -1,56 +1,68 @@
 # Salvage Pulse AI — Auto Recycler Call Intelligence & CRM
 
-Full-stack recreation of `recycler-call-scorer.preview.emergentagent.com` featuring:
+Full-stack application featuring:
 - **Frontend**: React 19 + TypeScript + Vite + Tailwind v4 + `@base-ui/react` + `@dnd-kit` draggable dashboard
-- **Backend**: FastAPI with 239 routes, full drill-down search, real audio playback generation, AI roleplay streaming, shift calendar, truck arrivals, multi-lot sites, and admin console
-- **Data**: Pre-seeded with 979 calls, 459 customer accounts, 5 sales reps, vehicle demand models, keywords, and leaderboards
+- **Backend**: FastAPI with full drill-down search, real audio playback generation, AI roleplay streaming, shift calendar, truck arrivals, multi-lot sites, and admin console
+- **Architecture**: Self-contained single-container Docker deployment (SPA + API served from port `8000`)
+- **Initial Master Admin**: `brettk@salvagepulsepro.com` (Brett K)
 
 ---
 
-## 🚀 Docker Deployment (Recommended)
+## 🚀 Docker Deployment
 
 The app is packaged as a lightweight, self-contained multi-stage Docker container that builds the React frontend and serves both the SPA and FastAPI backend from a single port (`8000`).
 
-### Quick Start with Docker Compose
+### Method 1: Local Docker Compose (Cloned Repository)
+
+Clone the repository and run:
 
 ```bash
 docker compose up -d --build
 ```
-Once started, visit: **[http://localhost:8000](http://localhost:8000)**
+
+Once started, open your browser to: **[http://localhost:8000](http://localhost:8000)** (or `http://YOUR_SERVER_IP:8000`).
+
+- Sign in as Master: `brettk@salvagepulsepro.com` (any password in demo/dev mode)
+- Access the **Platform Console** at `/admin` to add yards, configure plans, and manage users.
 
 To stop the container:
 ```bash
 docker compose down
 ```
 
-### Standalone Docker Commands
+---
 
-1. **Build the image**:
+### Method 2: ZimaOS / CasaOS 1-Click Deployment
+
+If you are using **ZimaOS** or **CasaOS** at home:
+
+1. **Option A (Terminal / SSH into ZimaOS)**:
    ```bash
-   docker build -t salvage-pulse-ai .
+   git clone https://github.com/Keechb/Salvage-Pulse.git
+   cd Salvage-Pulse
+   docker compose up -d --build
    ```
 
-2. **Run the container**:
-   ```bash
-   docker run -d -p 8000:8000 --name salvage-pulse-app salvage-pulse-ai
-   ```
+2. **Option B (ZimaOS Web GUI "Install Custom App")**:
+   - In ZimaOS App Store, click **Install Custom App** -> **Import**.
+   - Copy and paste the contents of `docker-compose.zimaos.yml`.
+   - Click **Install**.
 
-3. **Check status and logs**:
-   ```bash
-   docker ps
-   docker logs -f salvage-pulse-app
-   ```
+---
 
-4. **Stop the container**:
-   ```bash
-   docker stop salvage-pulse-app && docker rm salvage-pulse-app
-   ```
+## 🔑 Initial Master Admin Account
+
+- **Master Email**: `brettk@salvagepulsepro.com`
+- **Name**: Brett K
+- **Role**: `master` (Platform Staff & Console Access)
+- **Password**: Any password on first startup (can be changed in `/settings`)
+- **Direct Login**: You can enter `brettk@salvagepulsepro.com` or simply `brettk` / `master` in the email input.
 
 ---
 
 ## 💻 Local Development (Without Docker)
 
-You can also run backend and frontend separately in development mode:
+You can run backend and frontend separately in development mode:
 
 ```bash
 chmod +x start.sh
@@ -59,19 +71,3 @@ chmod +x start.sh
 
 - **Frontend Dev Server**: `http://127.0.0.1:5173` (with Vite HMR and automatic `/api` proxy)
 - **Backend API Server**: `http://127.0.0.1:8000`
-
----
-
-## 🔑 Demo Accounts & One-Click Sign In
-
-On the sign-in page at `/login`:
-- **One-Tap Manager**: Click the **Manager** button to sign in as **Linda Carter** (`benkeech800+manager@gmail.com`)
-- **One-Tap Sales Rep**: Click the **Sales Rep** button to sign in as **Tyler Grant** (`benkeech800+tyler@gmail.com`)
-
-Or enter any of the following accounts with any password:
-- **Master Admin**: `benkeech800@gmail.com` (Ben Keech, access to `/admin` Console)
-- **Sales Manager**: `benkeech800+manager@gmail.com` (Linda Carter)
-- **Sales Rep**: `benkeech800+tyler@gmail.com` (Tyler Grant)
-- **Sales Rep**: `benkeech800+dana@gmail.com` (Dana Ortiz)
-- **Sales Rep**: `benkeech800+jess@gmail.com` (Jess Moreno)
-- **Sales Rep**: `benkeech800+marcus@gmail.com` (Marcus Bell)

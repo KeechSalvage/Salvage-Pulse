@@ -1,0 +1,30 @@
+# ==========================================================
+# Salvage Pulse AI - ZimaOS / CasaOS 1-Click Compose
+# Designed for the ZimaOS / CasaOS "Install Custom App" UI
+# Pulls prebuilt container image directly from GitHub Container Registry
+# ==========================================================
+name: salvage-pulse
+services:
+  salvage-pulse:
+    image: ghcr.io/keechb/salvage-pulse:latest
+    container_name: salvage-pulse-app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - DATA_DIR=/app/backend/data
+      - INITIAL_MASTER_EMAIL=brettk@salvagepulsepro.com
+      - INITIAL_MASTER_NAME=Brett K
+    volumes:
+      # Persistent storage on your server
+      - salvage-pulse-data:/app/backend/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  salvage-pulse-data:

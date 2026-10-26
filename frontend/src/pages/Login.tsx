@@ -264,7 +264,7 @@ export default function Login() {
                       <ShieldCheck className="size-4 text-purple-400 shrink-0" />
                       <div>
                         <p className="font-medium text-white leading-tight">Master Admin</p>
-                        <p className="text-[10px] text-purple-300/80">Ben Keech · Platform Console</p>
+                        <p className="text-[10px] text-purple-300/80">Brett K · Platform Console</p>
                       </div>
                     </div>
                     <span className="rounded bg-purple-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-purple-300">
