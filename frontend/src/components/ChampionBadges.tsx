@@ -47,7 +47,7 @@ export default function ChampionBadges({ repId, className, testId = "champion-ba
         <Trophy className="size-3" /> {total}
       </span>
       {[...counts.entries()].map(([k, n]) => {
-        const m = CAT[k];
+        const m = CAT[k] ?? { label: k.replace("_", " "), icon: Trophy, cls: "border-amber-500/40 text-amber-300" };
         const Icon = m.icon;
         return (
           <span key={k} data-testid={`${testId}-${k}`} title={`${n}× ${m.label} champion`} className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]", m.cls)}>

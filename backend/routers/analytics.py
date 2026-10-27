@@ -1108,19 +1108,27 @@ def get_leaderboards_champions(request: Request) -> dict[str, Any]:
                     "site_ids": [],
                 },
                 {
-                    "category": "warranty",
+                    "category": "winback_dollars",
                     "period": "2026-10",
                     "names": ["Tyler Grant"],
                     "rep_ids": ["user-keech-rep"],
-                    "detail": "80.0% warranty pitch rate",
+                    "detail": "$8,450 recovered · 10 customers won back",
                     "site_ids": [],
                 },
                 {
-                    "category": "conversion",
+                    "category": "delivery_score",
+                    "period": "2026-10",
+                    "names": ["Cody Miller"],
+                    "rep_ids": ["user-keech-rep-2"],
+                    "detail": "79.0 avg delivery score · 8 checked calls",
+                    "site_ids": [],
+                },
+                {
+                    "category": "callback_lists",
                     "period": "2026-10",
                     "names": ["Tyler Grant"],
                     "rep_ids": ["user-keech-rep"],
-                    "detail": "Top close rate across all units",
+                    "detail": "12 callback lists closed",
                     "site_ids": [],
                 },
             ],
@@ -1159,10 +1167,10 @@ def get_leaderboards_team_player(request: Request) -> dict[str, Any]:
         return {
             "month": "2026-10",
             "reps": [
-                {"rep_id": "user-keech-rep", "rep_name": "Tyler Grant", "handled": 12, "all_time": 4, "score": 92},
-                {"rep_id": "user-keech-rep-2", "rep_name": "Cody Miller", "handled": 6, "all_time": 2, "score": 79},
-                {"rep_id": "user-keech-rep-3", "rep_name": "Jake Bradley", "handled": 5, "all_time": 1, "score": 76},
-                {"rep_id": "user-keech-rep-4", "rep_name": "Austin Davis", "handled": 1, "all_time": 0, "score": 58},
+                {"rep_id": "user-keech-rep", "name": "Tyler Grant", "rep_name": "Tyler Grant", "handled": 12, "all_time": 4, "score": 92},
+                {"rep_id": "user-keech-rep-2", "name": "Cody Miller", "rep_name": "Cody Miller", "handled": 6, "all_time": 2, "score": 79},
+                {"rep_id": "user-keech-rep-3", "name": "Jake Bradley", "rep_name": "Jake Bradley", "handled": 5, "all_time": 1, "score": 76},
+                {"rep_id": "user-keech-rep-4", "name": "Austin Davis", "rep_name": "Austin Davis", "handled": 1, "all_time": 0, "score": 58},
             ],
         }
     return {"month": "", "reps": []}

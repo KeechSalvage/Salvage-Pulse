@@ -49,7 +49,7 @@ const CAT: Record<ChampionCategory, { label: string; icon: typeof Trophy; cls: s
 };
 
 const periodLabel = (c: { category: ChampionCategory; period: string }) =>
-  c.category === "tagging" ? `Week of ${new Date(`${c.period}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : MONTH_LONG(c.period);
+  c.category === "tagging" ? `Week of ${new Date(`${c.period}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : (c.period ? MONTH_LONG(c.period) : "");
 
 function TrophyCase({ lot }: { lot: string }) {
   const { data } = useChampions(lot);
@@ -106,7 +106,7 @@ function TrophyCase({ lot }: { lot: string }) {
         ) : (
           <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-testid="trophy-case-list">
             {shown.map((c) => {
-              const m = CAT[c.category];
+              const m = CAT[c.category] ?? { label: c.category.replace("_", " "), icon: Trophy, cls: "text-amber-300 border-amber-500/40 bg-amber-500/[0.06]" };
               const Icon = m.icon;
               return (
                 <li key={`${c.category}-${c.period}`} data-testid={`trophy-${c.category}-${c.period}`} className={cn("rounded-xl border p-4 transition-transform duration-150 hover:-translate-y-0.5", m.cls)}>
