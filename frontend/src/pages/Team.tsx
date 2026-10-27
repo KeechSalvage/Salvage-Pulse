@@ -304,11 +304,11 @@ export default function Team() {
                         <p className="text-sm text-slate-400">{r.title || roleLabel(r.role)}</p>
                         <p className="font-mono text-[11px] text-slate-500">{r.email}</p>
                       </div>
-                      {s && s.calls > 0 && <ScoreBadge score={Math.round(s.avg_score)} />}
+                      {s && s.calls > 0 && <ScoreBadge score={Math.round(s.avg_score || 0)} />}
                     </div>
                     <div className="mt-2 flex items-center gap-2">
                       {r.disabled && <span data-testid={`rep-login-off-${r.id}`} className="rounded-full border border-red-500/40 bg-red-500/10 px-2 py-0.5 font-mono text-[11px] text-red-300">Login off</span>}
-                      {r.disabled && lastChange(r.id)?.action === "off" && <span data-testid={`rep-login-off-since-${r.id}`} className="truncate text-[11px] text-slate-500">since {whenShort(lastChange(r.id)!.at)} · {lastChange(r.id)!.by}</span>}
+                      {r.disabled && lastChange(r.id)?.action === "off" && <span data-testid={`rep-login-off-since-${r.id}`} className="truncate text-[11px] text-slate-500">since {lastChange(r.id)?.at ? whenShort(lastChange(r.id)!.at) : ""} · {lastChange(r.id)?.by ?? "admin"}</span>}
                       <RepSiteSelect rep={r} />
                       <span className="ml-auto"><RepLoginToggle rep={r} reps={reps.data ?? []} /></span>
                     </div>

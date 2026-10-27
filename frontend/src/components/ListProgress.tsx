@@ -43,7 +43,7 @@ export default function ListProgress() {
                     </td>
                     <td data-testid={`list-progress-sold-${l.id}`} className="pr-4 font-mono text-emerald-300">{l.sold}{l.total ? <span className="text-slate-500"> · {Math.round((100 * l.sold) / l.total)}%</span> : null}</td>
                     <td data-testid={`list-progress-revenue-${l.id}`} className="pr-4 font-mono">{fmtMoney(l.revenue)}</td>
-                    <td className="pr-4 font-mono text-xs text-slate-500">{new Date(l.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · {l.created_by}</td>
+                    <td className="pr-4 font-mono text-xs text-slate-500">{l.created_at ? new Date(l.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : ""} · {l.created_by}</td>
                   </tr>
                 );
               })}

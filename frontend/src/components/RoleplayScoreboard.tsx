@@ -17,7 +17,7 @@ export default function RoleplayScoreboardPanel() {
             <thead>
               <tr className="font-mono text-[10px] uppercase tracking-wider text-slate-500">
                 <th className="py-2 pr-3 text-left font-normal">Rep</th>
-                {data.scenarios.map((s) => (
+                {(data.scenarios ?? []).map((s) => (
                   <th key={s.id} className="max-w-[120px] px-2 py-2 text-center font-normal" title={s.title}>
                     {s.price_objection && <span className="text-amber-300">$ </span>}
                     {s.title}
@@ -26,11 +26,11 @@ export default function RoleplayScoreboardPanel() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {data.rows.map((r, i) => (
+              {(data.rows ?? []).map((r, i) => (
                 <tr key={r.rep_id} data-testid={`scoreboard-row-${i}`}>
                   <td className="py-2.5 pr-3 font-medium text-white">{r.rep_name}</td>
-                  {data.scenarios.map((s) => {
-                    const sc = r.scores[s.id];
+                  {(data.scenarios ?? []).map((s) => {
+                    const sc = r.scores?.[s.id];
                     return (
                       <td key={s.id} className="px-2 text-center">
                         {sc ? (

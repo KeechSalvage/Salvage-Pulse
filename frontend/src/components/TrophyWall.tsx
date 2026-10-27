@@ -76,15 +76,15 @@ export default function TrophyWallPanel({ lot = "" }: { lot?: string }) {
         Three trophies each month: most dollars won back and most customers won back (confirmed by a won call), plus the vehicle-sales champion (most sales from vehicle-arrival lists). Streaks count back-to-back months — <Flame className="inline size-3.5 text-orange-300" /> win-back and <Truck className="inline size-3.5 text-sky-300" /> truck.
       </p>
       {isError && <p className="mt-4 text-sm text-slate-500">Trophy wall unavailable.</p>}
-      {data && data.months.length === 0 && (
+      {data && (data.months ?? []).length === 0 && (
         <p data-testid="trophy-wall-empty" className="mt-4 text-sm text-slate-500">
           No champions yet. Trophies are awarded once a month with confirmed win-backs or vehicle-list sales has ended.
         </p>
       )}
-      {data && data.months.length > 0 && (
+      {data && (data.months ?? []).length > 0 && (
         <div className="mt-5 grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
           <ol className="space-y-2" data-testid="trophy-wall-reps">
-            {data.reps.map((r, i) => (
+            {(data.reps ?? []).map((r, i) => (
               <li
                 key={r.rep_id}
                 data-testid={`trophy-rep-${i}`}
@@ -98,14 +98,14 @@ export default function TrophyWallPanel({ lot = "" }: { lot?: string }) {
                   </p>
                 </div>
                 <div className="flex items-center gap-1" title={`${r.trophies} trophies`} data-testid={`trophy-rep-count-${i}`}>
-                  {Array.from({ length: Math.min(r.trophies, 6) }, (_, k) => (
+                  {Array.from({ length: Math.min(r.trophies || 0, 6) }, (_, k) => (
                     <Trophy key={k} className="size-4 text-amber-400" />
                   ))}
-                  {r.trophies > 6 && <span className="font-mono text-xs text-amber-300">+{r.trophies - 6}</span>}
-                  {Array.from({ length: Math.min(r.truck_trophies, 6) }, (_, k) => (
+                  {(r.trophies || 0) > 6 && <span className="font-mono text-xs text-amber-300">+{r.trophies - 6}</span>}
+                  {Array.from({ length: Math.min(r.truck_trophies || 0, 6) }, (_, k) => (
                     <Truck key={`t${k}`} className="size-4 text-sky-300" data-testid={`trophy-rep-truck-${i}-${k}`} />
                   ))}
-                  {r.truck_trophies > 6 && <span className="font-mono text-xs text-sky-300">+{r.truck_trophies - 6}</span>}
+                  {(r.truck_trophies || 0) > 6 && <span className="font-mono text-xs text-sky-300">+{r.truck_trophies - 6}</span>}
                 </div>
                 <StreakChip n={r.current_streak} kind="win-back" testId={`trophy-rep-streak-${i}`} />
                 <StreakChip n={r.truck_streak} kind="truck" testId={`trophy-rep-truck-streak-${i}`} />
@@ -113,12 +113,12 @@ export default function TrophyWallPanel({ lot = "" }: { lot?: string }) {
             ))}
           </ol>
           <div className="max-h-[360px] divide-y divide-border overflow-y-auto pr-1" data-testid="trophy-wall-months">
-            {data.months.map((w, i) => (
+            {(data.months ?? []).map((w, i) => (
               <div key={w.month} data-testid={`trophy-month-${i}`} className="grid grid-cols-[72px_1fr_1fr_1fr] items-center gap-4 py-3">
                 <span className="font-heading text-sm font-bold text-white">{label(w.month)}</span>
                 <Slot title="Most won back" l={w.top_dollars} stat={(l) => fmtMoney(l.won_value)} testId={`trophy-month-${i}-dollars`} />
                 <Slot title="Most customers" l={w.top_customers} stat={(l) => `${l.customers_won}`} testId={`trophy-month-${i}-customers`} />
-                <TruckSlot champs={w.truck} testId={`trophy-month-${i}-truck`} />
+                <TruckSlot champs={w.truck ?? []} testId={`trophy-month-${i}-truck`} />
               </div>
             ))}
           </div>

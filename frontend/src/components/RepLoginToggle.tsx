@@ -54,7 +54,7 @@ export default function RepLoginToggle({ rep, reps }: { rep: User; reps: User[] 
   const save = useMutation({
     mutationFn: (b: RepLoginUpdate) => apiPatch<RepLoginResult>(`/users/reps/${rep.id}/login`, b),
     onSuccess: (r) => {
-      const to = reps.find((x) => x.id === moveTo)?.name;
+      const to = (reps ?? []).find((x) => x.id === moveTo)?.name;
       toast.success(r.user.disabled ? `${rep.name}'s login is off — signed out everywhere${r.moved ? ` · ${r.moved} callbacks moved to ${to}` : ""}` : `${rep.name} can sign in again`);
       ["reps", "callbacks", "callback-lists", "cover-requests", "org"].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
       setOpen(false);
@@ -63,7 +63,7 @@ export default function RepLoginToggle({ rep, reps }: { rep: User; reps: User[] 
     onError: (e) => toast.error(errorMessage(e)),
   });
   const stop = (e: React.MouseEvent) => (e.preventDefault(), e.stopPropagation());
-  const others = reps.filter((r) => r.id !== rep.id && !r.disabled);
+  const others = (reps ?? []).filter((r) => r.id !== rep.id && !r.disabled);
   const hasWork = (work.data?.callbacks ?? 0) + (work.data?.lists ?? 0) > 0;
   return (
     <>
