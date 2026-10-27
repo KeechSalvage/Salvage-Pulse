@@ -98,6 +98,9 @@ INITIAL_MASTER_NAME="Brett K"
 # Get your free key at: https://aistudio.google.com/
 GEMINI_API_KEY=${GEMINI_API_KEY:-}
 GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+
+# Google OAuth 2.0 Client ID (Sign in with Google)
+GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
 EOF
 fi
 
