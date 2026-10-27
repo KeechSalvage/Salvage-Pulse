@@ -56,7 +56,7 @@ export default function WatchlistPanel({ rank = "calls" }: { rank?: VehicleRank 
   const { data } = useQuery({ queryKey: ["watchlist"], queryFn: () => apiGet<WatchItem[]>("/watchlist") });
   const vopts = useQuery({ queryKey: ["vehicle-options", "catalog", rank], queryFn: () => apiGet<VehicleOptions>(`/calls/vehicle-options?catalog=true&rank=${rank}`) });
   const [f, setF] = useState(EMPTY);
-  const modelStats = vopts.data?.makes.find((m) => m.make === f.make)?.model_stats ?? [];
+  const modelStats = (vopts.data?.makes ?? []).find((m) => m.make === f.make)?.model_stats ?? [];
   const add = useMutation({
     mutationFn: () =>
       apiPost<WatchItem>("/watchlist", {

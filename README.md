@@ -32,7 +32,17 @@ docker compose down
 
 ---
 
-### Method 2: ZimaOS / CasaOS 1-Click Deployment
+### Method 3: Proxmox VE (LXC Container 1-Click)
+
+Run this command directly in your **Proxmox VE Node Shell**:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Keechb/Salvage-Pulse/main/proxmox/create-lxc.sh)"
+```
+
+This provisions an ultra-lightweight (~100MB RAM) Debian 12 LXC container with automatic startup, systemd management (`salvage-pulse.service`), and one-command updates via `salvage-pulse-update`. See [`proxmox/README.md`](proxmox/README.md) for full options.
+
+---
 
 If you are using **ZimaOS** or **CasaOS** at home:
 

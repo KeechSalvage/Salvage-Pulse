@@ -27,7 +27,7 @@ export default function LotCompare() {
   if (!on) return null;
   const nameOf = (id: string) => sites.find((s) => s.id === id)?.name ?? "";
   const months = [...new Set([...(qa.data?.months ?? []), ...(qb.data?.months ?? [])].map((p) => p.month))].sort().slice(-6);
-  const pick = (d: MonthlyTrends | undefined, m: string) => d?.months.find((p) => p.month === m);
+  const pick = (d: MonthlyTrends | undefined, m: string) => (d?.months ?? []).find((p) => p.month === m);
   const rows = months.map((m) => ({
     month: short(m),
     salesA: pick(qa.data, m)?.est_value ?? 0,

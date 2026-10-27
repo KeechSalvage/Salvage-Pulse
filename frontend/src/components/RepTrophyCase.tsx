@@ -15,11 +15,11 @@ const TITLE = { dollars: "Most won back", customers: "Most customers won back", 
 export default function RepTrophyCase({ repId, isSelf }: { repId: string | undefined; isSelf: boolean }) {
   const { data } = useQuery({ queryKey: ["winback-trophies"], queryFn: () => apiGet<TrophyWall>("/analytics/winback/trophies"), enabled: !!repId });
   if (!data || !repId) return null;
-  const me = data.reps.find((r) => r.rep_id === repId);
-  const awards: Award[] = data.months.flatMap((w) => [
+  const me = (data.reps ?? []).find((r) => r.rep_id === repId);
+  const awards: Award[] = (data.months ?? []).flatMap((w) => [
     ...(w.top_dollars?.rep_id === repId ? [{ month: w.month, kind: "dollars" as const, text: fmtMoney(w.top_dollars.won_value) }] : []),
     ...(w.top_customers?.rep_id === repId ? [{ month: w.month, kind: "customers" as const, text: `${w.top_customers.customers_won} customers` }] : []),
-    ...w.truck.filter((t) => t.rep_id === repId).map((t) => ({ month: w.month, kind: "truck" as const, text: `${t.sales} sale${t.sales === 1 ? "" : "s"}${w.truck.length > 1 ? " · shared" : ""}` })),
+    ...(w.truck ?? []).filter((t) => t.rep_id === repId).map((t) => ({ month: w.month, kind: "truck" as const, text: `${t.sales} sale${t.sales === 1 ? "" : "s"}${w.truck.length > 1 ? " · shared" : ""}` })),
   ]);
   const stats = [
     { k: "winback", label: "Win-back trophies", v: me?.trophies ?? 0, icon: Trophy, tone: "text-amber-400" },

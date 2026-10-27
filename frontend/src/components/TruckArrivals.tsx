@@ -29,7 +29,7 @@ function NewArrival({ onCreated, rank }: { onCreated: (a: Arrival) => void; rank
   // Every car, SUV, van and pickup: ones callers asked about first (ranked), then the rest of the catalog.
   const vopts = useQuery({ queryKey: ["vehicle-options", "catalog", rank], queryFn: () => apiGet<VehicleOptions>(`/calls/vehicle-options?catalog=true&rank=${rank}`) });
   const [f, setF] = useState({ year: "", make: "", model: "", note: "", cost: "", stock: "" });
-  const modelStats = vopts.data?.makes.find((m) => m.make === f.make)?.model_stats ?? [];
+  const modelStats = (vopts.data?.makes ?? []).find((m) => m.make === f.make)?.model_stats ?? [];
   const create = useMutation({
     mutationFn: () =>
       apiPost<Arrival>("/arrivals", { vehicle_year: Number(f.year), vehicle_make: f.make, vehicle_model: f.model, note: f.note, stock_number: f.stock, year_span: 2, cost: f.cost ? Number(f.cost) : null } satisfies ArrivalCreate),

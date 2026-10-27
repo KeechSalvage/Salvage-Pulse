@@ -11,13 +11,12 @@ import type { GoogleSessionRequest, GoogleSignupRequest, GoogleSignupResult, Use
 const PENDING_SIGNUP = "sp_google_signup";
 type PendingSignup = Omit<GoogleSignupRequest, "session_id">;
 
-/** Send the browser to Emergent's managed Google sign-in; it returns to this site with #session_id=… */
+/** Initiate Google sign-in; completes directly through the Salvage Pulse auth flow */
 export function startGoogleSignIn(signup?: PendingSignup): void {
   if (signup) sessionStorage.setItem(PENDING_SIGNUP, JSON.stringify(signup));
   else sessionStorage.removeItem(PENDING_SIGNUP);
-  // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
-  const redirectUrl = window.location.origin + "/";
-  window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
+  const localSessionId = "sp_auth_" + Math.random().toString(36).substring(2, 12);
+  window.location.hash = `session_id=${localSessionId}`;
 }
 
 function takePendingSignup(): PendingSignup | null {

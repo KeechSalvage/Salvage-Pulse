@@ -30,8 +30,8 @@ export default function ChampionBadges({ repId, className, testId = "champion-ba
   const tp = useTeamPlayers();
   if (!repId || !data) return null;
   const counts = new Map<ChampionCategory, number>();
-  for (const c of data.champions) if (c.rep_ids.includes(repId)) counts.set(c.category, (counts.get(c.category) ?? 0) + 1);
-  const team = tp.data?.reps.find((r) => r.rep_id === repId)?.all_time ?? 0;
+  for (const c of data.champions ?? []) if (c.rep_ids?.includes(repId)) counts.set(c.category, (counts.get(c.category) ?? 0) + 1);
+  const team = (tp.data?.reps ?? []).find((r) => r.rep_id === repId)?.all_time ?? 0;
   if (!counts.size && !team) return null;
   const teamBadge = team > 0 && (
     <span data-testid={`${testId}-team-player`} title={`${team} callback${team === 1 ? "" : "s"} handled while covering for a teammate`}

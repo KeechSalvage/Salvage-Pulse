@@ -39,11 +39,14 @@ export default function RepTrendsPanel({ testId = "rep-trends-panel", className 
   const months = data?.months ?? [];
   const rows = months.map((m, i) => {
     const row: Record<string, string | number | null> = { month: m };
-    for (const r of data?.reps ?? []) row[r.rep_id] = r.points[i].sales_calls ? r.points[i].close_rate : null;
+    for (const r of data?.reps ?? []) {
+      const pt = r.points?.[i];
+      row[r.rep_id] = pt && pt.sales_calls ? pt.close_rate : null;
+    }
     return row;
   });
-  const color = (id: string) => COLORS[(data?.reps.findIndex((r) => r.rep_id === id) ?? 0) % COLORS.length];
-  const name = (id: string) => data?.reps.find((r) => r.rep_id === id)?.rep_name ?? id;
+  const color = (id: string) => COLORS[((data?.reps ?? []).findIndex((r) => r.rep_id === id) ?? 0) % COLORS.length];
+  const name = (id: string) => (data?.reps ?? []).find((r) => r.rep_id === id)?.rep_name ?? id;
 
   return (
     <Panel className={className} testId={testId}>

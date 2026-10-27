@@ -51,7 +51,7 @@ export function RepSiteSelect({ rep }: { rep: User }) {
   const { data } = useSites();
   const save = useMutation({
     mutationFn: (site_id: string) => apiPatch<User>(`/users/reps/${rep.id}/site`, { site_id } satisfies RepSiteUpdate),
-    onSuccess: (u) => (toast.success(`${u.name}: ${data?.sites.find((s) => s.id === u.site_id)?.name ?? "no location"}`), qc.invalidateQueries({ queryKey: ["reps"] }), qc.invalidateQueries({ queryKey: ["sites"] })),
+    onSuccess: (u) => (toast.success(`${u.name}: ${(data?.sites ?? []).find((s) => s.id === u.site_id)?.name ?? "no location"}`), qc.invalidateQueries({ queryKey: ["reps"] }), qc.invalidateQueries({ queryKey: ["sites"] })),
     onError: (e) => toast.error(errorMessage(e)),
   });
   if (!data?.sites.length || data.my_site_id) return null;
@@ -236,7 +236,7 @@ function LotBoard({ sites }: { sites: SiteList }) {
   const [over, setOver] = useState<string | null>(null);
   const move = useMutation({
     mutationFn: (e: { rep: User; site_id: string }) => apiPatch<User>(`/users/reps/${e.rep.id}/site`, { site_id: e.site_id } satisfies RepSiteUpdate),
-    onSuccess: (u) => (toast.success(`${u.name} moved to ${sites.sites.find((x) => x.id === u.site_id)?.name ?? "no location"} — past calls stay with their old lot`),
+    onSuccess: (u) => (toast.success(`${u.name} moved to ${(sites.sites ?? []).find((x) => x.id === u.site_id)?.name ?? "no location"} — past calls stay with their old lot`),
       ["reps", "sites", "calls", "report"].forEach((k) => qc.invalidateQueries({ queryKey: [k] }))),
     onError: (e) => toast.error(errorMessage(e)),
   });

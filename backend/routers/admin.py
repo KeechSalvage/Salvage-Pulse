@@ -1,0 +1,569 @@
+from __future__ import annotations
+
+import datetime as dt
+import uuid
+from typing import Any, Optional
+from fastapi import APIRouter, HTTPException, Query, Request, Response
+from pydantic import BaseModel
+from auth_utils import get_current_user, set_session_cookie
+import store
+
+router = APIRouter(tags=["admin"])
+
+
+# ==========================================
+# Admin Console Endpoints
+# ==========================================
+@router.get("/api/admin/orgs")
+def admin_get_orgs() -> list[dict[str, Any]]:
+    st = store.get_state()
+    return st.get("admin_orgs", [])
+
+
+@router.post("/api/admin/orgs")
+def admin_post_org(body: dict[str, Any], request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    actor = get_current_user(request)
+    oid = str(uuid.uuid4())
+    org = {
+        "id": oid,
+        "name": body["yard_name"],
+        "plan": body.get("plan", "pro"),
+        "status": body.get("status", "trialing"),
+        "trial_ends_at": (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=14)).isoformat(),
+        "created_at": store.now_iso(),
+        "users": 1 if body.get("email") else 0,
+        "calls": 0,
+        "ringcentral_connected": False,
+        "card_on_file": False,
+        "blocked": False,
+        "cancel_reason": "",
+        "discount": body.get("discount"),
+        "sites": 0,
+        "max_sites": 2,
+        "extra_sites": 0,
+    }
+    if body.get("email"):
+        uid = f"user-{uuid.uuid4().hex[:8]}"
+        st.setdefault("users_by_id", {})[uid] = {
+            "id": uid,
+            "email": body["email"].strip().lower(),
+            "name": body.get("manager_name") or "Owner",
+            "role": body.get("role") or "owner",
+            "title": body.get("title") or "Yard Owner",
+            "avatar_url": "",
+            "org_id": oid,
+            "impersonated_by": "",
+            "disabled": False,
+            "site_id": "",
+            "must_change_password": True,
+        }
+    st.setdefault("admin_orgs", []).insert(0, org)
+    st.setdefault("branding_by_org", {})[oid] = {
+        "yard_name": body["yard_name"],
+        "accent": "",
+        "default_mode": "dark",
+        "logo_url": "",
+        "user_mode": "dark",
+        "mode": "dark",
+    }
+    st.setdefault("admin_audit", []).insert(0, {
+        "at": store.now_iso(),
+        "actor": actor.get("name", "Admin"),
+        "action": f"created yard with plan {org['plan']}",
+        "target": org["name"],
+    })
+    store.save_state()
+    return {"org": org, "payment_link": f"/checkout/{oid}"}
+
+
+@router.patch("/api/admin/orgs/{oid}")
+def admin_patch_org(oid: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    actor = get_current_user(request)
+    for o in st.get("admin_orgs", []):
+        if o.get("id") == oid:
+            was_blocked = bool(o.get("blocked", False))
+            was_canceled = o.get("status") == "canceled"
+            was_disabled = was_blocked or was_canceled
+
+            o.update(body)
+
+            now_blocked = bool(o.get("blocked", False))
+            now_canceled = o.get("status") == "canceled"
+            now_disabled = now_blocked or now_canceled
+
+            # Yard is being disabled (blocked or status canceled)
+            if now_disabled and not was_disabled:
+                affected = 0
+                for u in st.get("users_by_id", {}).values():
+                    if u.get("org_id") == oid and u.get("role") != "master":
+                        if not u.get("disabled"):
+                            u["disabled"] = True
+                            u["disabled_by_yard"] = True
+                            affected += 1
+                st.setdefault("admin_audit", []).insert(0, {
+                    "at": store.now_iso(),
+                    "actor": actor.get("name", "Admin"),
+                    "action": f"disabled yard and {affected} associated user(s)",
+                    "target": o.get("name", oid),
+                })
+
+            # Yard is being reopened or unblocked
+            elif (was_disabled and not now_disabled) or (was_blocked and body.get("blocked") is False):
+                if o.get("status") == "canceled" and "status" not in body:
+                    o["status"] = "active"
+                reopened = 0
+                for u in st.get("users_by_id", {}).values():
+                    if u.get("org_id") == oid and u.get("role") != "master":
+                        if u.get("disabled_by_yard") or u.get("disabled"):
+                            u["disabled"] = False
+                            u.pop("disabled_by_yard", None)
+                            reopened += 1
+                st.setdefault("admin_audit", []).insert(0, {
+                    "at": store.now_iso(),
+                    "actor": actor.get("name", "Admin"),
+                    "action": f"reopened yard and re-enabled {reopened} associated user(s)",
+                    "target": o.get("name", oid),
+                })
+
+            store.save_state()
+            return o
+    raise HTTPException(status_code=404, detail="Org not found")
+
+
+@router.post("/api/admin/orgs/{oid}/extend")
+def admin_post_org_extend(oid: str, body: dict[str, Any]) -> dict[str, Any]:
+    st = store.get_state()
+    for o in st.get("admin_orgs", []):
+        if o.get("id") == oid:
+            days = int(body.get("days") or 7)
+            o["trial_ends_at"] = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=days)).isoformat()
+            store.save_state()
+            return o
+    raise HTTPException(status_code=404, detail="Org not found")
+
+
+@router.post("/api/admin/orgs/{oid}/cancel")
+def admin_post_org_cancel(oid: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    actor = get_current_user(request)
+    for o in st.get("admin_orgs", []):
+        if o.get("id") == oid:
+            o["status"] = "canceled"
+            reason = body.get("reason", "Cancelled by admin")
+            o["cancel_reason"] = reason
+            o["blocked"] = bool(body.get("block", True))
+
+            affected = 0
+            for u in st.get("users_by_id", {}).values():
+                if u.get("org_id") == oid and u.get("role") != "master":
+                    if not u.get("disabled"):
+                        u["disabled"] = True
+                        u["disabled_by_yard"] = True
+                        affected += 1
+
+            st.setdefault("admin_audit", []).insert(0, {
+                "at": store.now_iso(),
+                "actor": actor.get("name", "Admin"),
+                "action": f"canceled yard and disabled {affected} associated user(s): {reason}",
+                "target": o.get("name", oid),
+            })
+            store.save_state()
+            return o
+    raise HTTPException(status_code=404, detail="Org not found")
+
+
+@router.post("/api/admin/orgs/{oid}/payment-link")
+def admin_post_org_payment_link(oid: str) -> dict[str, Any]:
+    return {"payment_link": f"/checkout/{oid}"}
+
+
+@router.put("/api/admin/orgs/{oid}/discount")
+def admin_put_org_discount(oid: str, body: dict[str, Any]) -> dict[str, Any]:
+    st = store.get_state()
+    for o in st.get("admin_orgs", []):
+        if o.get("id") == oid:
+            o["discount"] = {
+                "percent": body.get("percent", 20),
+                "months": body.get("months", 3),
+                "ends_at": None,
+                "applied": False,
+                "price": 299.0,
+                "discounted_price": 239.2,
+                "set_by": "Admin",
+                "set_at": store.now_iso(),
+                "reason": body.get("reason", "Discount"),
+            }
+            store.save_state()
+            return {
+                "org": o,
+                "message": f"{body.get('percent')}% discount applied for {body.get('months')} months",
+                "payment_link": f"/checkout/{oid}?discount=true",
+            }
+    raise HTTPException(status_code=404, detail="Org not found")
+
+
+@router.delete("/api/admin/orgs/{oid}/discount")
+def admin_delete_org_discount(oid: str) -> dict[str, Any]:
+    st = store.get_state()
+    for o in st.get("admin_orgs", []):
+        if o.get("id") == oid:
+            o["discount"] = None
+            store.save_state()
+            return {"org": o, "message": "Discount removed", "payment_link": ""}
+    raise HTTPException(status_code=404, detail="Org not found")
+
+
+@router.post("/api/admin/orgs/{oid}/discount-link")
+def admin_post_org_discount_link(oid: str) -> dict[str, Any]:
+    st = store.get_state()
+    org = next((o for o in st.get("admin_orgs", []) if o.get("id") == oid), {})
+    return {"org": org, "message": "Link generated", "payment_link": f"/checkout/{oid}?discount=true"}
+
+
+@router.get("/api/admin/discounts/summary")
+def admin_get_discounts_summary() -> dict[str, Any]:
+    return {
+        "months": [
+            {"month": "2026-10", "cost": 0.0, "yards": 0, "projected": False},
+        ],
+        "yards": [],
+        "this_month": 0.0,
+    }
+
+
+@router.get("/api/admin/users")
+def admin_get_users(org_id: Optional[str] = Query(None), q: Optional[str] = Query(None)) -> list[dict[str, Any]]:
+    st = store.get_state()
+    out = []
+    org_map = {o["id"]: o.get("name", "Yard") for o in st.get("admin_orgs", [])}
+    default_org_name = st.get("org", {}).get("name", "Salvage Pulse")
+
+    for u in st["users_by_id"].values():
+        u_org_id = u.get("org_id", "")
+        if org_id and u_org_id != org_id:
+            continue
+        if q:
+            term = q.lower()
+            if term not in u.get("name", "").lower() and term not in u.get("email", "").lower():
+                continue
+        out.append({
+            "id": u["id"],
+            "email": u["email"],
+            "name": u["name"],
+            "role": u.get("role", "rep"),
+            "title": u.get("title", ""),
+            "org_id": u_org_id,
+            "org_name": org_map.get(u_org_id, "Platform") if not u_org_id else org_map.get(u_org_id, default_org_name),
+            "disabled": u.get("disabled", False),
+        })
+    return out
+
+
+class AdminPasswordReq(BaseModel):
+    password: str
+    must_change_password: bool = False
+
+
+@router.post("/api/admin/users/{uid}/password")
+def admin_set_user_password(uid: str, req: AdminPasswordReq, request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    actor = get_current_user(request)
+    if actor.get("role") not in ("master", "admin"):
+        raise HTTPException(status_code=403, detail="Platform staff only")
+
+    u = st["users_by_id"].get(uid)
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if len(req.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
+    u["password_hash"] = store.hash_password(req.password)
+    u["must_change_password"] = req.must_change_password
+    st.setdefault("admin_audit", []).insert(0, {
+        "at": store.now_iso(),
+        "actor": actor.get("name", "Admin"),
+        "action": f"manually updated password for user {u.get('email')}",
+        "target": u.get("name", uid),
+    })
+    store.save_state()
+    return {"ok": True, "message": f"Password for {u['name']} updated successfully"}
+
+
+@router.patch("/api/admin/users/{uid}")
+def admin_patch_user(uid: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    actor = get_current_user(request)
+    u = st["users_by_id"].get(uid)
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if "password" in body and body["password"]:
+        pw = str(body.pop("password"))
+        if len(pw) < 6:
+            raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+        u["password_hash"] = store.hash_password(pw)
+        u["must_change_password"] = False
+        st.setdefault("admin_audit", []).insert(0, {
+            "at": store.now_iso(),
+            "actor": actor.get("name", "Admin"),
+            "action": f"reset password for user {u.get('email')}",
+            "target": u.get("name", uid),
+        })
+
+    u.update(body)
+    store.save_state()
+    org_map = {o["id"]: o.get("name", "Yard") for o in st.get("admin_orgs", [])}
+    return {
+        "id": u["id"],
+        "email": u["email"],
+        "name": u["name"],
+        "role": u.get("role", "rep"),
+        "title": u.get("title", ""),
+        "org_id": u.get("org_id", ""),
+        "org_name": org_map.get(u.get("org_id", ""), "Platform") if not u.get("org_id") else org_map.get(u.get("org_id", ""), "Yard"),
+        "disabled": u.get("disabled", False),
+    }
+
+
+@router.post("/api/admin/impersonate/{uid}")
+def admin_impersonate(uid: str, response: Response, request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    target_user = st["users_by_id"].get(uid)
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target_user.get("disabled"):
+        raise HTTPException(status_code=400, detail="Cannot impersonate a disabled user")
+    actor = get_current_user(request)
+    target_user["impersonated_by"] = actor.get("name", "Admin")
+    target_user["impersonator_id"] = actor.get("id", "")
+    set_session_cookie(response, uid)
+    return target_user
+
+
+@router.get("/api/admin/audit")
+def admin_get_audit() -> list[dict[str, Any]]:
+    st = store.get_state()
+    return st.get("admin_audit", [])
+
+
+@router.get("/api/admin/demo-login")
+def admin_get_demo_login() -> dict[str, Any]:
+    st = store.get_state()
+    return st.get("demo_login_switch", {"enabled": True, "changed_by": "", "changed_at": None})
+
+
+@router.put("/api/admin/demo-login")
+def admin_put_demo_login(body: dict[str, Any], request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    u = get_current_user(request)
+    sw = {
+        "enabled": bool(body.get("enabled", True)),
+        "changed_by": u.get("name", "Admin"),
+        "changed_at": store.now_iso(),
+    }
+    st["demo_login_switch"] = sw
+    store.save_state()
+    return sw
+
+
+@router.get("/api/admin/free-day")
+def admin_get_free_day() -> dict[str, Any]:
+    return {
+        "started": 14,
+        "on_free_day": 3,
+        "added_card": 11,
+        "added_during_day": 9,
+        "no_card": 0,
+        "conversion_rate": 78.6,
+        "started_30d": 14,
+        "added_card_30d": 11,
+        "median_hours_to_card": 6.5,
+        "recent": [],
+        "alerts": [],
+    }
+
+
+@router.get("/api/admin/funnel")
+def admin_get_funnel() -> dict[str, Any]:
+    return {
+        "months": [
+            {"month": "2026-10", "signups": 12, "cards_added": 9, "paid": 8, "canceled": 0},
+            {"month": "2026-09", "signups": 15, "cards_added": 12, "paid": 11, "canceled": 1},
+        ],
+        "totals": {"month": "All-time", "signups": 27, "cards_added": 21, "paid": 19, "canceled": 1},
+        "trialing_now": 3,
+    }
+
+
+@router.get("/api/admin/trial-reminders")
+def admin_get_trial_reminders() -> dict[str, Any]:
+    st = store.get_state()
+    return st.get("trial_reminders", {"enabled": True, "upcoming": []})
+
+
+@router.put("/api/admin/trial-reminders")
+def admin_put_trial_reminders(body: dict[str, Any]) -> dict[str, Any]:
+    st = store.get_state()
+    cur = st.get("trial_reminders", {})
+    cur["enabled"] = bool(body.get("enabled", True))
+    st["trial_reminders"] = cur
+    store.save_state()
+    return cur
+
+
+@router.get("/api/admin/trial-reminders/preview")
+def admin_get_trial_reminders_preview(kind: str = Query("day4")) -> dict[str, Any]:
+    return {
+        "subject": "Your Salvage Pulse trial — how calls are tracking so far",
+        "html": "<p>Hi Linda,<br>Here is a summary of your yard's call scoring progress...</p>",
+    }
+
+
+@router.get("/api/admin/staff")
+def admin_get_staff() -> list[dict[str, Any]]:
+    st = store.get_state()
+    return st.get("admin_staff", [])
+
+
+@router.post("/api/admin/staff")
+def admin_post_staff(body: dict[str, Any]) -> dict[str, Any]:
+    st = store.get_state()
+    sid = str(uuid.uuid4())
+    account = {
+        "id": sid,
+        "email": body["email"],
+        "name": body["name"],
+        "role": body.get("role", "admin"),
+        "disabled": False,
+        "must_change_password": True,
+        "created_at": store.now_iso(),
+        "you": False,
+        "google_linked": False,
+        "email_bounced_at": None,
+        "email_bounce_reason": "",
+    }
+    st.setdefault("admin_staff", []).append(account)
+    store.save_state()
+    return {"account": account, "emailed": True}
+
+
+@router.patch("/api/admin/staff/{sid}")
+def admin_patch_staff(sid: str, body: dict[str, Any]) -> list[dict[str, Any]]:
+    st = store.get_state()
+    for s in st.get("admin_staff", []):
+        if s.get("id") == sid:
+            s.update(body)
+    store.save_state()
+    return st.get("admin_staff", [])
+
+
+@router.post("/api/admin/staff/{sid}/reset-password")
+def admin_post_staff_reset_password(sid: str) -> dict[str, Any]:
+    st = store.get_state()
+    s = next((x for x in st.get("admin_staff", []) if x.get("id") == sid), {})
+    return {"account": s, "emailed": True}
+
+
+@router.post("/api/admin/staff/{user}/sign-out-everywhere")
+def admin_post_staff_sign_out(user: str) -> dict[str, Any]:
+    return {"ended": 3, "you": False}
+
+
+@router.get("/api/admin/staff-devices")
+def admin_get_staff_devices() -> list[dict[str, Any]]:
+    return [
+        {
+            "user_id": "master-ben-keech",
+            "name": "Ben Keech",
+            "email": "benkeech800@gmail.com",
+            "role": "master",
+            "sessions": 1,
+            "devices": [
+                {
+                    "id": "dev-1",
+                    "browser": "Chrome on macOS",
+                    "ip": "127.0.0.1",
+                    "first_seen": "2026-10-01T12:00:00Z",
+                    "last_seen": store.now_iso(),
+                    "this_browser": True,
+                    "nickname": "Work Mac",
+                }
+            ],
+        }
+    ]
+
+
+@router.delete("/api/admin/staff-devices/{user}/{device}")
+def admin_delete_staff_device(user: str, device: str) -> list[dict[str, Any]]:
+    return admin_get_staff_devices()
+
+
+@router.get("/api/admin/staff-lockdown")
+def admin_get_staff_lockdown() -> dict[str, Any]:
+    st = store.get_state()
+    return st.get("staff_lockdown", {
+        "enabled": False,
+        "you_signed_in_with_google": True,
+        "staff_domain": "salvagepulse.com",
+        "google_linked": 1,
+        "staff_total": 1,
+    })
+
+
+@router.put("/api/admin/staff-lockdown")
+def admin_put_staff_lockdown(body: dict[str, Any]) -> dict[str, Any]:
+    st = store.get_state()
+    cur = st.get("staff_lockdown", {})
+    cur["enabled"] = bool(body.get("enabled", False))
+    st["staff_lockdown"] = cur
+    store.save_state()
+    return cur
+
+
+@router.get("/api/admin/messages")
+def admin_get_messages(kind: Optional[str] = Query(None)) -> list[dict[str, Any]]:
+    st = store.get_state()
+    msgs = st.get("contact_messages", [])
+    if kind:
+        msgs = [m for m in msgs if m.get("kind") == kind]
+    return msgs
+
+
+@router.patch("/api/admin/messages/{mid}")
+def admin_patch_message(mid: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    u = get_current_user(request)
+    for m in st.get("contact_messages", []):
+        if m.get("id") == mid:
+            m["status"] = body.get("status", "resolved")
+            if m["status"] == "resolved":
+                m["resolved_by"] = u.get("name", "Admin")
+                m["resolved_at"] = store.now_iso()
+            store.save_state()
+            return m
+    raise HTTPException(status_code=404, detail="Message not found")
+
+
+@router.post("/api/admin/messages/{mid}/reply")
+def admin_post_message_reply(mid: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    u = get_current_user(request)
+    for m in st.get("contact_messages", []):
+        if m.get("id") == mid:
+            reply = {
+                "by": u.get("name", "Admin"),
+                "text": body.get("text", ""),
+                "at": store.now_iso(),
+            }
+            m.setdefault("replies", []).append(reply)
+            m["reply_unread"] = True
+            if body.get("resolve"):
+                m["status"] = "resolved"
+                m["resolved_by"] = u.get("name", "Admin")
+                m["resolved_at"] = store.now_iso()
+            store.save_state()
+            return m
+    raise HTTPException(status_code=404, detail="Message not found")

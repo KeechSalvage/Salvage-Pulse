@@ -29,7 +29,7 @@ export default function LotPoster() {
   const months = [...new Set(all.map((c) => c.period.slice(0, 7)))].sort().reverse(); // tagging weeks count toward the month they start in
   const month = params.get("month") || months[0] || "";
   const winners = all.filter((c) => (c.category === "tagging" ? c.period.startsWith(month) : c.period === month));
-  const lotName = sites.data?.sites.find((s) => s.id === siteId)?.name ?? "";
+  const lotName = (sites.data?.sites ?? []).find((s) => s.id === siteId)?.name ?? "";
   if (champs.isLoading || sites.isLoading) return <div className="grid min-h-screen place-items-center bg-white text-slate-500">Loading…</div>;
   if (champs.isError || !lotName) return <div data-testid="lot-poster-missing" className="grid min-h-screen place-items-center bg-white text-slate-500">This location doesn't exist anymore.</div>;
   return (

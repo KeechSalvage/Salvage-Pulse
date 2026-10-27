@@ -57,7 +57,7 @@ export default function Calls() {
   const [yearFrom, setYearFrom] = useState(urlParams.get("year_from") ?? "");
   const [yearTo, setYearTo] = useState(urlParams.get("year_to") ?? "");
   const vopts = useQuery({ queryKey: ["vehicle-options"], queryFn: () => apiGet<VehicleOptions>("/calls/vehicle-options") });
-  const models = vopts.data?.makes.find((m) => m.make === make)?.models ?? [];
+  const models = (vopts.data?.makes ?? []).find((m) => m.make === make)?.models ?? [];
   const vehicleOn = make !== "all" || !!yearFrom || !!yearTo;
 
   const params = new URLSearchParams();

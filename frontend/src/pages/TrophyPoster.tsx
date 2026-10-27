@@ -24,7 +24,7 @@ export default function TrophyPoster() {
   const brand = useQuery({ queryKey: ["branding"], queryFn: () => apiGet<Branding>("/branding") });
   const reps = useQuery({ queryKey: ["users", "reps"], queryFn: () => apiGet<User[]>("/users/reps") });
   const mine = (champs.data?.champions ?? []).filter((c) => (siteId ? c.site_ids.includes(siteId) : c.rep_ids.includes(repId)));
-  const name = (siteId ? mine[0]?.names[mine[0].site_ids.indexOf(siteId)] : reps.data?.find((r) => r.id === repId)?.name) ?? mine[0]?.names.find(Boolean) ?? "";
+  const name = (siteId ? mine[0]?.names[mine[0].site_ids.indexOf(siteId)] : (reps.data ?? []).find((r) => r.id === repId)?.name) ?? mine[0]?.names.find(Boolean) ?? "";
   const counts = new Map<ChampionCategory, number>();
   for (const c of mine) counts.set(c.category, (counts.get(c.category) ?? 0) + 1);
   if (champs.isLoading || reps.isLoading) return <div className="grid min-h-screen place-items-center bg-white text-slate-500">Loading…</div>;

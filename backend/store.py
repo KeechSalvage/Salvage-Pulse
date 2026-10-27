@@ -16,9 +16,7 @@ from collections import Counter, defaultdict
 from typing import Any
 
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.environ.get("DATA_DIR") or (
-    os.path.join(BACKEND_DIR, "data") if os.path.isdir(os.path.join(BACKEND_DIR, "data")) else BACKEND_DIR
-)
+DATA_DIR = os.environ.get("DATA_DIR") or os.path.join(BACKEND_DIR, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 SEED_PATH = os.path.join(BACKEND_DIR, "preview_seed.json")
@@ -348,14 +346,259 @@ def _migrate_roles(st: dict[str, Any]) -> dict[str, Any]:
     return st
 
 
+KEECH_ORG_ID = "org-keech-salvage"
+
+KEECH_USERS: dict[str, dict[str, Any]] = {
+    "user-keech-owner": {
+        "id": "user-keech-owner",
+        "email": "owner@keechauto.com",
+        "name": "Dale Miller",
+        "role": "owner",
+        "title": "Yard Owner",
+        "avatar_url": "",
+        "org_id": KEECH_ORG_ID,
+        "impersonated_by": "",
+        "disabled": False,
+        "site_id": "",
+        "must_change_password": False,
+        "password_hash": hash_password("owner"),
+    },
+    "user-keech-sales-mgr": {
+        "id": "user-keech-sales-mgr",
+        "email": "salesmanager@keechauto.com",
+        "name": "Marcus Reed",
+        "role": "sales_manager",
+        "title": "Sales Manager",
+        "avatar_url": "",
+        "org_id": KEECH_ORG_ID,
+        "impersonated_by": "",
+        "disabled": False,
+        "site_id": "",
+        "must_change_password": False,
+        "password_hash": hash_password("salesmanager"),
+    },
+    "user-keech-sales-mgr-alt": {
+        "id": "user-keech-sales-mgr-alt",
+        "email": "manager@keechauto.com",
+        "name": "Marcus Reed",
+        "role": "sales_manager",
+        "title": "Sales Manager",
+        "avatar_url": "",
+        "org_id": KEECH_ORG_ID,
+        "impersonated_by": "",
+        "disabled": False,
+        "site_id": "",
+        "must_change_password": False,
+        "password_hash": hash_password("salesmanager"),
+    },
+    "user-keech-inv-mgr": {
+        "id": "user-keech-inv-mgr",
+        "email": "inventory@keechauto.com",
+        "name": "Rick Martinez",
+        "role": "inventory_manager",
+        "title": "Inventory Manager",
+        "avatar_url": "",
+        "org_id": KEECH_ORG_ID,
+        "impersonated_by": "",
+        "disabled": False,
+        "site_id": "",
+        "must_change_password": False,
+        "password_hash": hash_password("inventory"),
+    },
+    "user-keech-rep": {
+        "id": "user-keech-rep",
+        "email": "rep1@keechauto.com",
+        "name": "Tyler Grant",
+        "role": "rep",
+        "title": "Sales Representative",
+        "avatar_url": "",
+        "org_id": KEECH_ORG_ID,
+        "impersonated_by": "",
+        "disabled": False,
+        "site_id": "",
+        "must_change_password": False,
+        "password_hash": hash_password("rep1"),
+    },
+    "user-keech-rep-2": {
+        "id": "user-keech-rep-2",
+        "email": "rep2@keechauto.com",
+        "name": "Cody Miller",
+        "role": "rep",
+        "title": "Sales Representative",
+        "avatar_url": "",
+        "org_id": KEECH_ORG_ID,
+        "impersonated_by": "",
+        "disabled": False,
+        "site_id": "",
+        "must_change_password": False,
+        "password_hash": hash_password("rep2"),
+    },
+    "user-keech-rep-3": {
+        "id": "user-keech-rep-3",
+        "email": "rep3@keechauto.com",
+        "name": "Jake Bradley",
+        "role": "rep",
+        "title": "Sales Representative",
+        "avatar_url": "",
+        "org_id": KEECH_ORG_ID,
+        "impersonated_by": "",
+        "disabled": False,
+        "site_id": "",
+        "must_change_password": False,
+        "password_hash": hash_password("rep3"),
+    },
+    "user-keech-rep-4": {
+        "id": "user-keech-rep-4",
+        "email": "rep4@keechauto.com",
+        "name": "Austin Davis",
+        "role": "rep",
+        "title": "Sales Representative",
+        "avatar_url": "",
+        "org_id": KEECH_ORG_ID,
+        "impersonated_by": "",
+        "disabled": False,
+        "site_id": "",
+        "must_change_password": False,
+        "password_hash": hash_password("rep4"),
+    },
+    "user-keech-admin": {
+        "id": "user-keech-admin",
+        "email": "admin@keechauto.com",
+        "name": "Brett Keech",
+        "role": "master",
+        "title": "Platform Master Admin",
+        "avatar_url": "",
+        "org_id": "",
+        "impersonated_by": "",
+        "disabled": False,
+        "site_id": "",
+        "must_change_password": False,
+        "password_hash": hash_password("admin"),
+    },
+}
+
+KEECH_ORG: dict[str, Any] = {
+    "id": KEECH_ORG_ID,
+    "name": "Keech's Auto Salvage",
+    "yard_name": "Keech's Auto Salvage",
+    "plan": "enterprise",
+    "status": "active",
+    "trial_ends_at": None,
+    "created_at": "2026-09-01T00:00:00Z",
+    "users": 8,
+    "calls": 48,
+    "ringcentral_connected": False,
+    "card_on_file": True,
+    "blocked": False,
+    "cancel_reason": "",
+    "discount": None,
+    "sites": 1,
+    "max_sites": 2,
+    "extra_sites": 0,
+}
+
+
+def _ensure_demo_users(st: dict[str, Any]) -> dict[str, Any]:
+    users = st.setdefault("users_by_id", {})
+    for uid, udata in KEECH_USERS.items():
+        if uid not in users:
+            users[uid] = copy.deepcopy(udata)
+        else:
+            users[uid]["email"] = udata["email"]
+            users[uid]["name"] = udata["name"]
+            users[uid]["org_id"] = udata.get("org_id", "")
+            users[uid]["password_hash"] = udata["password_hash"]
+            if not users[uid].get("role"):
+                users[uid]["role"] = udata["role"]
+
+    admin_orgs = st.setdefault("admin_orgs", [])
+    if not any(o.get("id") == KEECH_ORG_ID for o in admin_orgs):
+        admin_orgs.insert(0, copy.deepcopy(KEECH_ORG))
+    else:
+        for o in admin_orgs:
+            if o.get("id") == KEECH_ORG_ID:
+                o["name"] = "Keech's Auto Salvage"
+                o["yard_name"] = "Keech's Auto Salvage"
+                o["users"] = 8
+
+    st.setdefault("org", {})["name"] = "Keech's Auto Salvage"
+    st.setdefault("branding", {})["yard_name"] = "Keech's Auto Salvage"
+
+    # Legacy un-scoped calls belong to the Keech demo yard
+    calls = st.setdefault("calls", [])
+    if calls:
+        generic = [
+            c for c in calls
+            if not str(c.get("id", "")).startswith("demo-") and c.get("org_id") in (None, "", KEECH_ORG_ID)
+        ]
+        for c in generic:
+            # Legacy test calls belong to the owner so they don't skew rep rankings
+            c["org_id"] = KEECH_ORG_ID
+            c["rep_id"] = "user-keech-owner"
+            c["rep_name"] = "Dale Miller"
+
+    # Seed 10 curated demo calls for each of the four reps (idempotent)
+    from demo_tyler_calls import build_demo_calls
+    from demo_team_calls import TEAM
+    demo_sets = list(build_demo_calls())
+    for member in TEAM:
+        demo_sets += build_demo_calls(member["scenarios"], member["rep_id"], member["rep_name"], member["prefix"])
+    existing_ids = {c.get("id"): c for c in calls}
+    full_calls = st.setdefault("full_calls", {})
+    for summary, full in demo_sets:
+        dur = summary["duration_sec"]
+        if summary["id"] in existing_ids:
+            existing_ids[summary["id"]].update({"has_audio": True, "audio_mime": "audio/wav", "duration_sec": dur})
+        else:
+            calls.append(summary)
+        full_calls.setdefault(summary["id"], full).update({"has_audio": True, "audio_mime": "audio/wav", "duration_sec": dur})
+    from demo_extra_calls import build_extra_calls
+    for summary, full in build_extra_calls():
+        if summary["id"] not in existing_ids:
+            calls.append(summary)
+        full_calls.setdefault(summary["id"], full)
+    calls.sort(key=lambda c: c.get("created_at") or "", reverse=True)
+
+    st.setdefault("branding_by_org", {})[KEECH_ORG_ID] = {
+        "yard_name": "Keech's Auto Salvage",
+        "accent": "",
+        "default_mode": "dark",
+        "logo_url": "",
+        "user_mode": "dark",
+        "mode": "dark",
+    }
+
+    # Disable demo mode on login screen as requested
+    st.setdefault("demo_login_switch", {})["enabled"] = False
+    return st
+
+
+def _ensure_roleplay_scenarios(st: dict[str, Any]) -> dict[str, Any]:
+    if not st.get("roleplay_scenarios"):
+        if os.path.exists(SEED_PATH):
+            try:
+                with open(SEED_PATH, "r", encoding="utf-8") as f:
+                    seed = json.load(f)
+                    scs = seed.get("/roleplay/scenarios", [])
+                    if scs:
+                        st["roleplay_scenarios"] = scs
+            except Exception:
+                pass
+    return st
+
+
 def get_state() -> dict[str, Any]:
     global _STATE, _STATE_MTIME
     with _LOCK:
-        file_mtime = os.path.getmtime(STATE_PATH) if os.path.exists(STATE_PATH) else 0.0
+        state_file = STATE_PATH
+        legacy_path = os.path.join(BACKEND_DIR, "preview_state.json")
+        if not os.path.exists(state_file) and os.path.exists(legacy_path):
+            state_file = legacy_path
+        file_mtime = os.path.getmtime(state_file) if os.path.exists(state_file) else 0.0
         if _STATE is None or (file_mtime > 0 and file_mtime > _STATE_MTIME):
-            if os.path.exists(STATE_PATH):
+            if os.path.exists(state_file):
                 try:
-                    with open(STATE_PATH, "r", encoding="utf-8") as fh:
+                    with open(state_file, "r", encoding="utf-8") as fh:
                         _STATE = json.load(fh)
                         _STATE_MTIME = file_mtime
                 except Exception:
@@ -364,6 +607,8 @@ def get_state() -> dict[str, Any]:
             else:
                 _STATE = _build_initial_state()
             _migrate_roles(_STATE)
+            _ensure_roleplay_scenarios(_STATE)
+            _ensure_demo_users(_STATE)
         return _STATE
 
 

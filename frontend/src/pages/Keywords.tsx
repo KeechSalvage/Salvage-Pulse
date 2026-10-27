@@ -164,7 +164,7 @@ export default function Keywords() {
     onError: (e) => toast.error(errorMessage(e)),
   });
 
-  const stat = (kw: string) => ov.data?.keyword_stats.find((s) => s.keyword === kw);
+  const stat = (kw: string) => (ov.data?.keyword_stats ?? []).find((s) => s.keyword === kw);
   const total = ov.data?.total_calls ?? 0;
 
   return (

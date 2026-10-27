@@ -1,3 +1,4 @@
+import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
 from database import (
@@ -8,6 +9,14 @@ from database import (
     compute_weighted_overall_score,
     infer_vehicle_body,
 )
+from gemini_service import (
+    analyze_call_transcript_llm,
+    grade_roleplay_session_llm,
+    is_gemini_configured,
+)
+
+logger = logging.getLogger("salvage_pulse.analyzer")
+
 
 
 def parse_turns(transcript: str) -> List[Dict[str, str]]:
@@ -74,7 +83,7 @@ def extract_vehicle_and_part(text: str, topics: Optional[List[str]] = None) -> D
     }
 
 
-def analyze_transcript(transcript: str, customer_name: str = "") -> Dict[str, Any]:
+def _analyze_transcript_heuristic(transcript: str, customer_name: str = "") -> Dict[str, Any]:
     turns = parse_turns(transcript)
     low = (transcript or "").lower()
     rep_text = " ".join(t["text"] for t in turns if t["speaker"] == "Rep").lower() or low
@@ -83,7 +92,10 @@ def analyze_transcript(transcript: str, customer_name: str = "") -> Dict[str, An
     vp = extract_vehicle_and_part(transcript)
 
     # Dollar amounts
-    amounts = [float(x.replace(",", "")) for x in re.findall(r"\$\s*(\d{2,5}(?:,\d{3})?)", transcript)]
+    amounts = [
+        float(x.replace(",", ""))
+        for x in re.findall(r"\$\s*(\d{1,6}(?:,\d{3})*(?:\.\d{2})?)", transcript)
+    ]
     quoted_value = max(amounts) if amounts else 0.0
 
     # Category & outcome detection
@@ -100,7 +112,11 @@ def analyze_transcript(transcript: str, customer_name: str = "") -> Dict[str, An
         category = "Shipping/Delivery"
         outcome = "n/a"
     else:
-        won_signals = ["hold it", "i'll take it", "put it on my card", "send it over", "pick up today", "ship it", "sold", "invoice me", "set it aside"]
+        won_signals = [
+            "hold it", "i'll take it", "put it on my card", "send it over",
+            "pick up today", "ship it", "sold", "invoice me", "set it aside",
+            "let's do it", "sounds great let's do it", "deal"
+        ]
         lost_signals = ["i'll pass", "too high", "no thanks", "out of stock", "don't have one", "call around", "already bought"]
         price_signals = ["cheaper", "aftermarket", "lkq", "too high", "do better on price", "discount", "knock off"]
 
@@ -208,6 +224,7 @@ def analyze_transcript(transcript: str, customer_name: str = "") -> Dict[str, An
 
     return {
         "turns": turns,
+        "vehicle": veh_str,
         "category": category,
         "outcome": outcome,
         "overall_score": overall_score,
@@ -224,6 +241,51 @@ def analyze_transcript(transcript: str, customer_name: str = "") -> Dict[str, An
         "topics": topics or ["Part Inquiry"],
         **vp,
     }
+
+
+def analyze_transcript(
+    transcript: str, customer_name: str = "", rep_name: str = ""
+) -> Dict[str, Any]:
+    """Primary entry point for call scoring.
+    Attempts Google Gemini 2.5 Flash analysis when configured,
+    and seamlessly falls back to fast local heuristic analysis.
+    """
+    if is_gemini_configured():
+        try:
+            llm_result = analyze_call_transcript_llm(
+                transcript, customer_name=customer_name, rep_name=rep_name
+            )
+            if llm_result and isinstance(llm_result, dict):
+                # Ensure turns list is populated
+                if not llm_result.get("turns"):
+                    llm_result["turns"] = parse_turns(transcript)
+
+                # Ensure vehicle string exists
+                if not llm_result.get("vehicle"):
+                    veh_parts = [
+                        str(x)
+                        for x in [
+                            llm_result.get("vehicle_year"),
+                            llm_result.get("vehicle_make"),
+                            llm_result.get("vehicle_model"),
+                        ]
+                        if x
+                    ]
+                    llm_result["vehicle"] = " ".join(veh_parts)
+
+                # Ensure order_value and quoted_value are floats
+                llm_result["quoted_value"] = float(llm_result.get("quoted_value") or 0.0)
+                llm_result["order_value"] = float(llm_result.get("order_value") or 0.0)
+                llm_result["parts_sold"] = llm_result.get("parts_sold") or []
+                llm_result["analysis_engine"] = "gemini"
+                logger.info("Successfully analyzed call transcript using Google Gemini Flash")
+                return llm_result
+        except Exception as e:
+            logger.warning(f"Gemini analysis exception: {e}, falling back to heuristics")
+
+    heuristic_result = _analyze_transcript_heuristic(transcript, customer_name=customer_name)
+    heuristic_result["analysis_engine"] = "heuristic"
+    return heuristic_result
 
 
 def generate_roleplay_reply(scenario: Dict[str, Any], messages: List[Dict[str, str]], rep_text: str) -> str:
@@ -250,15 +312,25 @@ def generate_roleplay_reply(scenario: Dict[str, Any], messages: List[Dict[str, s
 
 
 def grade_roleplay_session(scenario: Dict[str, Any], messages: List[Dict[str, str]]) -> Dict[str, Any]:
+    if is_gemini_configured():
+        try:
+            llm_grade = grade_roleplay_session_llm(scenario, messages)
+            if llm_grade and isinstance(llm_grade, dict):
+                llm_grade["grading_engine"] = "gemini"
+                return llm_grade
+        except Exception as e:
+            logger.warning(f"Gemini roleplay grading failed: {e}")
+
     transcript = "\n".join(
-        f"{'Rep' if m['role'] == 'rep' else 'Customer'}: {m['text']}" for m in messages
+        f"{'Rep' if m.get('role') == 'rep' else 'Customer'}: {m.get('text', '')}" for m in messages
     )
-    analysis = analyze_transcript(transcript)
+    analysis = _analyze_transcript_heuristic(transcript)
     return {
         "overall_score": analysis["overall_score"],
-        "summary": f"Completed {len([m for m in messages if m['role'] == 'rep'])} exchanges with {scenario.get('persona', 'the caller')}.",
+        "summary": f"Completed {len([m for m in messages if m.get('role') == 'rep'])} exchanges with {scenario.get('persona', 'the caller')}.",
         "metrics": analysis["metrics"],
         "coaching_feedback": analysis["coaching_feedback"],
         "strengths": analysis["strengths"],
         "improvements": analysis["improvements"],
+        "grading_engine": "heuristic",
     }

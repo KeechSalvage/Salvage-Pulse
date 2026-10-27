@@ -33,7 +33,7 @@ export default function SeasonalPartsPanel({ lot = "" }: { lot?: string }) {
   const offset = (data?.months.length ?? 0) - months.length;
   const cells = (p: PartsSeasonal["parts"][number]) => (mode === "asked" ? p.asked_by_month : p.sold_by_month).slice(offset);
   const max = Math.max(1, ...(data?.parts.flatMap(cells) ?? [1]));
-  const focus = data?.parts.find((p) => p.part === picked) ?? data?.parts.find((p) => p.low_close) ?? data?.parts[0];
+  const focus = (data?.parts ?? []).find((p) => p.part === picked) ?? (data?.parts ?? []).find((p) => p.low_close) ?? data?.parts?.[0];
   const unsold = focus?.reasons.reduce((s, r) => s + r.calls, 0) ?? 0;
   const known = focus?.reasons.filter((r) => r.reason !== "unknown") ?? [];
   const topFix = known[0] ? REASONS[known[0].reason]?.fix : "";

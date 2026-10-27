@@ -209,16 +209,16 @@ export default function Team() {
   const [siteId, setSiteId] = useState("");
   const [repSort, setRepSort] = useState<"name" | "site" | "calls" | "score">("name");
   const shown = (reps.data ?? []).filter((r) => !siteId || r.site_id === siteId);
-  const lastChange = (id: string) => loginLog.data?.find((e) => e.rep_id === id);
+  const lastChange = (id: string) => (loginLog.data ?? []).find((e) => e.rep_id === id);
   const tagChampion = useTagChampion();
-  const stat = (id: string) => ov.data?.leaderboard.find((l) => l.rep_id === id);
+  const stat = (id: string) => (ov.data?.leaderboard ?? []).find((l) => l.rep_id === id);
   const assignments = useAssignments();
   const overdueFor = (id: string) => (assignments.data ?? []).filter((a) => a.rep_id === id && a.status === "overdue");
 
   const sortedReps = [...shown].sort((a, b) => {
     if (repSort === "site") {
-      const siteA = sites.data?.sites.find((s) => s.id === a.site_id)?.name ?? "Main Yard";
-      const siteB = sites.data?.sites.find((s) => s.id === b.site_id)?.name ?? "Main Yard";
+      const siteA = (sites.data?.sites ?? []).find((s) => s.id === a.site_id)?.name ?? "Main Yard";
+      const siteB = (sites.data?.sites ?? []).find((s) => s.id === b.site_id)?.name ?? "Main Yard";
       const c = siteA.localeCompare(siteB);
       return c !== 0 ? c : a.name.localeCompare(b.name);
     }

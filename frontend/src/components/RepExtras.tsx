@@ -89,7 +89,7 @@ export function DeliveryCoaching({ repId }: { repId?: string }) {
     queryFn: () => apiGet<DeliveryStats>(`/delivery-stats${repId ? `?rep_id=${repId}` : ""}`),
   });
   if (!data || !data.calls) return null;
-  const weak = data.steps.find((s) => s.key === data.weakest);
+  const weak = (data.steps ?? []).find((s) => s.key === data.weakest);
   return (
     <Panel testId="delivery-coaching">
       <div className="flex items-center gap-2">

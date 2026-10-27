@@ -28,7 +28,7 @@ def ensure_demo_yard():
                 INSERT INTO users (id, org_id, name, email, password_hash, role, title, created_at)
                 VALUES (?, NULL, ?, ?, ?, 'master', 'Platform Founder', ?)
                 """,
-                ("usr_master", "Brandon Keech", "admin@salvagepulse.com", hash_password("admin1234"), iso_days_ago(120)),
+                ("usr_master", "Dale Miller", "admin@salvagepulse.com", hash_password("admin1234"), iso_days_ago(120)),
             )
 
         # Platform settings
@@ -544,8 +544,8 @@ def ensure_demo_yard():
                 """
                 INSERT INTO audit_logs (id, actor, action, target, at)
                 VALUES
-                  ('aud_1', 'Brandon Keech', 'Created organization', 'Northside Auto Recyclers (Enterprise)', ?),
-                  ('aud_2', 'Brandon Keech', 'Extended trial +3 days', 'Apex Auto Parts & Salvage', ?)
+                  ('aud_1', 'Dale Miller', 'Created organization', 'Northside Auto Recyclers (Enterprise)', ?),
+                  ('aud_2', 'Dale Miller', 'Extended trial +3 days', 'Apex Auto Parts & Salvage', ?)
                 """,
                 (iso_days_ago(30), iso_days_ago(1)),
             )
