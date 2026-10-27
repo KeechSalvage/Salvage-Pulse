@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import uuid
+import httpx
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -271,21 +273,192 @@ def auth_signup(req: SignupReq, response: Response) -> dict[str, Any]:
     return new_user
 
 
+class GoogleAuthReq(BaseModel):
+    access_token: Optional[str] = None
+    id_token: Optional[str] = None
+    session_id: Optional[str] = None
+    user_id: Optional[str] = None
+
+
 class GoogleSignupReq(BaseModel):
-    session_id: str
+    access_token: Optional[str] = None
+    id_token: Optional[str] = None
+    session_id: Optional[str] = None
     yard_name: str
     plan: str = "enterprise"
 
 
+async def _fetch_google_user(access_token: Optional[str], id_token: Optional[str]) -> Optional[dict[str, Any]]:
+    if not access_token and not id_token:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            if access_token:
+                resp = await client.get(
+                    "https://www.googleapis.com/oauth2/v3/userinfo",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                )
+                if resp.status_code == 200:
+                    return resp.json()
+            if id_token:
+                resp = await client.get(
+                    f"https://oauth2.googleapis.com/tokeninfo?id_token={id_token}"
+                )
+                if resp.status_code == 200:
+                    return resp.json()
+    except Exception:
+        pass
+    return None
+
+
+@router.get("/api/auth/google/config")
+def auth_google_config() -> dict[str, Any]:
+    client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+    st = store.get_state()
+    seen_emails: set[str] = set()
+    users = []
+    raw_users = list(st.get("users_by_id", {}).values())
+    raw_users.sort(key=lambda u: (0 if "keechauto.com" in u.get("email", "") or u.get("id") == "master-brettk" else 1))
+
+    for u in raw_users:
+        email = u.get("email", "").strip().lower()
+        if not email or email in seen_emails or u.get("disabled"):
+            continue
+        if u.get("role") not in ("owner", "sales_manager", "inventory_manager", "rep", "master"):
+            continue
+        seen_emails.add(email)
+        users.append({
+            "id": u["id"],
+            "name": u.get("name", ""),
+            "email": u.get("email", ""),
+            "role": u.get("role", ""),
+            "title": u.get("title", ""),
+            "avatar_url": u.get("avatar_url", ""),
+        })
+
+    order = {"owner": 1, "sales_manager": 2, "inventory_manager": 3, "rep": 4, "master": 5}
+    users.sort(key=lambda x: (order.get(x["role"], 99), x["name"]))
+    return {
+        "configured": bool(client_id),
+        "client_id": client_id,
+        "accounts": users,
+    }
+
+
 @router.post("/api/auth/google/signup")
-def auth_google_signup(req: GoogleSignupReq, response: Response) -> dict[str, Any]:
-    user = auth_demo_login(response=response, req=DemoLoginReq(role="manager"))
-    return {"user": user, "created": True}
+async def auth_google_signup(req: GoogleSignupReq, response: Response) -> dict[str, Any]:
+    st = store.get_state()
+    google_profile = await _fetch_google_user(req.access_token, req.id_token)
+    if not google_profile:
+        raise HTTPException(
+            status_code=400,
+            detail="Google authorization could not be verified. Please try again.",
+        )
+
+    email = google_profile.get("email", "").strip().lower()
+    name = google_profile.get("name") or email.split("@")[0]
+    picture = google_profile.get("picture", "")
+
+    match = next((u for u in st.get("users_by_id", {}).values() if u.get("email", "").strip().lower() == email), None)
+    if match:
+        set_session_cookie(response, match["id"])
+        return {"user": match, "created": False}
+
+    new_id = f"user-{uuid.uuid4().hex[:12]}"
+    org_id = f"org-{uuid.uuid4().hex[:12]}"
+
+    new_user = {
+        "id": new_id,
+        "email": email,
+        "name": name,
+        "role": "owner",
+        "title": "Yard Owner",
+        "avatar_url": picture,
+        "org_id": org_id,
+        "impersonated_by": "",
+        "disabled": False,
+        "site_id": "",
+        "must_change_password": False,
+        "google_linked": True,
+    }
+    st.setdefault("users_by_id", {})[new_id] = new_user
+
+    new_org = {
+        "id": org_id,
+        "name": req.yard_name,
+        "yard_name": req.yard_name,
+        "plan": req.plan or "enterprise",
+        "status": "trialing",
+        "trial_ends_at": (datetime.now(timezone.utc) + timedelta(days=14)).isoformat(),
+        "created_at": store.now_iso(),
+        "users": 1,
+        "calls": 0,
+        "ringcentral_connected": False,
+        "card_on_file": False,
+        "blocked": False,
+        "cancel_reason": "",
+        "discount": None,
+        "sites": 0,
+        "max_sites": 2,
+        "extra_sites": 0,
+    }
+    st.setdefault("admin_orgs", []).insert(0, new_org)
+    st.setdefault("branding_by_org", {})[org_id] = {
+        "yard_name": req.yard_name,
+        "accent": "",
+        "default_mode": "dark",
+        "logo_url": "",
+        "user_mode": "dark",
+        "mode": "dark",
+    }
+    set_session_cookie(response, new_id)
+    store.save_state()
+    return {"user": new_user, "created": True}
 
 
 @router.post("/api/auth/google")
-def auth_google(response: Response) -> dict[str, Any]:
-    return auth_demo_login(response=response, req=DemoLoginReq(role="manager"))
+async def auth_google(req: GoogleAuthReq, response: Response) -> dict[str, Any]:
+    st = store.get_state()
+
+    # 1. Direct user_id selection (e.g. from the account chooser when Google OAuth is not configured)
+    if req.user_id and req.user_id in st.get("users_by_id", {}):
+        target = st["users_by_id"][req.user_id]
+        set_session_cookie(response, target["id"])
+        return target
+
+    # 2. Real Google OAuth Token verification
+    google_profile = await _fetch_google_user(req.access_token, req.id_token)
+    if google_profile:
+        email = google_profile.get("email", "").strip().lower()
+        picture = google_profile.get("picture", "")
+
+        match = next((u for u in st.get("users_by_id", {}).values() if u.get("email", "").strip().lower() == email), None)
+        if match:
+            match["google_linked"] = True
+            if picture and not match.get("avatar_url"):
+                match["avatar_url"] = picture
+            set_session_cookie(response, match["id"])
+            store.save_state()
+            return match
+
+        if email == store.INITIAL_MASTER_EMAIL:
+            masters = [u for u in st.get("users_by_id", {}).values() if u.get("role") == "master" and not u.get("disabled")]
+            if masters:
+                m = masters[0]
+                m["google_linked"] = True
+                set_session_cookie(response, m["id"])
+                store.save_state()
+                return m
+
+        raise HTTPException(
+            status_code=404,
+            detail=f"No account found with email '{email}'. Please ask your yard owner for an invite or sign up for a new yard.",
+        )
+
+    raise HTTPException(
+        status_code=400,
+        detail="Google OAuth is not configured. Please add GOOGLE_CLIENT_ID to .env or choose an account.",
+    )
 
 
 class ChangePasswordReq(BaseModel):

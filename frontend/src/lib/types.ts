@@ -1026,7 +1026,9 @@ export interface OrgInfo {
 }
 
 export interface GoogleSignupRequest {
-  session_id: string;
+  session_id?: string;
+  access_token?: string;
+  id_token?: string;
   yard_name: string;
   plan: PlanId;
 }
@@ -1574,8 +1576,26 @@ export interface ResetResult {
   message: string;
 }
 
+export interface GoogleAccountOption {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  title: string;
+  avatar_url?: string;
+}
+
+export interface GoogleAuthConfig {
+  configured: boolean;
+  client_id: string;
+  accounts?: GoogleAccountOption[];
+}
+
 export interface GoogleSessionRequest {
-  session_id: string;
+  session_id?: string;
+  access_token?: string;
+  id_token?: string;
+  user_id?: string;
 }
 
 export interface DemoLoginRequest {
