@@ -599,38 +599,72 @@ def admin_post_staff_reset_password(sid: str, request: Request) -> dict[str, Any
     return {"account": s, "emailed": emailed, "temp_password": temp_pw}
 
 
+def _drop_sessions(st: dict[str, Any], tokens: list[str]) -> None:
+    for t in tokens:
+        st.get("sessions", {}).pop(t, None)
+        st.get("session_meta", {}).pop(t, None)
+
+
 @router.post("/api/admin/staff/{user}/sign-out-everywhere")
-def admin_post_staff_sign_out(user: str) -> dict[str, Any]:
-    return {"ended": 3, "you": False}
+def admin_post_staff_sign_out(user: str, request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    mine = request.cookies.get("sp_session")
+    tokens = [t for t, uid in st.get("sessions", {}).items() if uid == user]
+    _drop_sessions(st, tokens)
+    store.save_state()
+    return {"ended": len(tokens), "you": bool(mine and mine in tokens)}
 
 
 @router.get("/api/admin/staff-devices")
-def admin_get_staff_devices() -> list[dict[str, Any]]:
-    return [
-        {
-            "user_id": "master-ben-keech",
-            "name": "Ben Keech",
-            "email": "benkeech800@gmail.com",
-            "role": "master",
-            "sessions": 1,
-            "devices": [
-                {
-                    "id": "dev-1",
-                    "browser": "Chrome on macOS",
-                    "ip": "127.0.0.1",
-                    "first_seen": "2026-10-01T12:00:00Z",
-                    "last_seen": store.now_iso(),
-                    "this_browser": True,
-                    "nickname": "Work Mac",
-                }
-            ],
-        }
-    ]
+def admin_get_staff_devices(request: Request) -> list[dict[str, Any]]:
+    st = store.get_state()
+    mine = request.cookies.get("sp_session")
+    sessions = st.get("sessions", {})
+    meta = st.get("session_meta", {})
+    out = []
+    for u in st.get("users_by_id", {}).values():
+        if u.get("role") not in ("master", "admin") or u.get("disabled"):
+            continue
+        devices: dict[str, dict[str, Any]] = {}
+        live = 0
+        for token, m in meta.items():
+            if m.get("user_id") != u["id"] or token not in sessions:
+                continue
+            live += 1
+            d = devices.setdefault(m["device_id"], {
+                "id": m["device_id"],
+                "browser": m.get("browser", "Browser"),
+                "ip": m.get("ip", ""),
+                "first_seen": m.get("first_seen"),
+                "last_seen": m.get("last_seen"),
+                "this_browser": False,
+                "nickname": "",
+            })
+            d["first_seen"] = min(d["first_seen"] or m["first_seen"], m["first_seen"])
+            d["last_seen"] = max(d["last_seen"] or m["last_seen"], m["last_seen"])
+            if token == mine:
+                d["this_browser"] = True
+        out.append({
+            "user_id": u["id"],
+            "name": u.get("name", ""),
+            "email": u.get("email", ""),
+            "role": u.get("role", ""),
+            "sessions": live,
+            "devices": sorted(devices.values(), key=lambda d: d["last_seen"] or "", reverse=True),
+        })
+    return sorted(out, key=lambda x: (x["role"] != "master", x["name"]))
 
 
 @router.delete("/api/admin/staff-devices/{user}/{device}")
-def admin_delete_staff_device(user: str, device: str) -> list[dict[str, Any]]:
-    return admin_get_staff_devices()
+def admin_delete_staff_device(user: str, device: str, request: Request) -> list[dict[str, Any]]:
+    st = store.get_state()
+    tokens = [
+        t for t, m in st.get("session_meta", {}).items()
+        if m.get("user_id") == user and m.get("device_id") == device
+    ]
+    _drop_sessions(st, tokens)
+    store.save_state()
+    return admin_get_staff_devices(request)
 
 
 @router.get("/api/admin/staff-lockdown")

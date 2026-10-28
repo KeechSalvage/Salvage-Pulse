@@ -37,12 +37,7 @@ def _find_master_or_actor(impersonator_id: str | None = None) -> dict[str, Any]:
 
 @router.get("/api/auth/me")
 def auth_me(request: Request) -> dict[str, Any]:
-    st = store.get_state()
-    cookie_token = request.cookies.get("sp_session")
-    if cookie_token and cookie_token in st.get("sessions", {}):
-        uid = st["sessions"][cookie_token]
-        if uid in st.get("users_by_id", {}):
-            return st["users_by_id"][uid]
+    return get_current_user(request)
 
     uid = st.get("current_user_id")
     if uid and uid in st.get("users_by_id", {}):
@@ -115,7 +110,7 @@ class LoginReq(BaseModel):
 
 
 @router.post("/api/auth/login")
-def auth_login(req: LoginReq, response: Response) -> dict[str, Any]:
+def auth_login(req: LoginReq, response: Response, request: Request) -> dict[str, Any]:
     st = store.get_state()
     email_clean = req.email.strip().lower()
 
@@ -187,7 +182,7 @@ def auth_login(req: LoginReq, response: Response) -> dict[str, Any]:
         if yard and (yard.get("blocked") or yard.get("status") == "canceled"):
             raise HTTPException(status_code=403, detail="Yard is disabled. Please contact platform support.")
 
-    set_session_cookie(response, match["id"])
+    set_session_cookie(response, match["id"], request)
     return match
 
 
@@ -195,8 +190,9 @@ def auth_login(req: LoginReq, response: Response) -> dict[str, Any]:
 def auth_logout(response: Response, request: Request) -> dict[str, Any]:
     st = store.get_state()
     cookie_token = request.cookies.get("sp_session")
-    if cookie_token and cookie_token in st.get("sessions", {}):
-        st["sessions"].pop(cookie_token, None)
+    if cookie_token:
+        st.get("sessions", {}).pop(cookie_token, None)
+        st.get("session_meta", {}).pop(cookie_token, None)
     st["current_user_id"] = None
     response.delete_cookie(key="sp_session", path="/")
     store.save_state()
@@ -346,7 +342,7 @@ def auth_google_config() -> dict[str, Any]:
 
 
 @router.post("/api/auth/google/signup")
-async def auth_google_signup(req: GoogleSignupReq, response: Response) -> dict[str, Any]:
+async def auth_google_signup(req: GoogleSignupReq, response: Response, request: Request) -> dict[str, Any]:
     st = store.get_state()
     google_profile = await _fetch_google_user(req.access_token, req.id_token)
     if not google_profile:
@@ -363,7 +359,7 @@ async def auth_google_signup(req: GoogleSignupReq, response: Response) -> dict[s
     if match:
         match["google_linked"] = True
         match["must_change_password"] = False
-        set_session_cookie(response, match["id"])
+        set_session_cookie(response, match["id"], request)
         store.save_state()
         return {"user": match, "created": False}
 
@@ -420,13 +416,13 @@ async def auth_google_signup(req: GoogleSignupReq, response: Response) -> dict[s
 
 
 @router.post("/api/auth/google")
-async def auth_google(req: GoogleAuthReq, response: Response) -> dict[str, Any]:
+async def auth_google(req: GoogleAuthReq, response: Response, request: Request) -> dict[str, Any]:
     st = store.get_state()
 
     # 1. Direct user_id selection (e.g. from the account chooser when Google OAuth is not configured)
     if req.user_id and req.user_id in st.get("users_by_id", {}):
         target = st["users_by_id"][req.user_id]
-        set_session_cookie(response, target["id"])
+        set_session_cookie(response, target["id"], request)
         return target
 
     # 2. Real Google OAuth Token verification
@@ -441,7 +437,7 @@ async def auth_google(req: GoogleAuthReq, response: Response) -> dict[str, Any]:
             match["must_change_password"] = False  # Google proves identity; no starting password needed
             if picture and not match.get("avatar_url"):
                 match["avatar_url"] = picture
-            set_session_cookie(response, match["id"])
+            set_session_cookie(response, match["id"], request)
             store.save_state()
             return match
 
@@ -450,7 +446,7 @@ async def auth_google(req: GoogleAuthReq, response: Response) -> dict[str, Any]:
             if masters:
                 m = masters[0]
                 m["google_linked"] = True
-                set_session_cookie(response, m["id"])
+                set_session_cookie(response, m["id"], request)
                 store.save_state()
                 return m
 
