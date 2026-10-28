@@ -361,7 +361,10 @@ async def auth_google_signup(req: GoogleSignupReq, response: Response) -> dict[s
 
     match = next((u for u in st.get("users_by_id", {}).values() if u.get("email", "").strip().lower() == email), None)
     if match:
+        match["google_linked"] = True
+        match["must_change_password"] = False
         set_session_cookie(response, match["id"])
+        store.save_state()
         return {"user": match, "created": False}
 
     new_id = f"user-{uuid.uuid4().hex[:12]}"
@@ -435,6 +438,7 @@ async def auth_google(req: GoogleAuthReq, response: Response) -> dict[str, Any]:
         match = next((u for u in st.get("users_by_id", {}).values() if u.get("email", "").strip().lower() == email), None)
         if match:
             match["google_linked"] = True
+            match["must_change_password"] = False  # Google proves identity; no starting password needed
             if picture and not match.get("avatar_url"):
                 match["avatar_url"] = picture
             set_session_cookie(response, match["id"])

@@ -488,6 +488,12 @@ def admin_get_trial_reminders_preview(kind: str = Query("day4")) -> dict[str, An
 @router.get("/api/admin/staff")
 def admin_get_staff() -> list[dict[str, Any]]:
     st = store.get_state()
+    # Onboarding status lives on the login record; mirror it so the list is always current.
+    for s in st.get("admin_staff", []):
+        u = st.get("users_by_id", {}).get(s.get("id"))
+        if u:
+            s["google_linked"] = bool(u.get("google_linked") or s.get("google_linked"))
+            s["must_change_password"] = bool(u.get("must_change_password"))
     return st.get("admin_staff", [])
 
 
