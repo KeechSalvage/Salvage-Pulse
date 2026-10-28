@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, KeyRound, Mail, MailWarning, Pencil, UserPlus, Users, X } from "lucide-react";
+import { Check, Copy, KeyRound, Mail, MailWarning, Pencil, Trash2, UserPlus, Users, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Panel } from "@/components/common";
-import { apiGet, apiPatch, apiPost, errorMessage } from "@/lib/api";
+import { apiDelete, apiGet, apiPatch, apiPost, errorMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { StaffAccount, StaffCreate, StaffCreated, StaffLockdown, StaffUpdate } from "@/lib/types";
 
@@ -47,6 +47,15 @@ export default function StaffAccountsPanel() {
     onSuccess: (r) => {
       setShown(r);
       qc.invalidateQueries({ queryKey: KEY });
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => apiDelete<{ ok: boolean; message: string }>(`/admin/users/${id}`),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: KEY });
+      qc.invalidateQueries({ queryKey: ["admin", "users"] });
+      toast.success(r.message);
     },
     onError: (e) => toast.error(errorMessage(e)),
   });
@@ -137,6 +146,10 @@ export default function StaffAccountsPanel() {
             <Button size="sm" variant={s.disabled ? "outline" : "destructive"} data-testid={`staff-toggle-${s.id}`} disabled={s.you || update.isPending}
               onClick={() => (s.disabled || window.confirm(`Turn off ${s.name}'s login? They're signed out right away.`)) && update.mutate({ id: s.id, body: { disabled: !s.disabled } })}>
               {s.disabled ? "Turn on" : "Turn off"}
+            </Button>
+            <Button size="sm" variant="ghost" className="text-red-300 hover:text-red-200" data-testid={`staff-delete-${s.id}`} disabled={s.you || remove.isPending}
+              onClick={() => window.confirm(`Delete ${s.name}'s staff login for good? Anything they did stays in the audit log.`) && remove.mutate(s.id)}>
+              <Trash2 className="size-3.5" /> Delete
             </Button>
           </li>
         ))}

@@ -330,6 +330,67 @@ def admin_patch_user(uid: str, body: dict[str, Any], request: Request) -> dict[s
     }
 
 
+@router.delete("/api/admin/users/{uid}")
+def admin_delete_user(uid: str, request: Request) -> dict[str, Any]:
+    """Delete a login. Masters may delete staff and yard users; admins may delete yard users only.
+
+    Only the account (login + sessions) is removed. Calls, sales and other records keep their
+    rep_id / rep_name, and a tombstone is archived in `deleted_users` so history stays attributable.
+    """
+    st = store.get_state()
+    actor = get_current_user(request)
+    actor_role = actor.get("role")
+    if actor_role not in ("master", "admin"):
+        raise HTTPException(status_code=403, detail="Platform staff only")
+
+    target = st.get("users_by_id", {}).get(uid)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if uid == actor.get("id"):
+        raise HTTPException(status_code=400, detail="You can't delete your own account")
+
+    target_is_staff = target.get("role") in ("master", "admin")
+    if target_is_staff:
+        if actor_role != "master":
+            raise HTTPException(status_code=403, detail="Only master accounts can delete staff")
+        remaining_masters = [
+            u for u in st["users_by_id"].values()
+            if u.get("role") == "master" and not u.get("disabled") and u.get("id") != uid
+        ]
+        if target.get("role") == "master" and not remaining_masters:
+            raise HTTPException(status_code=400, detail="Can't delete the last master account")
+
+    st.setdefault("deleted_users", {})[uid] = {
+        "id": uid,
+        "name": target.get("name", ""),
+        "email": target.get("email", ""),
+        "role": target.get("role", ""),
+        "org_id": target.get("org_id", ""),
+        "deleted_at": store.now_iso(),
+        "deleted_by": actor.get("name", "Admin"),
+    }
+    del st["users_by_id"][uid]
+    st["sessions"] = {t: u for t, u in st.get("sessions", {}).items() if u != uid}
+    st["admin_staff"] = [s for s in st.get("admin_staff", []) if s.get("id") != uid]
+    if st.get("current_user_id") == uid:
+        st["current_user_id"] = None
+
+    org_id = target.get("org_id")
+    if org_id and not target_is_staff:
+        for o in st.get("admin_orgs", []):
+            if o.get("id") == org_id and isinstance(o.get("users"), int):
+                o["users"] = max(0, o["users"] - 1)
+
+    st.setdefault("admin_audit", []).insert(0, {
+        "at": store.now_iso(),
+        "actor": actor.get("name", "Admin"),
+        "action": f"deleted {'staff' if target_is_staff else 'yard'} user {target.get('email')} (history kept)",
+        "target": target.get("name", uid),
+    })
+    store.save_state()
+    return {"ok": True, "message": f"{target.get('name', 'User')} deleted; their calls and sales were kept"}
+
+
 @router.post("/api/admin/impersonate/{uid}")
 def admin_impersonate(uid: str, response: Response, request: Request) -> dict[str, Any]:
     st = store.get_state()

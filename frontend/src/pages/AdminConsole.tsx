@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import DiscountButton, { DiscountRevenuePanel } from "@/components/AdminDiscount";
-import { Copy, KeyRound, LogIn, Plus } from "lucide-react";
+import { Copy, KeyRound, LogIn, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PageHeader, Panel, fmtDate } from "@/components/common";
-import { apiGet, apiPatch, apiPost, errorMessage } from "@/lib/api";
+import { apiDelete, apiGet, apiPatch, apiPost, errorMessage } from "@/lib/api";
 import { useMe } from "@/lib/hooks";
 import { queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
@@ -249,6 +249,11 @@ export default function AdminConsole() {
   const updUser = useMutation({
     mutationFn: ({ id, body }: { id: string; body: AdminUserUpdate }) => apiPatch<AdminUser>(`/admin/users/${id}`, body),
     onSuccess: (u) => (toast.success(`${u.name} updated`), inval()),
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+  const delUser = useMutation({
+    mutationFn: (id: string) => apiDelete<{ ok: boolean; message: string }>(`/admin/users/${id}`),
+    onSuccess: (r) => (toast.success(r.message), inval()),
     onError: (e) => toast.error(errorMessage(e)),
   });
   const payLink = useMutation({
@@ -579,6 +584,22 @@ export default function AdminConsole() {
                       >
                         <KeyRound className="mr-1 size-3.5" /> Set password
                       </Button>
+                      {(me?.role === "master" || !staff) && u.id !== me?.id && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          data-testid={`admin-user-delete-${i}`}
+                          className="text-xs text-red-300 hover:text-red-200"
+                          disabled={delUser.isPending}
+                          title="Delete this login (their calls and sales are kept)"
+                          onClick={() =>
+                            window.confirm(`Delete ${u.name}'s account (${u.email})?\n\nTheir login is removed for good. Their calls, sales and other data are kept.`) &&
+                            delUser.mutate(u.id)
+                          }
+                        >
+                          <Trash2 className="mr-1 size-3.5" /> Delete
+                        </Button>
+                      )}
                       {!staff && (
                         <>
                           <Button size="sm" variant="ghost" data-testid={`admin-user-disable-${i}`} onClick={() => updUser.mutate({ id: u.id, body: { disabled: !u.disabled } })}>
