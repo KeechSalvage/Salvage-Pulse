@@ -4,7 +4,7 @@ import os
 import re
 import uuid
 from typing import Any
-from fastapi import Request, Response
+from fastapi import HTTPException, Request, Response
 import store
 
 
@@ -71,29 +71,12 @@ def get_current_user(request: Request) -> dict[str, Any]:
     cookie_token = request.cookies.get("sp_session")
     if cookie_token and cookie_token in st.get("sessions", {}):
         uid = st["sessions"][cookie_token]
-        if uid in st.get("users_by_id", {}):
+        user = st.get("users_by_id", {}).get(uid)
+        if user and not user.get("disabled"):
             _track_session(st, cookie_token, uid, request)
-            return st["users_by_id"][uid]
+            return user
 
-    uid = st.get("current_user_id")
-    if uid and uid in st.get("users_by_id", {}):
-        return st["users_by_id"][uid]
-
-    masters = [
-        u
-        for u in st.get("users_by_id", {}).values()
-        if u.get("role") == "master" and not u.get("disabled")
-    ]
-    if masters:
-        return masters[0]
-    if st.get("users_by_id"):
-        return list(st["users_by_id"].values())[0]
-    return {
-        "id": "master-brettk",
-        "email": "brettk@salvagepulsepro.com",
-        "name": "Brett K",
-        "role": "master",
-    }
+    raise HTTPException(status_code=401, detail="Not authenticated")
 
 
 def set_session_cookie(response: Response, user_id: str, request: Request | None = None) -> str:

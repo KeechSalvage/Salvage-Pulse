@@ -73,6 +73,9 @@ DEMO_ROLE_MAP = {
 @router.post("/api/auth/demo-login")
 def auth_demo_login(response: Response, req: Optional[DemoLoginReq] = None) -> dict[str, Any]:
     st = store.get_state()
+    sw = st.get("demo_login_switch", {})
+    if not sw.get("enabled", False):
+        raise HTTPException(status_code=403, detail="Demo login is disabled in production")
     target_role = (req.role if req else "manager").lower().strip()
 
     user = None
@@ -150,26 +153,8 @@ def auth_login(req: LoginReq, response: Response, request: Request) -> dict[str,
         raise HTTPException(status_code=403, detail="Account is disabled. Please contact your administrator.")
 
     stored_hash = match.get("password_hash") or match.get("password")
-    pw_input = (req.password or "").strip().lower()
-    role_name = (match.get("role") or "").lower()
 
-    role_passwords = {
-        "owner": ["owner", "owner123", "keech", "password"],
-        "sales_manager": ["salesmanager", "sales_manager", "manager", "manager123", "sales", "password"],
-        "inventory_manager": ["inventory", "inventorymanager", "inventory_manager", "inventory123", "password"],
-        "rep": ["rep", "rep1", "rep2", "rep3", "rep4", "salesrep", "sales_rep", "rep123", "password"],
-        "master": ["admin", "master", "admin123", "master123", "password"],
-    }
-
-    is_valid = False
-    if stored_hash and store.verify_password(req.password or "", stored_hash):
-        is_valid = True
-    elif pw_input in role_passwords.get(role_name, []):
-        is_valid = True
-    elif not stored_hash:
-        is_valid = True
-
-    if not is_valid:
+    if not stored_hash or not store.verify_password(req.password or "", stored_hash):
         raise HTTPException(status_code=401, detail="Incorrect password. Please verify your credentials.")
 
     if req.password and not stored_hash:

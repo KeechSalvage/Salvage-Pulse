@@ -18,11 +18,22 @@ from routers import admin, analytics, auth, billing, calls, roleplay, settings, 
 
 app = FastAPI(title="Salvage Pulse AI API", version="2.0.0")
 
+allowed_origins = [
+    "https://app.salvagepulsepro.com",
+    "https://salvagepulsepro.com",
+    "http://localhost:8000",
+    "http://localhost:5173",
+    "http://127.0.0.1:8000",
+]
+extra_origin = os.environ.get("APP_URL", "").strip().rstrip("/")
+if extra_origin and extra_origin not in allowed_origins:
+    allowed_origins.append(extra_origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
