@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import datetime as dt
+import os
 import uuid
 from typing import Any, Optional
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 from auth_utils import get_current_user, set_session_cookie
 import store
+import email_service
 
 router = APIRouter(tags=["admin"])
 
@@ -466,7 +468,15 @@ def admin_post_staff(body: dict[str, Any]) -> dict[str, Any]:
         "password_hash": store.hash_password(temp_pw),
     }
     store.save_state()
-    return {"account": account, "emailed": False, "temp_password": temp_pw}
+    app_url = os.environ.get("APP_URL") or "http://10.1.11.76:8000"
+    emailed = email_service.send_staff_welcome_email(
+        to_email=email,
+        name=name,
+        temp_password=temp_pw,
+        role="Master Admin" if role == "master" else "Admin",
+        app_url=app_url,
+    )
+    return {"account": account, "emailed": emailed, "temp_password": temp_pw}
 
 
 @router.patch("/api/admin/staff/{sid}")
@@ -496,7 +506,16 @@ def admin_post_staff_reset_password(sid: str) -> dict[str, Any]:
         st["users_by_id"][sid]["password_hash"] = store.hash_password(temp_pw)
         st["users_by_id"][sid]["must_change_password"] = True
     store.save_state()
-    return {"account": s, "emailed": False, "temp_password": temp_pw}
+    app_url = os.environ.get("APP_URL") or "http://10.1.11.76:8000"
+    emailed = False
+    if s.get("email"):
+        emailed = email_service.send_password_reset_email(
+            to_email=s["email"],
+            name=s.get("name", "Staff Member"),
+            temp_password=temp_pw,
+            app_url=app_url,
+        )
+    return {"account": s, "emailed": emailed, "temp_password": temp_pw}
 
 
 @router.post("/api/admin/staff/{user}/sign-out-everywhere")

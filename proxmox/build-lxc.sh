@@ -101,6 +101,14 @@ GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
 
 # Google OAuth 2.0 Client ID (Sign in with Google)
 GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+
+# Gmail SMTP Configuration
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=${SMTP_USER:-}
+SMTP_PASSWORD=${SMTP_PASSWORD:-}
+SMTP_FROM_NAME="Salvage Pulse"
+SMTP_FROM=${SMTP_FROM:-}
 EOF
 fi
 
