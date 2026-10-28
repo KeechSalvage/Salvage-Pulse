@@ -442,6 +442,17 @@ def admin_get_free_day() -> dict[str, Any]:
     with_card = sum(1 for o in orgs if o.get("card_on_file"))
     conv_rate = round((len(active) / total * 100), 1) if total else 0.0
 
+    recent = []
+    for o in orgs:
+        outcome = "added_card" if o.get("card_on_file") or o.get("status") in ("active", "demo") else ("on_free_day" if o.get("status") == "trialing" else "no_card")
+        recent.append({
+            "org_id": o.get("id", ""),
+            "name": o.get("name", "Yard"),
+            "started_at": o.get("created_at") or store.now_iso(),
+            "outcome": outcome,
+            "card_added_at": o.get("created_at") if (o.get("card_on_file") or o.get("status") in ("active", "demo")) else None,
+        })
+
     return {
         "started": total,
         "on_free_day": len(trialing),
@@ -451,8 +462,8 @@ def admin_get_free_day() -> dict[str, Any]:
         "conversion_rate": conv_rate,
         "started_30d": total,
         "added_card_30d": with_card,
-        "median_hours_to_card": 0.0,
-        "recent": [],
+        "median_hours_to_card": 0.0 if with_card else None,
+        "recent": recent,
         "alerts": [],
     }
 
