@@ -65,7 +65,7 @@ def send_staff_welcome_email(
     name: str,
     temp_password: str,
     role: str = "Admin",
-    app_url: str = "http://10.1.11.76:8000",
+    app_url: str = "https://app.salvagepulsepro.com",
 ) -> bool:
     """Send a professional welcome email to a new staff member with temporary password and login link."""
     subject = f"Welcome to Salvage Pulse — Your {role} Access"
@@ -133,7 +133,7 @@ def send_password_reset_email(
     to_email: str,
     name: str,
     temp_password: str,
-    app_url: str = "http://10.1.11.76:8000",
+    app_url: str = "https://app.salvagepulsepro.com",
 ) -> bool:
     """Send a password reset email with temporary credentials."""
     subject = "Salvage Pulse — Password Reset"

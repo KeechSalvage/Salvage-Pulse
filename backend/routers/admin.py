@@ -430,8 +430,22 @@ def admin_get_staff() -> list[dict[str, Any]]:
     return st.get("admin_staff", [])
 
 
+def _get_app_url(request: Request) -> str:
+    env_url = os.environ.get("APP_URL", "").strip().rstrip("/")
+    if env_url:
+        return env_url
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme or "https"
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+    if host:
+        # If accessing directly by private IP, still send users to the official public domain
+        if host.startswith("10.") or host.startswith("192.168.") or host.startswith("172."):
+            return "https://app.salvagepulsepro.com"
+        return f"{proto}://{host}"
+    return "https://app.salvagepulsepro.com"
+
+
 @router.post("/api/admin/staff")
-def admin_post_staff(body: dict[str, Any]) -> dict[str, Any]:
+def admin_post_staff(body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
     sid = str(uuid.uuid4())
     temp_pw = f"sp-{uuid.uuid4().hex[:8]}"
@@ -468,7 +482,7 @@ def admin_post_staff(body: dict[str, Any]) -> dict[str, Any]:
         "password_hash": store.hash_password(temp_pw),
     }
     store.save_state()
-    app_url = os.environ.get("APP_URL") or "http://10.1.11.76:8000"
+    app_url = _get_app_url(request)
     emailed = email_service.send_staff_welcome_email(
         to_email=email,
         name=name,
@@ -498,7 +512,7 @@ def admin_patch_staff(sid: str, body: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 @router.post("/api/admin/staff/{sid}/reset-password")
-def admin_post_staff_reset_password(sid: str) -> dict[str, Any]:
+def admin_post_staff_reset_password(sid: str, request: Request) -> dict[str, Any]:
     st = store.get_state()
     s = next((x for x in st.get("admin_staff", []) if x.get("id") == sid), {})
     temp_pw = f"sp-{uuid.uuid4().hex[:8]}"
@@ -506,7 +520,7 @@ def admin_post_staff_reset_password(sid: str) -> dict[str, Any]:
         st["users_by_id"][sid]["password_hash"] = store.hash_password(temp_pw)
         st["users_by_id"][sid]["must_change_password"] = True
     store.save_state()
-    app_url = os.environ.get("APP_URL") or "http://10.1.11.76:8000"
+    app_url = _get_app_url(request)
     emailed = False
     if s.get("email"):
         emailed = email_service.send_password_reset_email(
