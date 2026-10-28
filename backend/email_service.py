@@ -21,6 +21,7 @@ def send_email(
     subject: str,
     html_content: str,
     text_content: Optional[str] = None,
+    reply_to: Optional[str] = None,
 ) -> bool:
     """Send an email using standard SMTP (configured for Gmail or custom SMTP).
 
@@ -41,6 +42,8 @@ def send_email(
     msg["Subject"] = subject
     msg["From"] = f"{from_name} <{from_email}>"
     msg["To"] = to_email
+    if reply_to:
+        msg["Reply-To"] = reply_to
 
     if text_content:
         msg.attach(MIMEText(text_content, "plain", "utf-8"))
@@ -178,3 +181,62 @@ Temporary Password: {temp_password}
 Sign In URL: {clean_url}/login
 """
     return send_email(to_email, subject, html, text)
+
+
+def support_address() -> str:
+    """Where support requests are delivered (override with SUPPORT_EMAIL)."""
+    return os.environ.get("SUPPORT_EMAIL", "").strip() or "support@salvagepulsepro.com"
+
+
+def send_support_request_email(
+    kind: str,
+    subject: str,
+    message: str,
+    user_name: str,
+    user_email: str,
+    role: str,
+    org_name: str,
+    page: str,
+) -> bool:
+    """Deliver an in-app support request to the support inbox. Reply-To is the requester."""
+    from html import escape
+
+    safe = {k: escape(str(v or "")) for k, v in {
+        "kind": kind, "subject": subject, "user_name": user_name, "user_email": user_email,
+        "role": role, "org_name": org_name, "page": page,
+    }.items()}
+    body_html = escape(message or "").replace("\n", "<br>")
+    html = f"""
+    <div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:600px;color:#0f172a">
+      <h2 style="margin:0 0 4px">[{safe['kind']}] {safe['subject']}</h2>
+      <p style="color:#475569;margin:0 0 16px">From <strong>{safe['user_name']}</strong> &lt;{safe['user_email']}&gt;
+        &middot; {safe['role']} &middot; {safe['org_name']}<br>Sent from page: {safe['page']}</p>
+      <div style="border-left:4px solid #f59e0b;padding:8px 14px;background:#f8fafc">{body_html}</div>
+      <p style="color:#64748b;font-size:12px;margin-top:16px">Reply to this email to respond directly to the sender.</p>
+    </div>"""
+    text = (
+        f"[{kind}] {subject}\nFrom: {user_name} <{user_email}> ({role}, {org_name})\n"
+        f"Page: {page}\n\n{message}\n"
+    )
+    return send_email(
+        support_address(),
+        f"[Salvage Pulse {kind}] {subject}",
+        html,
+        text,
+        reply_to=user_email or None,
+    )
+
+
+def send_support_reply_email(to_email: str, to_name: str, subject: str, reply_text: str, replied_by: str) -> bool:
+    """Email a support reply back to the person who asked."""
+    from html import escape
+
+    html = f"""
+    <div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:600px;color:#0f172a">
+      <p>Hi {escape(to_name or 'there')},</p>
+      <p>{escape(replied_by)} from Salvage Pulse support replied to <strong>{escape(subject)}</strong>:</p>
+      <div style="border-left:4px solid #f59e0b;padding:8px 14px;background:#f8fafc">{escape(reply_text).replace(chr(10), '<br>')}</div>
+      <p style="color:#64748b;font-size:12px;margin-top:16px">You can also reply to this email.</p>
+    </div>"""
+    text = f"Hi {to_name},\n\n{replied_by} replied to \"{subject}\":\n\n{reply_text}\n"
+    return send_email(to_email, f"Re: {subject}", html, text, reply_to=support_address())

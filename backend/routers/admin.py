@@ -692,6 +692,11 @@ def admin_post_message_reply(mid: str, body: dict[str, Any], request: Request) -
             }
             m.setdefault("replies", []).append(reply)
             m["reply_unread"] = True
+            if m.get("user_email") and reply["text"]:
+                email_service.send_support_reply_email(
+                    m["user_email"], m.get("user_name", ""), m.get("subject", "your request"),
+                    reply["text"], reply["by"],
+                )
             if body.get("resolve"):
                 m["status"] = "resolved"
                 m["resolved_by"] = u.get("name", "Admin")

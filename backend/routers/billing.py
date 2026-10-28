@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import threading
 import uuid
 from typing import Any
 from fastapi import APIRouter, Request
 from auth_utils import get_current_user
 import store
+import email_service
 
 router = APIRouter(tags=["billing"])
 
@@ -116,9 +118,11 @@ def get_sms_status() -> dict[str, Any]:
 
 
 @router.get("/api/contact/mine")
-def get_contact_mine() -> list[dict[str, Any]]:
+def get_contact_mine(request: Request) -> list[dict[str, Any]]:
     st = store.get_state()
-    return st.get("contact_messages", [])
+    u = get_current_user(request)
+    email = (u.get("email") or "").strip().lower()
+    return [m for m in st.get("contact_messages", []) if (m.get("user_email") or "").strip().lower() == email]
 
 
 @router.post("/api/contact")
@@ -146,6 +150,16 @@ def post_contact(body: dict[str, Any], request: Request) -> dict[str, Any]:
     }
     st.setdefault("contact_messages", []).insert(0, msg)
     store.save_state()
+    # Also deliver to the support inbox (off-thread so the request isn't held up by SMTP).
+    threading.Thread(
+        target=email_service.send_support_request_email,
+        kwargs=dict(
+            kind=msg["kind"], subject=msg["subject"], message=msg["message"],
+            user_name=msg["user_name"], user_email=msg["user_email"], role=msg["role"],
+            org_name=msg["org_name"], page=msg["page"],
+        ),
+        daemon=True,
+    ).start()
     return {"ok": True, "id": cid}
 
 
