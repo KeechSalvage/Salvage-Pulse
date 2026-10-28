@@ -153,8 +153,6 @@ export function GoogleButton({
   onBeforeStart?: () => boolean;
 }) {
   const nav = useNavigate();
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [loadingUser, setLoadingUser] = useState<string | null>(null);
 
   const { data: config } = useQuery<GoogleAuthConfig>({
     queryKey: ["google-config"],
@@ -172,31 +170,6 @@ export function GoogleButton({
     );
     nav(homeFor(user.role), { replace: true });
   }, [nav]);
-
-  const selectAccount = async (userId: string) => {
-    setLoadingUser(userId);
-    try {
-      const pending = takePendingSignup();
-      if (!pending) {
-        const user = await apiPost<User>("/auth/google", {
-          user_id: userId,
-        } satisfies GoogleSessionRequest);
-        setPickerOpen(false);
-        handleAuthenticatedUser(user);
-      } else {
-        const r = await apiPost<GoogleSignupResult>("/auth/google/signup", {
-          user_id: userId,
-          ...pending,
-        } satisfies GoogleSignupRequest & { user_id: string });
-        setPickerOpen(false);
-        handleAuthenticatedUser(r.user, r.created);
-      }
-    } catch (err) {
-      toast.error(errorMessage(err, "Sign-in failed"));
-    } finally {
-      setLoadingUser(null);
-    }
-  };
 
   const triggerGoogleAuth = useCallback((pendingData?: PendingSignup) => {
     if (onBeforeStart && !onBeforeStart()) {
@@ -246,12 +219,17 @@ export function GoogleButton({
           return;
         } catch (err) {
           console.error("GIS client init error:", err);
+          toast.error("Google sign-in is currently unavailable. Please sign in with email and password.");
+          return;
         }
+      } else {
+        toast.error("Google Identity Services script failed to load. Please sign in with email and password.");
+        return;
       }
     }
 
-    // Fallback: If not configured with GOOGLE_CLIENT_ID or script blocked, open account chooser modal
-    setPickerOpen(true);
+    // Google Sign-In is unavailable or not configured — inform user to use standard credentials
+    toast.error("Google Sign-In is currently unavailable. Please sign in with email and password.");
   }, [config, handleAuthenticatedUser, onBeforeStart, signup]);
 
   // Listen for programmatic startGoogleSignIn calls
@@ -272,80 +250,15 @@ export function GoogleButton({
     }
   };
 
-  const accounts = config?.accounts ?? [];
-
   return (
-    <>
-      <button
-        type="button"
-        data-testid={testId}
-        onClick={handleClick}
-        className="flex h-11 w-full items-center justify-center gap-3 rounded-md border border-slate-700 bg-card text-[15px] font-medium text-slate-100 transition-colors duration-150 hover:border-slate-500 hover:bg-slate-800/60"
-      >
-        <GoogleIcon />
-        {label}
-      </button>
-
-      <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
-        <DialogContent className="sm:max-w-md max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-lg text-white">
-              <GoogleIcon />
-              Choose an account
-            </DialogTitle>
-            <DialogDescription className="text-slate-400">
-              Select an account to sign in to Salvage Pulse.
-            </DialogDescription>
-          </DialogHeader>
-
-          {!config?.configured && (
-            <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-200">
-              <AlertCircle className="size-4 shrink-0 mt-0.5 text-amber-400" />
-              <div>
-                <span className="font-semibold">Preview / Demo Mode</span>: Google OAuth Client ID is not configured in <code className="rounded bg-black/40 px-1 py-0.5 font-mono">.env</code>. Select any user account below to test that role.
-              </div>
-            </div>
-          )}
-
-          <div className="mt-2 space-y-2">
-            {accounts.map((acc) => {
-              const isLoading = loadingUser === acc.id;
-              return (
-                <button
-                  key={acc.id}
-                  type="button"
-                  data-testid={`google-account-${acc.email}`}
-                  disabled={Boolean(loadingUser)}
-                  onClick={() => selectAccount(acc.id)}
-                  className="flex w-full items-center justify-between rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-left transition-all hover:border-amber-500/40 hover:bg-slate-800/80 disabled:opacity-50"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-slate-800 border border-slate-700 text-slate-300 font-semibold text-sm">
-                      {acc.name ? acc.name.charAt(0).toUpperCase() : <UserIcon className="size-4" />}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="truncate text-sm font-medium text-white">{acc.name}</p>
-                        {getRoleBadge(acc.role)}
-                      </div>
-                      <p className="truncate text-xs text-slate-400">{acc.email}</p>
-                    </div>
-                  </div>
-                  {isLoading ? (
-                    <Loader2 className="size-4 shrink-0 animate-spin text-amber-400" />
-                  ) : (
-                    <Shield className="size-4 shrink-0 text-slate-600" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="mt-4 border-t border-slate-800 pt-3 text-[11px] text-slate-500">
-            To connect official Google logins, add <code className="rounded bg-slate-900 px-1 py-0.5 text-slate-400">GOOGLE_CLIENT_ID</code> to your backend environment.
-          </div>
-        </DialogContent>
-      </Dialog>
-    </>
+    <button
+      type="button"
+      data-testid={testId}
+      onClick={handleClick}
+      className="flex h-11 w-full items-center justify-center gap-3 rounded-md border border-slate-700 bg-card text-[15px] font-medium text-slate-100 transition-colors duration-150 hover:border-slate-500 hover:bg-slate-800/60"
+    >
+      <GoogleIcon />
+      {label}
+    </button>
   );
 }
