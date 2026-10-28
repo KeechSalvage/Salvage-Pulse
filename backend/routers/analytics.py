@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -164,7 +165,53 @@ def get_analytics_overview(
         for c in flags
     ]
     base["leaderboard"] = _build_leaderboard(st, org_id, org_calls)
-    base["keyword_stats"] = []
+
+    # Dynamic keyword & mention tracker calculation
+    default_keywords = [
+        {"id": "kw-warranty", "keyword": "Warranty", "group": "Assurance"},
+        {"id": "kw-pricing", "keyword": "Pricing / Price", "group": "Negotiation"},
+        {"id": "kw-trans", "keyword": "Transmission", "group": "Suggested"},
+        {"id": "kw-vin", "keyword": "VIN", "group": "Fitment"},
+        {"id": "kw-engine", "keyword": "Engine", "group": "Suggested"},
+        {"id": "kw-delivery", "keyword": "Delivery / Shipping", "group": "Suggested"},
+        {"id": "kw-core", "keyword": "Core", "group": "Financial"},
+        {"id": "kw-oem", "keyword": "OEM", "group": "Quality"},
+    ]
+    user_keywords = st.get("keywords", [])
+    effective_keywords = user_keywords if user_keywords else default_keywords
+    full_calls_map = st.get("full_calls", {})
+
+    computed_kw_stats = []
+    for kw in effective_keywords:
+        words = [w.strip() for w in kw.get("keyword", "").split("/") if w.strip()]
+        if not words:
+            continue
+        rx = re.compile(r"\b(?:" + "|".join(re.escape(w) for w in words) + r")\b", re.I)
+        hit_count = 0
+        call_count = 0
+        for c in yard_calls:
+            fc = full_calls_map.get(c.get("id"), {})
+            transcript = fc.get("transcript", "") or ""
+            topics_str = " ".join(c.get("topics", []))
+            part = c.get("part_requested", "")
+            veh = c.get("vehicle", "")
+            blob = f"{transcript} {topics_str} {part} {veh}"
+            found = rx.findall(blob)
+            if found:
+                hit_count += len(found)
+                call_count += 1
+        if hit_count > 0:
+            computed_kw_stats.append({
+                "id": kw.get("id", str(uuid.uuid4())),
+                "keyword": kw.get("keyword", ""),
+                "group": kw.get("group", "Custom"),
+                "count": hit_count,
+                "calls": call_count,
+            })
+
+    computed_kw_stats.sort(key=lambda x: -x["count"])
+    base["keyword_stats"] = computed_kw_stats
+
     base["roleplay_sessions"] = len([x for x in st.get("roleplay_sessions", []) if not org_id or st.get("users_by_id", {}).get(x.get("user_id"), {}).get("org_id") == org_id])
     base["open_callbacks"] = len([c for c in st.get("callbacks_open", []) if c.get("org_id") == org_id])
     base["lot_name"] = ""
