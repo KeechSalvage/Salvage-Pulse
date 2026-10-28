@@ -398,12 +398,20 @@ function ImpersonationBanner({ me, orgName }: { me: User; orgName?: string }) {
     },
   });
   return (
-    <div data-testid="impersonation-banner" className="sticky top-0 z-40 flex items-center gap-3 bg-sky-600 px-6 py-2 text-sm text-white">
-      <span>
-        {me.impersonated_by} is signed in as <strong>{me.name}</strong> ({orgName}). Every action is logged.
-      </span>
-      <button data-testid="stop-impersonating-button" onClick={() => stop.mutate()} className="ml-auto rounded bg-white/20 px-3 py-1 font-medium hover:bg-white/30">
-        Return to console
+    <div data-testid="impersonation-banner" className="sticky top-0 z-50 flex items-center justify-between gap-3 bg-amber-500 px-6 py-2.5 text-sm font-medium text-slate-950 shadow-md">
+      <div className="flex items-center gap-2">
+        <span className="inline-block size-2 animate-pulse rounded-full bg-slate-950" />
+        <span>
+          Viewing as <strong>{me.name}</strong> ({orgName || "Demo Yard"}) · Signed in by {me.impersonated_by}
+        </span>
+      </div>
+      <button
+        data-testid="stop-impersonating-button"
+        onClick={() => stop.mutate()}
+        disabled={stop.isPending}
+        className="flex items-center gap-1.5 rounded-md bg-slate-950 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:opacity-50"
+      >
+        Return to Master Console
       </button>
     </div>
   );
