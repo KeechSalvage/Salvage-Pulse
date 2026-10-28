@@ -216,7 +216,7 @@ export default function CallDetail() {
           </h1>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-400">
             <span data-testid="call-rep-name">Rep: <span className="text-slate-200">{call.rep_name}</span></span>
-            {(call.status === "analyzed" || call.status === "imported") && (
+            {(call.status === "analyzed" || call.status === "imported" || call.status === "completed") && (
               <>
                 <CategoryBadge category={call.category} testId="call-category" />
                 <OutcomeBadge outcome={call.outcome} testId="call-outcome" />
@@ -269,7 +269,7 @@ export default function CallDetail() {
         </Panel>
       )}
 
-      {(call.status === "analyzed" || call.status === "imported") && <SaleBox call={call} />}
+      {(call.status === "analyzed" || call.status === "imported" || call.status === "completed") && <SaleBox call={call} />}
       {!!call.delivery_kind && <DeliveryScoreCard call={call} />}
       <CustomerCallsPanel call={call} />
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-12">
@@ -345,7 +345,7 @@ export default function CallDetail() {
           </div>
         )}
 
-        {call.status === "analyzed" && (
+        {(call.status === "analyzed" || call.status === "completed") && (
           <div className="space-y-6 xl:sticky xl:top-6 xl:col-span-5">
             {!call.delivery_kind && <Panel testId="call-scorecard">
               <div className="flex items-center gap-5">

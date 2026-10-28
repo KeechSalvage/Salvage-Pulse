@@ -181,7 +181,7 @@ export interface KeywordHit {
   count: number;
 }
 
-export type CallStatus = "processing" | "analyzed" | "failed" | "imported";
+export type CallStatus = "processing" | "analyzed" | "completed" | "failed" | "imported";
 export type Outcome = "won" | "lost" | "pending" | "n/a";
 
 export interface CallSummary {

@@ -302,7 +302,7 @@ export default function Calls() {
                     </TableCell>
                   )}
                   <TableCell>
-                    {c.status === "analyzed" || c.status === "imported" ? (
+                    {c.status === "analyzed" || c.status === "imported" || c.status === "completed" ? (
                       <ScoreBadge score={c.overall_score} />
                     ) : (
                       <span className={cn("font-mono text-xs", c.status === "failed" ? "text-red-400" : "text-amber-300")}>
@@ -323,7 +323,7 @@ export default function Calls() {
                       {priceMissing(c) && <PriceMissingBadge testId={`call-price-missing-${c.id}`} />}
                     </div>
                   </TableCell>
-                  <TableCell>{c.status === "analyzed" || c.status === "imported" ? <CategoryBadge category={c.category} /> : "—"}</TableCell>
+                  <TableCell>{c.status === "analyzed" || c.status === "imported" || c.status === "completed" ? <CategoryBadge category={c.category} /> : "—"}</TableCell>
                   {isManager && <TableCell className="text-slate-300">{c.rep_name}</TableCell>}
                   <TableCell className="hidden max-w-[260px] truncate text-slate-400 md:table-cell">
                     {[c.vehicle, c.part_requested].filter(Boolean).join(" · ") || c.topics.slice(0, 3).join(", ") || "—"}
