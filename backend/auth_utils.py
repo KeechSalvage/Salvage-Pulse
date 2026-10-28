@@ -53,15 +53,47 @@ def _track_session(st: dict[str, Any], token: str, uid: str, request: Request) -
         ua = request.headers.get("user-agent", "")
         ip = client_ip(request)
         browser = describe_browser(ua)
+        device_id = hashlib.sha1(f"{uid}|{browser}|{ip}".encode()).hexdigest()[:12]
+        
+        # Check if this user is a platform staff member (master or admin)
+        user = st.get("users_by_id", {}).get(uid, {})
+        is_staff = user.get("role") in ("master", "admin")
+        
+        # Check if this device has been seen before for this staff member
+        is_new_device = False
+        if is_staff:
+            known_devices = {
+                entry.get("device_id")
+                for entry in meta.values()
+                if entry.get("user_id") == uid
+            }
+            if device_id not in known_devices:
+                is_new_device = True
+
         meta[token] = {
             "user_id": uid,
             "browser": browser,
             "ip": ip,
-            "device_id": hashlib.sha1(f"{uid}|{browser}|{ip}".encode()).hexdigest()[:12],
+            "device_id": device_id,
             "first_seen": now,
             "last_seen": now,
         }
         store.save_state()
+
+        if is_staff and is_new_device:
+            # Trigger alert email asynchronously in a daemon thread so login is not delayed
+            import threading
+            from email_service import send_new_device_login_email
+
+            staff_name = user.get("name", "Staff Member")
+            staff_email = user.get("email", "")
+            staff_role = user.get("role", "staff")
+
+            threading.Thread(
+                target=send_new_device_login_email,
+                args=(staff_name, staff_email, staff_role, browser, ip, now),
+                daemon=True,
+            ).start()
     elif m.get("last_seen", "")[:16] != now[:16]:  # refresh at most once a minute, no disk write
         m["last_seen"] = now
 

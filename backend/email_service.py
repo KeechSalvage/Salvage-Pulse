@@ -240,3 +240,80 @@ def send_support_reply_email(to_email: str, to_name: str, subject: str, reply_te
     </div>"""
     text = f"Hi {to_name},\n\n{replied_by} replied to \"{subject}\":\n\n{reply_text}\n"
     return send_email(to_email, f"Re: {subject}", html, text, reply_to=support_address())
+
+
+def send_new_device_login_email(
+    staff_name: str,
+    staff_email: str,
+    role: str,
+    browser: str,
+    ip: str,
+    timestamp: str,
+) -> bool:
+    """Alert support when platform staff signs in from a previously unseen device/browser."""
+    from html import escape
+
+    safe_name = escape(staff_name or "Staff Member")
+    safe_email = escape(staff_email or "")
+    safe_role = escape(role or "staff")
+    safe_browser = escape(browser or "Unknown Browser")
+    safe_ip = escape(ip or "Unknown IP")
+    safe_time = escape(timestamp or "")
+
+    html = f"""
+    <div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;color:#0f172a">
+      <div style="margin-bottom:16px">
+        <span style="display:inline-block;padding:4px 10px;border-radius:6px;background:#fef3c7;color:#b45309;font-weight:700;font-size:11px;letter-spacing:0.06em;text-transform:uppercase">
+          Security Alert &middot; New Device Sign-In
+        </span>
+      </div>
+      <h2 style="font-size:20px;font-weight:800;color:#0f172a;margin:0 0 12px">
+        New device sign-in detected for {safe_name}
+      </h2>
+      <p style="font-size:14px;color:#475569;line-height:1.5;margin:0 0 20px">
+        A platform staff member ({safe_role}) has signed in from a browser/device that hasn't been used before:
+      </p>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:24px;font-size:13px">
+        <tr style="border-bottom:1px solid #f1f5f9">
+          <td style="padding:8px 0;color:#64748b;font-weight:600;width:130px">Staff Member:</td>
+          <td style="padding:8px 0;color:#0f172a;font-weight:600">{safe_name} &lt;{safe_email}&gt;</td>
+        </tr>
+        <tr style="border-bottom:1px solid #f1f5f9">
+          <td style="padding:8px 0;color:#64748b;font-weight:600">Role:</td>
+          <td style="padding:8px 0;color:#0f172a;text-transform:capitalize">{safe_role}</td>
+        </tr>
+        <tr style="border-bottom:1px solid #f1f5f9">
+          <td style="padding:8px 0;color:#64748b;font-weight:600">Browser / OS:</td>
+          <td style="padding:8px 0;color:#0284c7;font-weight:600">{safe_browser}</td>
+        </tr>
+        <tr style="border-bottom:1px solid #f1f5f9">
+          <td style="padding:8px 0;color:#64748b;font-weight:600">IP Address:</td>
+          <td style="padding:8px 0;color:#0f172a;font-family:monospace">{safe_ip}</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 0;color:#64748b;font-weight:600">Time (UTC):</td>
+          <td style="padding:8px 0;color:#0f172a">{safe_time}</td>
+        </tr>
+      </table>
+      <div style="border-radius:8px;background:#f8fafc;border:1px solid #e2e8f0;padding:12px 16px;font-size:12px;color:#64748b;line-height:1.5">
+        If this was authorized by your team, no action is needed. If suspicious, you can revoke active sessions immediately from the Admin Console under <strong>Platform Team &rarr; Trusted Devices</strong>.
+      </div>
+    </div>"""
+
+    text = (
+        f"[SECURITY ALERT] New Device Sign-in Detected\n\n"
+        f"Staff Member: {staff_name} <{staff_email}> ({role})\n"
+        f"Browser / OS: {browser}\n"
+        f"IP Address: {ip}\n"
+        f"Time (UTC): {timestamp}\n\n"
+        f"Manage active staff sessions in the Admin Console under Trusted Devices."
+    )
+
+    return send_email(
+        support_address(),
+        f"[Security Alert] New device sign-in for {staff_name} ({browser})",
+        html,
+        text,
+        reply_to=staff_email or None,
+    )
+
