@@ -1167,6 +1167,15 @@ export interface AdminUser {
   disabled: boolean;
 }
 
+export interface AdminUserCreate {
+  org_id: string;
+  name: string;
+  email: string;
+  role: Role;
+  title?: string;
+  password?: string;
+}
+
 export interface AdminUserUpdate {
   name?: string;
   email?: string;

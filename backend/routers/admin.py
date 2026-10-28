@@ -235,6 +235,93 @@ def admin_get_discounts_summary() -> dict[str, Any]:
     }
 
 
+class AdminCreateUserReq(BaseModel):
+    org_id: str
+    name: str
+    email: str
+    role: str = "rep"
+    title: Optional[str] = None
+    password: Optional[str] = None
+
+
+@router.post("/api/admin/users")
+def admin_create_user(req: AdminCreateUserReq, request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    actor = get_current_user(request)
+    if actor.get("role") not in ("master", "admin"):
+        raise HTTPException(status_code=403, detail="Platform staff only")
+
+    org = next((o for o in st.get("admin_orgs", []) if o.get("id") == req.org_id), None)
+    if not org:
+        raise HTTPException(status_code=404, detail="Yard organization not found")
+
+    email_clean = req.email.strip().lower()
+    existing = next((u for u in st.get("users_by_id", {}).values() if u.get("email", "").strip().lower() == email_clean), None)
+    if existing:
+        raise HTTPException(status_code=400, detail=f"User with email '{email_clean}' already exists")
+
+    uid = f"user-{uuid.uuid4().hex[:12]}"
+    temp_pw = req.password.strip() if req.password and len(req.password.strip()) >= 6 else f"sp-{uuid.uuid4().hex[:8]}"
+
+    role_title_map = {
+        "owner": "Yard Owner",
+        "sales_manager": "Sales Manager",
+        "inventory_manager": "Inventory Manager",
+        "rep": "Sales Representative",
+    }
+    user_title = req.title.strip() if req.title and req.title.strip() else role_title_map.get(req.role, "Sales Representative")
+
+    new_user = {
+        "id": uid,
+        "email": email_clean,
+        "name": req.name.strip(),
+        "role": req.role,
+        "title": user_title,
+        "avatar_url": "",
+        "org_id": req.org_id,
+        "impersonated_by": "",
+        "disabled": False,
+        "site_id": "",
+        "must_change_password": True if not req.password else False,
+        "password_hash": store.hash_password(temp_pw),
+    }
+
+    st.setdefault("users_by_id", {})[uid] = new_user
+    if isinstance(org.get("users"), int):
+        org["users"] += 1
+
+    st.setdefault("admin_audit", []).insert(0, {
+        "at": store.now_iso(),
+        "actor": actor.get("name", "Admin"),
+        "action": f"added user {new_user['email']} ({new_user['role']}) to {org.get('name')}",
+        "target": org.get("name", req.org_id),
+    })
+
+    # Send welcome email with credentials
+    app_url = _get_app_url(request)
+    emailed = email_service.send_staff_welcome_email(
+        to_email=email_clean,
+        name=new_user["name"],
+        temp_password=temp_pw,
+        role=user_title,
+        app_url=app_url,
+    )
+
+    store.save_state()
+    return {
+        "id": new_user["id"],
+        "email": new_user["email"],
+        "name": new_user["name"],
+        "role": new_user["role"],
+        "title": new_user["title"],
+        "org_id": new_user["org_id"],
+        "org_name": org.get("name", "Yard"),
+        "disabled": False,
+        "temp_password": temp_pw,
+        "emailed": emailed,
+    }
+
+
 @router.get("/api/admin/users")
 def admin_get_users(org_id: Optional[str] = Query(None), q: Optional[str] = Query(None)) -> list[dict[str, Any]]:
     st = store.get_state()

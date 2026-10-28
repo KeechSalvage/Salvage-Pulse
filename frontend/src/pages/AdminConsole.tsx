@@ -12,7 +12,7 @@ import { apiDelete, apiGet, apiPatch, apiPost, errorMessage } from "@/lib/api";
 import { useMe } from "@/lib/hooks";
 import { queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
-import type { AdminOrg, AdminOrgCreate, AdminOrgCreated, AdminOrgUpdate, AdminUser, AdminUserUpdate, AuditEntry, OrgStatus, PlanId, User, AdminCancel, ExtendTrial, Role } from "@/lib/types";
+import type { AdminOrg, AdminOrgCreate, AdminOrgCreated, AdminOrgUpdate, AdminUser, AdminUserCreate, AdminUserUpdate, AuditEntry, OrgStatus, PlanId, User, AdminCancel, ExtendTrial, Role } from "@/lib/types";
 import { roleLabel } from "@/lib/types";
 import { DemoLoginPanel, FreeDayPanel, FunnelPanel, RemindersPanel } from "@/components/AdminGrowth";
 import { MessagesPanel } from "@/components/ContactUs";
@@ -187,6 +187,161 @@ function SetPasswordDialog({ user, onClose }: { user: AdminUser | null; onClose:
   );
 }
 
+function NewUserDialog({ open, onClose, defaultOrgId, orgs }: { open: boolean; onClose: () => void; defaultOrgId: string; orgs: AdminOrg[] }) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState<AdminUserCreate>({
+    org_id: defaultOrgId || (orgs[0]?.id ?? ""),
+    name: "",
+    email: "",
+    role: "rep",
+    title: "",
+    password: "",
+  });
+
+  useEffect(() => {
+    if (defaultOrgId) {
+      setForm((prev) => ({ ...prev, org_id: defaultOrgId }));
+    } else if (orgs.length > 0 && !form.org_id) {
+      setForm((prev) => ({ ...prev, org_id: orgs[0].id }));
+    }
+  }, [defaultOrgId, orgs]);
+
+  const create = useMutation({
+    mutationFn: () => apiPost<AdminUser & { temp_password?: string; emailed?: boolean }>("/admin/users", form),
+    onSuccess: (r) => {
+      toast.success(r.emailed ? `User ${r.name} added — welcome email sent!` : `User ${r.name} added to yard!`);
+      qc.invalidateQueries({ queryKey: ["admin"] });
+      onClose();
+      setForm({
+        org_id: defaultOrgId || (orgs[0]?.id ?? ""),
+        name: "",
+        email: "",
+        role: "rep",
+        title: "",
+        password: "",
+      });
+    },
+    onError: (e) => toast.error(errorMessage(e, "Failed to create user")),
+  });
+
+  const selectedOrg = orgs.find((o) => o.id === form.org_id);
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md" data-testid="new-user-dialog">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-bold text-white">Add User on Behalf of Yard</DialogTitle>
+        </DialogHeader>
+        <form
+          className="space-y-4 pt-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            create.mutate();
+          }}
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor="new-user-org">Target Yard</Label>
+            <select
+              id="new-user-org"
+              data-testid="new-user-org-select"
+              className="h-10 w-full rounded-md border border-border bg-surface px-3 text-sm text-slate-200"
+              value={form.org_id}
+              onChange={(e) => setForm({ ...form, org_id: e.target.value })}
+              required
+            >
+              {orgs.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name} ({o.plan})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="new-user-role">Role</Label>
+            <select
+              id="new-user-role"
+              data-testid="new-user-role-select"
+              className="h-10 w-full rounded-md border border-border bg-surface px-3 text-sm text-slate-200"
+              value={form.role}
+              onChange={(e) => setForm({ ...form, role: e.target.value as Role })}
+            >
+              <option value="owner">Owner</option>
+              <option value="sales_manager">Sales Manager</option>
+              <option value="inventory_manager">Inventory Manager</option>
+              <option value="rep">Sales Representative</option>
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="new-user-name">Full Name</Label>
+            <Input
+              id="new-user-name"
+              data-testid="new-user-name-input"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              placeholder="e.g. Alex Morgan"
+              required
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="new-user-email">Login Email</Label>
+            <Input
+              id="new-user-email"
+              data-testid="new-user-email-input"
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              placeholder="alex@yard.com"
+              required
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="new-user-title">Title / Desk (Optional)</Label>
+            <Input
+              id="new-user-title"
+              data-testid="new-user-title-input"
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              placeholder="e.g. Counter Sales Lead"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="new-user-password">Initial Password (Optional)</Label>
+            <Input
+              id="new-user-password"
+              data-testid="new-user-password-input"
+              type="text"
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              placeholder="Leave blank to auto-generate temporary password"
+            />
+            <p className="text-xs text-slate-400">
+              An invitation email will be sent automatically with login instructions.
+            </p>
+          </div>
+
+          <DialogFooter className="gap-2 pt-2">
+            <Button type="button" variant="ghost" onClick={onClose} disabled={create.isPending}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              data-testid="new-user-submit-button"
+              disabled={create.isPending || !form.name.trim() || !form.email.trim() || !form.org_id}
+            >
+              {create.isPending ? "Adding..." : "Add user to yard"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function AdminConsole() {
   const { data: me } = useMe();
   const qc = useQueryClient();
@@ -194,6 +349,7 @@ export default function AdminConsole() {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [passwordUser, setPasswordUser] = useState<AdminUser | null>(null);
+  const [userDialogOpen, setUserDialogOpen] = useState(false);
   const orgs = useQuery({ queryKey: ["admin", "orgs"], queryFn: () => apiGet<AdminOrg[]>("/admin/orgs") });
   const users = useQuery({
     queryKey: ["admin", "users", orgId, q],
@@ -313,6 +469,7 @@ export default function AdminConsole() {
       </PageHeader>
       <NewYardDialog open={open} onClose={() => setOpen(false)} />
       <SetPasswordDialog user={passwordUser} onClose={() => setPasswordUser(null)} />
+      <NewUserDialog open={userDialogOpen} onClose={() => setUserDialogOpen(false)} defaultOrgId={orgId} orgs={orgs.data ?? []} />
 
       <Panel testId="admin-orgs-panel" id="admin-yards" className="scroll-mt-8">
         <h3 className="text-xl font-bold text-white">Yards ({orgs.data?.length ?? 0})</h3>
@@ -456,7 +613,17 @@ export default function AdminConsole() {
               </span>
             )}
           </div>
-          <Input data-testid="admin-user-search" placeholder="Search name or email" value={q} onChange={(e) => setQ(e.target.value)} className="h-9 w-64 bg-surface" />
+          <div className="flex items-center gap-2">
+            <Input data-testid="admin-user-search" placeholder="Search name or email" value={q} onChange={(e) => setQ(e.target.value)} className="h-9 w-64 bg-surface" />
+            <Button
+              size="sm"
+              data-testid="admin-add-user-btn"
+              onClick={() => setUserDialogOpen(true)}
+              className="gap-1.5"
+            >
+              <Plus className="size-4" /> Add user
+            </Button>
+          </div>
         </div>
 
         {/* Dropdown controls under the Users box header */}
