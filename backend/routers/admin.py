@@ -432,11 +432,16 @@ def admin_get_staff() -> list[dict[str, Any]]:
 def admin_post_staff(body: dict[str, Any]) -> dict[str, Any]:
     st = store.get_state()
     sid = str(uuid.uuid4())
+    temp_pw = f"sp-{uuid.uuid4().hex[:8]}"
+    email = body.get("email", "").strip().lower()
+    name = body.get("name", "Staff Member").strip()
+    role = body.get("role", "admin")
+
     account = {
         "id": sid,
-        "email": body["email"],
-        "name": body["name"],
-        "role": body.get("role", "admin"),
+        "email": email,
+        "name": name,
+        "role": role,
         "disabled": False,
         "must_change_password": True,
         "created_at": store.now_iso(),
@@ -446,8 +451,22 @@ def admin_post_staff(body: dict[str, Any]) -> dict[str, Any]:
         "email_bounce_reason": "",
     }
     st.setdefault("admin_staff", []).append(account)
+    st.setdefault("users_by_id", {})[sid] = {
+        "id": sid,
+        "email": email,
+        "name": name,
+        "role": role,
+        "title": "Platform Staff",
+        "avatar_url": "",
+        "org_id": "",
+        "impersonated_by": "",
+        "disabled": False,
+        "site_id": "",
+        "must_change_password": True,
+        "password_hash": store.hash_password(temp_pw),
+    }
     store.save_state()
-    return {"account": account, "emailed": True}
+    return {"account": account, "emailed": False, "temp_password": temp_pw}
 
 
 @router.patch("/api/admin/staff/{sid}")
@@ -456,6 +475,14 @@ def admin_patch_staff(sid: str, body: dict[str, Any]) -> list[dict[str, Any]]:
     for s in st.get("admin_staff", []):
         if s.get("id") == sid:
             s.update(body)
+    if sid in st.get("users_by_id", {}):
+        u = st["users_by_id"][sid]
+        if "name" in body:
+            u["name"] = body["name"]
+        if "role" in body:
+            u["role"] = body["role"]
+        if "disabled" in body:
+            u["disabled"] = bool(body["disabled"])
     store.save_state()
     return st.get("admin_staff", [])
 
@@ -464,7 +491,12 @@ def admin_patch_staff(sid: str, body: dict[str, Any]) -> list[dict[str, Any]]:
 def admin_post_staff_reset_password(sid: str) -> dict[str, Any]:
     st = store.get_state()
     s = next((x for x in st.get("admin_staff", []) if x.get("id") == sid), {})
-    return {"account": s, "emailed": True}
+    temp_pw = f"sp-{uuid.uuid4().hex[:8]}"
+    if sid in st.get("users_by_id", {}):
+        st["users_by_id"][sid]["password_hash"] = store.hash_password(temp_pw)
+        st["users_by_id"][sid]["must_change_password"] = True
+    store.save_state()
+    return {"account": s, "emailed": False, "temp_password": temp_pw}
 
 
 @router.post("/api/admin/staff/{user}/sign-out-everywhere")
