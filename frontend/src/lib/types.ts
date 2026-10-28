@@ -975,7 +975,7 @@ export interface CallCoverage {
 }
 
 export type PlanId = "starter" | "pro" | "pro_unlimited" | "enterprise" | "enterprise_platinum"; // pro_unlimited is sold as "Pro Platinum"
-export type OrgStatus = "incomplete" | "trialing" | "active" | "past_due" | "canceled"; // incomplete = signed up, card not added yet
+export type OrgStatus = "incomplete" | "trialing" | "active" | "past_due" | "canceled" | "demo"; // incomplete = signed up, card not added yet
 
 export interface Plan {
   id: PlanId;

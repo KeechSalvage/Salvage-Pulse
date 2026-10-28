@@ -22,7 +22,7 @@ import { homeFor } from "@/components/AppShell";
 
 const PLANS: PlanId[] = ["starter", "pro", "pro_unlimited", "enterprise", "enterprise_platinum"];
 const PLAN_LABEL: Record<PlanId, string> = { starter: "starter", pro: "pro", pro_unlimited: "pro platinum", enterprise: "enterprise", enterprise_platinum: "enterprise platinum" };
-const STATUSES: OrgStatus[] = ["incomplete", "trialing", "active", "past_due", "canceled"];
+const STATUSES: OrgStatus[] = ["incomplete", "trialing", "active", "past_due", "canceled", "demo"];
 const sel = "h-9 rounded-md border border-border bg-surface px-2 text-sm text-slate-200";
 
 function NewYardDialog({ open, onClose }: { open: boolean; onClose: () => void }) {

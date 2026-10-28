@@ -434,16 +434,24 @@ def admin_put_demo_login(body: dict[str, Any], request: Request) -> dict[str, An
 
 @router.get("/api/admin/free-day")
 def admin_get_free_day() -> dict[str, Any]:
+    st = store.get_state()
+    orgs = st.get("admin_orgs", [])
+    trialing = [o for o in orgs if o.get("status") == "trialing"]
+    active = [o for o in orgs if o.get("status") in ("active", "demo")]
+    total = len(orgs)
+    with_card = sum(1 for o in orgs if o.get("card_on_file"))
+    conv_rate = round((len(active) / total * 100), 1) if total else 0.0
+
     return {
-        "started": 14,
-        "on_free_day": 3,
-        "added_card": 11,
-        "added_during_day": 9,
-        "no_card": 0,
-        "conversion_rate": 78.6,
-        "started_30d": 14,
-        "added_card_30d": 11,
-        "median_hours_to_card": 6.5,
+        "started": total,
+        "on_free_day": len(trialing),
+        "added_card": with_card,
+        "added_during_day": with_card,
+        "no_card": total - with_card,
+        "conversion_rate": conv_rate,
+        "started_30d": total,
+        "added_card_30d": with_card,
+        "median_hours_to_card": 0.0,
         "recent": [],
         "alerts": [],
     }
@@ -451,13 +459,33 @@ def admin_get_free_day() -> dict[str, Any]:
 
 @router.get("/api/admin/funnel")
 def admin_get_funnel() -> dict[str, Any]:
+    st = store.get_state()
+    orgs = st.get("admin_orgs", [])
+    total_signups = len(orgs)
+    cards_added = sum(1 for o in orgs if o.get("card_on_file"))
+    paid = sum(1 for o in orgs if o.get("status") in ("active", "demo"))
+    canceled = sum(1 for o in orgs if o.get("status") == "canceled")
+    trialing = sum(1 for o in orgs if o.get("status") == "trialing")
+    month_str = store.current_month_str()
+
     return {
         "months": [
-            {"month": "2026-10", "signups": 12, "cards_added": 9, "paid": 8, "canceled": 0},
-            {"month": "2026-09", "signups": 15, "cards_added": 12, "paid": 11, "canceled": 1},
+            {
+                "month": month_str,
+                "signups": total_signups,
+                "cards_added": cards_added,
+                "paid": paid,
+                "canceled": canceled,
+            }
         ],
-        "totals": {"month": "All-time", "signups": 27, "cards_added": 21, "paid": 19, "canceled": 1},
-        "trialing_now": 3,
+        "totals": {
+            "month": "All-time",
+            "signups": total_signups,
+            "cards_added": cards_added,
+            "paid": paid,
+            "canceled": canceled,
+        },
+        "trialing_now": trialing,
     }
 
 
