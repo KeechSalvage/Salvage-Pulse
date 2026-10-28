@@ -260,7 +260,7 @@ def build_demo_calls(
             "customer_name": s["customer"],
             "customer_phone": s["phone"],
             "source": "transcript",
-            "status": "completed",
+            "status": "analyzed",
             "category": s["category"],
             "summary": s["summary"],
             "vehicle": vehicle,

@@ -132,7 +132,7 @@ def build_extra_calls() -> list[tuple[dict[str, Any], dict[str, Any]]]:
             summary = {
                 "id": cid, "org_id": ORG_ID, "rep_id": rep_id, "rep_name": rep_name,
                 "customer_name": cust, "customer_phone": f"+1512555{rnd.randint(1000, 9999)}",
-                "source": "transcript", "status": "completed", "category": cat, "summary": summary_txt,
+                "source": "transcript", "status": "analyzed", "category": cat, "summary": summary_txt,
                 "vehicle": veh, "part_requested": part, "outcome": outcome, "sentiment": sentiment,
                 "overall_score": score, "created_at": when.strftime("%Y-%m-%dT%H:%M:%SZ"), "direction": "inbound",
                 "duration_sec": float(rnd.randint(70, 320)), "source_category": "Sales Inquiry",
