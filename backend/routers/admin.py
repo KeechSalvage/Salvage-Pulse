@@ -19,7 +19,19 @@ router = APIRouter(tags=["admin"])
 @router.get("/api/admin/orgs")
 def admin_get_orgs() -> list[dict[str, Any]]:
     st = store.get_state()
-    return st.get("admin_orgs", [])
+    orgs = st.get("admin_orgs", [])
+    calls = st.get("calls", [])
+    users = st.get("users_by_id", {})
+
+    # Compute real live counts so Yards table never drifts or shows stale hardcoded numbers
+    for o in orgs:
+        oid = o.get("id")
+        if oid:
+            o["calls"] = sum(1 for c in calls if c.get("org_id") == oid)
+            o["users"] = sum(1 for u in users.values() if u.get("org_id") == oid and not u.get("disabled"))
+        elif not o.get("calls"):
+            o["calls"] = len(calls)
+    return orgs
 
 
 @router.post("/api/admin/orgs")
