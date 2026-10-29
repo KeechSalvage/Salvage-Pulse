@@ -1,10 +1,11 @@
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import TileGrid from "@/components/TileGrid";
 import LotCompare from "@/components/LotCompare";
 import { LocationLeaderboard, LotSwitcher } from "@/components/Sites";
 import { lotQS, useLotParam } from "@/lib/lot";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, ArrowRight, MapPin, PhoneIncoming, PhoneMissed, PhoneOutgoing, Upload, Voicemail } from "lucide-react";
+import { AlertTriangle, ArrowRight, MapPin, PhoneIncoming, PhoneMissed, PhoneOutgoing, Upload, UserRound, Voicemail } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { CategoryBadge, Overline, PageHeader, Panel, ScoreBadge, StatCard, fmtDuration } from "@/components/common";
 import { CategoryDonut, HourlyVolume, MetricBarChart, ScoreTrend, TopicList } from "@/components/Charts";
@@ -23,13 +24,30 @@ import SeasonalPartsPanel from "@/components/SeasonalParts";
 import WinBackResultsPanel from "@/components/WinBackResults";
 import WinBackLeaderboardPanel from "@/components/WinBackLeaderboard";
 import { apiGet } from "@/lib/api";
+import { useAllReps, useMe } from "@/lib/hooks";
 import type { Overview } from "@/lib/types";
 
 export default function Dashboard() {
   const nav = useNavigate();
+  const { data: me } = useMe();
+  const isOwnerOrSalesManager = me?.role === "owner" || me?.role === "sales_manager" || me?.role === "manager";
+  const reps = useAllReps(isOwnerOrSalesManager);
+  const [selectedRepId, setSelectedRepId] = useState<string>("all");
+
   const [lot, setLot] = useLotParam(); // whole-yard managers: "" = all lots (location managers are locked to theirs server-side)
   const { data, isError } = useQuery({ queryKey: ["overview", "team", lot], queryFn: () => apiGet<Overview>(`/analytics/overview${lotQS(lot)}`), placeholderData: (prev) => prev });
   const ov = isError ? undefined : data;
+
+  // Rep-specific overview query for the CategoryDonut tile when a rep is selected
+  const repOverview = useQuery({
+    queryKey: ["overview", "category-rep", selectedRepId, lot],
+    queryFn: () => apiGet<Overview>(`/analytics/overview${lotQS(lot)}${selectedRepId !== "all" ? `${lot ? "&" : "?"}rep_id=${selectedRepId}` : ""}`),
+    enabled: selectedRepId !== "all" && isOwnerOrSalesManager,
+  });
+
+  const categoryBreakdown = selectedRepId !== "all" && isOwnerOrSalesManager
+    ? (repOverview.data?.category_breakdown ?? [])
+    : (ov?.category_breakdown ?? []);
 
   return (
     <>
@@ -168,9 +186,39 @@ export default function Dashboard() {
           ) },
           { id: "call-mix", label: "Call categories", span: "xl:col-span-5", node: (
             <Panel className="xl:col-span-5" testId="category-panel">
-              <Overline>Call mix</Overline>
-              <h3 className="mb-4 mt-1 text-xl font-bold text-white">Incoming call categories</h3>
-              {ov ? <CategoryDonut data={ov.category_breakdown ?? []} /> : <p className="text-sm text-slate-500">No data.</p>}
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <Overline>Call mix</Overline>
+                  <h3 className="mt-1 text-xl font-bold text-white">Incoming call categories</h3>
+                </div>
+                {isOwnerOrSalesManager && (
+                  <div className="flex items-center gap-1.5">
+                    <UserRound className="size-3.5 text-slate-400" />
+                    <select
+                      data-testid="category-rep-filter"
+                      aria-label="Filter category breakdown by rep"
+                      value={selectedRepId}
+                      onChange={(e) => setSelectedRepId(e.target.value)}
+                      className="h-8 rounded-md border border-border bg-surface px-2 text-xs font-medium text-slate-200 focus:border-amber-500 focus:outline-none"
+                    >
+                      <option value="all">Entire Yard (All Reps)</option>
+                      {(reps.data ?? []).map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+              {ov ? (
+                <CategoryDonut
+                  data={categoryBreakdown}
+                  drill={selectedRepId !== "all" ? { rep_id: selectedRepId } : {}}
+                />
+              ) : (
+                <p className="text-sm text-slate-500">No data.</p>
+              )}
             </Panel>
           ) },
           { id: "customers", label: "Customers", span: "xl:col-span-12", node: (
