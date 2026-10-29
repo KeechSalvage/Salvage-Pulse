@@ -107,7 +107,13 @@ def get_analytics_overview(
     org_id = u.get("org_id")
 
     org_calls = [c for c in st.get("calls", []) if not org_id or c.get("org_id") == org_id]
-    yard_calls = [c for c in org_calls if not rep_id or c.get("rep_id") == rep_id]
+    
+    # If signed in as an individual rep, default to viewing their own rep calls unless a specific rep_id is passed
+    effective_rep_id = rep_id
+    if not effective_rep_id and u.get("role") in ("rep", "sales_rep"):
+        effective_rep_id = u.get("id")
+
+    yard_calls = [c for c in org_calls if not effective_rep_id or c.get("rep_id") == effective_rep_id]
     if days:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
         yard_calls = [c for c in yard_calls if (c.get("created_at") or "") >= cutoff]
@@ -215,8 +221,8 @@ def get_analytics_overview(
     base["roleplay_sessions"] = len([x for x in st.get("roleplay_sessions", []) if not org_id or st.get("users_by_id", {}).get(x.get("user_id"), {}).get("org_id") == org_id])
     base["open_callbacks"] = len([c for c in st.get("callbacks_open", []) if c.get("org_id") == org_id])
     base["lot_name"] = ""
-    if rep_id:
-        u_rep = st.get("users_by_id", {}).get(rep_id)
+    if effective_rep_id:
+        u_rep = st.get("users_by_id", {}).get(effective_rep_id)
         if u_rep:
             base["rep"] = u_rep
     return base

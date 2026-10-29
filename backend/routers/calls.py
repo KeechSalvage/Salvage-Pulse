@@ -38,6 +38,11 @@ def get_calls(
     calls = st.get("calls", [])
     filtered = []
 
+    # If signed in as an individual rep, default to viewing their own calls unless an explicit rep_id query param is provided
+    effective_rep_id = rep_id
+    if not effective_rep_id and u.get("role") in ("rep", "sales_rep"):
+        effective_rep_id = u.get("id")
+
     site_rep_ids = set()
     if site_id:
         site_rep_ids = {uid for uid, usr in st["users_by_id"].items() if usr.get("site_id") == site_id}
@@ -45,7 +50,7 @@ def get_calls(
     for c in calls:
         if effective_org and c.get("org_id") != effective_org:
             continue
-        if rep_id and c.get("rep_id") != rep_id:
+        if effective_rep_id and c.get("rep_id") != effective_rep_id:
             continue
         if site_id and c.get("rep_id") not in site_rep_ids:
             continue

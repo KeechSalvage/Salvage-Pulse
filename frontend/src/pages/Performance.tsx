@@ -28,7 +28,8 @@ export default function Performance() {
   const { repId } = useParams();
   const { data: me } = useMe();
   const targetId = repId ?? me?.id;
-  const qs = repId ? `?rep_id=${repId}` : "";
+  const effectiveRepId = repId || (me?.role === "rep" || me?.role === "sales_rep" ? me?.id : undefined);
+  const qs = effectiveRepId ? `?rep_id=${effectiveRepId}` : "";
 
   const { data, isError } = useQuery({
     queryKey: ["overview", targetId],
@@ -42,7 +43,7 @@ export default function Performance() {
   });
   const calls = useQuery({
     queryKey: ["calls", { rep_id: targetId }],
-    queryFn: () => apiGet<CallSummary[]>(`/calls${repId ? `?rep_id=${repId}` : ""}`),
+    queryFn: () => apiGet<CallSummary[]>(`/calls${qs}`),
     enabled: !!targetId,
   });
   const ov = isError ? undefined : data;
