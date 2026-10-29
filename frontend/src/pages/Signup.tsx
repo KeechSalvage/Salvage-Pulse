@@ -12,6 +12,7 @@ import { apiGet, apiPost, errorMessage } from "@/lib/api";
 import { beginSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { GoogleButton, startGoogleSignIn } from "@/components/GoogleSignIn";
+import AppFooter from "@/components/AppFooter";
 import type { BillingInterval, Plan, PlanId, SignupRequest, User, YardDiscount } from "@/lib/types";
 
 export function PlanCards({ selected, onPick, testPrefix = "plan", interval = "month", discount }: { selected?: PlanId; onPick: (p: PlanId) => void; testPrefix?: string; interval?: BillingInterval; discount?: YardDiscount | null }) {
@@ -147,6 +148,7 @@ export default function Signup() {
             <p className="mt-2 text-xs text-slate-500">Uses your yard name and plan above; your name and email come from Google.</p>
           </div>
         </form>
+        <AppFooter />
       </div>
     </div>
   );

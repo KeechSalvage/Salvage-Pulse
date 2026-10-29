@@ -8,6 +8,7 @@ import DemoLimitDialog from "@/components/DemoLimitDialog";
 import ThemeToggle from "@/components/ThemeToggle";
 import { ContactUsButton } from "@/components/ContactUs";
 import BrandLogo from "@/components/BrandLogo";
+import AppFooter from "@/components/AppFooter";
 import { useBranding } from "@/lib/branding";
 import {
   BarChart3,
@@ -194,10 +195,11 @@ export default function AppShell({ managerOnly = false, platform = false }: { ma
           </>
         )}
         {d.org?.status === "trialing" && d.org.access && <TrialBanner org={d.org} isManager={isManagerLike(me.role)} />}
-        <div className="mx-auto max-w-[1400px] px-4 py-8 md:px-8 md:py-10">
+        <div className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-[1400px] flex-col px-4 py-8 md:px-8 md:py-10">
           <DrillProvider>
             <Outlet />
           </DrillProvider>
+          <AppFooter />
         </div>
       </main>
     </div>
@@ -266,7 +268,12 @@ function Sidebar({ me, org, isStaff, branding, badges }: { me: User; org?: OrgIn
       <div className="flex items-center gap-2.5 px-6 py-6">
         <BrandLogo branding={branding} />
         <div>
-          <p className="font-heading text-[16px] font-extrabold leading-none text-white">Salvage Pulse AI</p>
+          <div className="flex items-center gap-1.5">
+            <p className="font-heading text-[16px] font-extrabold leading-none text-white">Salvage Pulse AI</p>
+            <span className="rounded bg-amber-500/15 px-1 py-0.2 font-mono text-[9px] font-bold uppercase text-amber-300 ring-1 ring-amber-500/30">
+              Beta
+            </span>
+          </div>
           <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.18em] text-amber-400/80">{isStaff ? "Platform console" : (org?.name ?? "Salvage Pulse")}</p>
         </div>
       </div>
@@ -296,7 +303,10 @@ function Sidebar({ me, org, isStaff, branding, badges }: { me: User; org?: OrgIn
           );
         })}
       </nav>
-      <UserCard me={me} />
+      <div className="mt-auto">
+        <UserCard me={me} />
+        <AppFooter compact className="border-t border-sidebar-border/40 mx-2" />
+      </div>
     </aside>
   );
 }
@@ -357,6 +367,9 @@ function MobileBar({ me, branding }: { me: User; branding?: Branding }) {
   return (
     <header className="sticky top-0 z-30 flex items-center gap-3 overflow-x-auto border-b border-border bg-sidebar/95 px-4 py-3 backdrop-blur lg:hidden">
       <BrandLogo branding={branding} className="h-7 w-auto shrink-0" testId="mobile-brand-logo" />
+      <span className="rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-amber-300 ring-1 ring-amber-500/30">
+        Beta
+      </span>
       {(NAV[me.role] || NAV.rep).map((n) => (
         <NavLink
           key={n.to}

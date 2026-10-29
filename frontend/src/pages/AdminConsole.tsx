@@ -19,6 +19,7 @@ import { MessagesPanel } from "@/components/ContactUs";
 import { ChangePasswordPanel, StaffDevicesPanel, StaffLockdownPanel } from "@/components/StaffSecurity";
 import StaffAccountsPanel from "@/components/StaffAccounts";
 import { homeFor } from "@/components/AppShell";
+import { APP_VERSION, APP_STAGE, IS_BETA } from "@/lib/version";
 
 const PLANS: PlanId[] = ["starter", "pro", "pro_unlimited", "enterprise", "enterprise_platinum"];
 const PLAN_LABEL: Record<PlanId, string> = { starter: "starter", pro: "pro", pro_unlimited: "pro platinum", enterprise: "enterprise", enterprise_platinum: "enterprise platinum" };
@@ -463,9 +464,20 @@ export default function AdminConsole() {
   return (
     <>
       <PageHeader overline={`Salvage Pulse · ${me?.role === "master" ? "Master" : "Administrator"}`} title="Platform console">
-        <Button size="lg" data-testid="new-yard-button" onClick={() => setOpen(true)}>
-          <Plus className="size-4" /> New yard
-        </Button>
+        <div className="flex items-center gap-3">
+          <div className="hidden sm:flex items-center gap-1.5 rounded-lg border border-border bg-card/60 px-3 py-1.5 text-xs text-slate-400">
+            <span>System Release:</span>
+            {IS_BETA && (
+              <span className="rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase text-amber-300 ring-1 ring-amber-500/30">
+                {APP_STAGE}
+              </span>
+            )}
+            <span className="font-mono text-slate-200 font-semibold">v{APP_VERSION}</span>
+          </div>
+          <Button size="lg" data-testid="new-yard-button" onClick={() => setOpen(true)}>
+            <Plus className="size-4" /> New yard
+          </Button>
+        </div>
       </PageHeader>
       <NewYardDialog open={open} onClose={() => setOpen(false)} />
       <SetPasswordDialog user={passwordUser} onClose={() => setPasswordUser(null)} />

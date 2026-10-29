@@ -8,6 +8,7 @@ import Billing from "@/pages/Billing";
 import Appearance from "@/pages/Appearance";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/lib/hooks";
+import { APP_VERSION, APP_STAGE, IS_BETA } from "@/lib/version";
 
 function PhoneAndTexts() {
   return (
@@ -48,6 +49,15 @@ export default function Settings() {
             <t.icon className="size-4" /> {t.label}
           </NavLink>
         ))}
+        <div className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-500">
+          <span>Salvage Pulse</span>
+          {IS_BETA && (
+            <span className="rounded bg-amber-500/15 px-1 py-0.2 font-mono text-[9px] font-semibold uppercase text-amber-400 ring-1 ring-amber-500/30">
+              {APP_STAGE}
+            </span>
+          )}
+          <span className="font-mono text-slate-400">v{APP_VERSION}</span>
+        </div>
       </nav>
       <Page />
     </div>

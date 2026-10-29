@@ -11,25 +11,31 @@ import { Overline } from "@/components/common";
 import { apiPost, errorMessage } from "@/lib/api";
 import { fadeUpLg, settle } from "@/lib/motion";
 import { resetBrandingKeepMode } from "@/lib/theme";
+import AppFooter from "@/components/AppFooter";
 import type { ForgotPasswordRequest, LockAccountRequest, LockAccountResult, NotMeRequest, NotMeResult, PasswordResetRequest, ResetResult } from "@/lib/types";
 
 function AuthCard({ overline, title, sub, children }: { overline: string; title: string; sub: string; children: ReactNode }) {
   useEffect(() => resetBrandingKeepMode(), []); // signed-out pages use the Salvage Pulse brand
   return (
-    <div className="bg-grid flex min-h-screen items-center justify-center bg-background px-6 py-12">
-      <motion.div {...fadeUpLg} transition={settle} className="w-full max-w-md rounded-2xl border border-border bg-card/80 p-8 shadow-2xl backdrop-blur-xl">
-        <img src="/salvage-pulse-logo.jpg" alt="Salvage Pulse" className="mb-6 h-14 w-auto rounded" />
-        <Overline>{overline}</Overline>
-        <h1 className="mt-2 text-3xl font-bold text-white">{title}</h1>
-        <p className="mt-2 text-sm text-slate-400">{sub}</p>
-        {children}
-        <p className="mt-6 text-sm text-slate-500">
-          Remembered it?{" "}
-          <Link to="/login" data-testid="auth-back-to-login" className="font-medium text-amber-400 hover:underline">
-            Back to sign in
-          </Link>
-        </p>
-      </motion.div>
+    <div className="bg-grid flex min-h-screen flex-col items-center justify-between bg-background px-6 py-12">
+      <div className="my-auto w-full max-w-md">
+        <motion.div {...fadeUpLg} transition={settle} className="w-full rounded-2xl border border-border bg-card/80 p-8 shadow-2xl backdrop-blur-xl">
+          <img src="/salvage-pulse-logo.jpg" alt="Salvage Pulse" className="mb-6 h-14 w-auto rounded" />
+          <Overline>{overline}</Overline>
+          <h1 className="mt-2 text-3xl font-bold text-white">{title}</h1>
+          <p className="mt-2 text-sm text-slate-400">{sub}</p>
+          {children}
+          <p className="mt-6 text-sm text-slate-500">
+            Remembered it?{" "}
+            <Link to="/login" data-testid="auth-back-to-login" className="font-medium text-amber-400 hover:underline">
+              Back to sign in
+            </Link>
+          </p>
+        </motion.div>
+      </div>
+      <div className="w-full max-w-md">
+        <AppFooter className="mt-6 pt-4 pb-0" />
+      </div>
     </div>
   );
 }

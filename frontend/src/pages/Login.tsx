@@ -13,6 +13,7 @@ import { Overline } from "@/components/common";
 import { homeFor } from "@/components/AppShell";
 import { GoogleButton } from "@/components/GoogleSignIn";
 import { apiGet, apiPost, errorMessage } from "@/lib/api";
+import { APP_VERSION, APP_STAGE, IS_BETA } from "@/lib/version";
 import { beginSession } from "@/lib/session";
 import { queryClient } from "@/lib/queryClient";
 import type { DemoLoginRequest, DemoLoginStatus, User } from "@/lib/types";
@@ -67,11 +68,19 @@ export default function Login() {
               alt="Salvage Pulse"
               className="h-14 w-auto rounded-md"
             />
-            <span className="font-heading text-xl font-extrabold text-white">
-              Salvage Pulse AI{" "}
-              <span className="block font-mono text-[10px] font-normal uppercase tracking-[0.2em] text-sky-300">
-                Call coaching for auto recyclers
+            <div className="flex items-center gap-2">
+              <span className="font-heading text-xl font-extrabold text-white">
+                Salvage Pulse AI
               </span>
+              {IS_BETA && (
+                <span className="rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-amber-300 ring-1 ring-amber-500/30">
+                  {APP_STAGE}
+                </span>
+              )}
+              <span className="font-mono text-xs text-slate-400">v{APP_VERSION}</span>
+            </div>
+            <span className="block font-mono text-[10px] font-normal uppercase tracking-[0.2em] text-sky-300">
+              Call coaching for auto recyclers
             </span>
           </div>
           <div className="max-w-xl">
@@ -274,6 +283,18 @@ export default function Login() {
                 </div>
               </>
             )}
+            <div className="mt-8 border-t border-slate-800/80 pt-4 flex items-center justify-between text-[11px] text-slate-500">
+              <div className="flex items-center gap-1.5">
+                <span>Salvage Pulse AI</span>
+                {IS_BETA && (
+                  <span className="rounded bg-amber-500/15 px-1 py-0.2 font-mono text-[9px] font-semibold uppercase text-amber-400 ring-1 ring-amber-500/30">
+                    {APP_STAGE}
+                  </span>
+                )}
+                <span className="font-mono text-slate-400">v{APP_VERSION}</span>
+              </div>
+              <p>&copy; {new Date().getFullYear()} Salvage Pulse Pro</p>
+            </div>
           </div>
         </motion.div>
       </section>

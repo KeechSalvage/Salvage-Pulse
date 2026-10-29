@@ -16,7 +16,7 @@ from gemini_service import is_gemini_configured
 import store
 from routers import admin, analytics, auth, billing, calls, roleplay, settings, team
 
-app = FastAPI(title="Salvage Pulse AI API", version="2.0.0")
+app = FastAPI(title="Salvage Pulse AI API", version="0.1.0-beta.5")
 
 allowed_origins = [
     "https://app.salvagepulsepro.com",
@@ -42,7 +42,22 @@ app.add_middleware(
 # ==========================================
 @app.get("/api/health")
 def health() -> dict[str, Any]:
-    return {"status": "ok", "timestamp": store.now_iso()}
+    return {
+        "status": "ok",
+        "version": "0.1.0-beta.5",
+        "stage": "beta",
+        "timestamp": store.now_iso(),
+    }
+
+
+@app.get("/api/system/version")
+def system_version() -> dict[str, Any]:
+    return {
+        "version": "0.1.0-beta.5",
+        "stage": "beta",
+        "is_beta": True,
+        "release_date": "2026-10-28",
+    }
 
 
 @app.get("/api/system/ai-status")
