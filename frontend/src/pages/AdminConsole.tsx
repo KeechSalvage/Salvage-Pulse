@@ -484,17 +484,27 @@ export default function AdminConsole() {
       <NewUserDialog open={userDialogOpen} onClose={() => setUserDialogOpen(false)} defaultOrgId={orgId} orgs={orgs.data ?? []} />
 
       <Panel testId="admin-orgs-panel" id="admin-yards" className="scroll-mt-8">
-        <h3 className="text-xl font-bold text-white">Yards ({orgs.data?.length ?? 0})</h3>
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="font-mono text-[11px] uppercase tracking-wider text-slate-500">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-xl font-bold text-white">Yards ({orgs.data?.length ?? 0})</h3>
+          <p className="text-xs text-slate-400">Manage subscriptions, sites, discounts, and demo status across all client yards.</p>
+        </div>
+        <div className="mt-4 overflow-x-auto rounded-lg border border-border/70">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-border bg-surface/60 font-mono text-[11px] uppercase tracking-wider text-slate-400">
               <tr>
-                {["Yard", "Plan", "Status", "Trial ends", "Card", "Discount", "Users", "Calls", "RingCentral", ""].map((h) => (
-                  <th key={h} className="py-2 pr-3 text-left font-normal">{h}</th>
-                ))}
+                <th className="py-2.5 px-4 font-semibold text-slate-300">Yard</th>
+                <th className="py-2.5 px-3 font-semibold text-slate-300">Plan</th>
+                <th className="py-2.5 px-3 font-semibold text-slate-300">Status</th>
+                <th className="py-2.5 px-3 font-semibold text-slate-300">Trial ends</th>
+                <th className="py-2.5 px-3 font-semibold text-slate-300">Card</th>
+                <th className="py-2.5 px-3 font-semibold text-slate-300">Discount</th>
+                <th className="py-2.5 px-3 font-semibold text-slate-300">Users</th>
+                <th className="py-2.5 px-3 font-semibold text-slate-300">Calls</th>
+                <th className="py-2.5 px-3 font-semibold text-slate-300">RingCentral</th>
+                <th className="py-2.5 px-4 font-semibold text-slate-300 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border">
+            <tbody className="divide-y divide-border bg-card/40">
               {orgs.data?.length === 0 && (
                 <tr>
                   <td colSpan={10} className="py-8 text-center text-sm text-slate-400">
@@ -504,11 +514,12 @@ export default function AdminConsole() {
               )}
               {orgs.data?.map((o, i) => {
                 const isOrgDisabled = Boolean(o.blocked || o.status === "canceled");
+                const isDemo = o.status === "demo";
                 return (
                   <tr key={o.id} data-testid={`admin-org-row-${i}`} className={cn(orgId === o.id && "bg-sky-500/[0.06]", isOrgDisabled && "opacity-75")}>
-                    <td className="py-2 pr-3">
+                    <td className="py-3 px-4 font-medium">
                       <div className="flex items-center gap-2">
-                        <button data-testid={`admin-org-name-${i}`} className="font-medium text-white hover:underline" onClick={() => setOrgId(orgId === o.id ? "" : o.id)}>
+                        <button data-testid={`admin-org-name-${i}`} className="font-medium text-white hover:underline text-left" onClick={() => setOrgId(orgId === o.id ? "" : o.id)}>
                           {o.name}
                         </button>
                         {isOrgDisabled && (
@@ -516,10 +527,15 @@ export default function AdminConsole() {
                             Disabled
                           </span>
                         )}
+                        {isDemo && (
+                          <span className="rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-amber-300 ring-1 ring-amber-500/30">
+                            Demo
+                          </span>
+                        )}
                       </div>
                     </td>
-                  <td className="pr-3">
-                    <select data-testid={`admin-org-plan-${i}`} className={sel} value={o.plan} onChange={(e) => updOrg.mutate({ id: o.id, body: { plan: e.target.value as PlanId } })}>
+                  <td className="py-3 px-3">
+                    <select data-testid={`admin-org-plan-${i}`} className={cn(sel, "w-full min-w-[130px]")} value={o.plan} onChange={(e) => updOrg.mutate({ id: o.id, body: { plan: e.target.value as PlanId } })}>
                       {PLANS.map((p) => <option key={p} value={p}>{PLAN_LABEL[p]}</option>)}
                     </select>
                     <p data-testid={`admin-org-sites-${i}`} className="mt-1 flex items-center gap-1 font-mono text-[11px] text-slate-500">
@@ -534,14 +550,16 @@ export default function AdminConsole() {
                       )}
                     </p>
                   </td>
-                  <td className="pr-3">
-                    <select data-testid={`admin-org-status-${i}`} className={sel} value={o.status} onChange={(e) => updOrg.mutate({ id: o.id, body: { status: e.target.value as OrgStatus } })}>
+                  <td className="py-3 px-3">
+                    <select data-testid={`admin-org-status-${i}`} className={cn(sel, "w-full min-w-[110px]")} value={o.status} onChange={(e) => updOrg.mutate({ id: o.id, body: { status: e.target.value as OrgStatus } })}>
                       {STATUSES.map((s) => <option key={s}>{s}</option>)}
                     </select>
                   </td>
-                  <td className="pr-3 font-mono text-xs text-slate-400">{o.trial_ends_at ? fmtDate(o.trial_ends_at) : "—"}</td>
-                  <td className="pr-3 text-xs" data-testid={`admin-org-card-${i}`}>
-                    {o.blocked ? (
+                  <td className="py-3 px-3 font-mono text-xs text-slate-400 whitespace-nowrap">{o.trial_ends_at ? fmtDate(o.trial_ends_at) : "—"}</td>
+                  <td className="py-3 px-3 text-xs" data-testid={`admin-org-card-${i}`}>
+                    {isDemo ? (
+                      <span className="font-mono text-slate-500 select-none" title="Card not applicable in demo mode">—</span>
+                    ) : o.blocked ? (
                       <span className="text-red-300" title={o.cancel_reason}>closed</span>
                     ) : o.card_on_file ? (
                       <span className="text-emerald-300">on file</span>
@@ -549,8 +567,8 @@ export default function AdminConsole() {
                       <span className="text-slate-500">none</span>
                     )}
                   </td>
-                  <td className="pr-3"><DiscountButton org={o} index={i} /></td>
-                  <td className="pr-3 font-mono">
+                  <td className="py-3 px-3"><DiscountButton org={o} index={i} /></td>
+                  <td className="py-3 px-3 font-mono">
                     <button
                       type="button"
                       className="transition-colors hover:text-amber-300 hover:underline cursor-pointer"
@@ -560,11 +578,19 @@ export default function AdminConsole() {
                       {o.users}
                     </button>
                   </td>
-                  <td className="pr-3 font-mono">{o.calls}</td>
-                  <td className="pr-3 text-xs">{o.ringcentral_connected ? <span className="text-emerald-300">connected</span> : <span className="text-slate-500">—</span>}</td>
-                  <td>
-                    <div className="flex justify-end gap-1 whitespace-nowrap">
-                      <Button size="sm" variant="ghost" data-testid={`admin-org-paylink-${i}`} onClick={() => payLink.mutate(o.id)}>
+                  <td className="py-3 px-3 font-mono">{o.calls}</td>
+                  <td className="py-3 px-3 text-xs">{o.ringcentral_connected ? <span className="text-emerald-300">connected</span> : <span className="text-slate-500">—</span>}</td>
+                  <td className="py-3 px-3">
+                    <div className="flex justify-end items-center gap-1.5 whitespace-nowrap">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        data-testid={`admin-org-paylink-${i}`}
+                        disabled={isDemo}
+                        className={cn(isDemo && "opacity-40 cursor-not-allowed hover:bg-transparent hover:text-inherit text-slate-500")}
+                        title={isDemo ? "Payment link unavailable in demo mode" : "Copy payment link"}
+                        onClick={() => !isDemo && payLink.mutate(o.id)}
+                      >
                         Payment link
                       </Button>
                       {o.status === "trialing" && !o.blocked && (

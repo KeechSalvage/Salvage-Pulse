@@ -18,6 +18,7 @@ const day = (s: string) => new Date(s).toLocaleDateString(undefined, { month: "s
 /** Platform console: give a yard N% off their Stripe subscription for a set number of months (or remove it). */
 export default function DiscountButton({ org, index }: { org: AdminOrg; index: number }) {
   const qc = useQueryClient();
+  const isDemo = org.status === "demo";
   const d = org.discount;
   const [open, setOpen] = useState(false);
   const blank = () => ({ percent: String(d?.percent ?? 20), months: String(d?.months ?? 3), reason: d?.reason ?? "" });
@@ -44,6 +45,18 @@ export default function DiscountButton({ org, index }: { org: AdminOrg; index: n
   const pct = Number(f.percent), months = Number(f.months);
   const valid = Number.isInteger(pct) && pct >= 1 && pct <= 100 && Number.isInteger(months) && months >= 1 && months <= 36;
   const price = d?.price;
+
+  if (isDemo) {
+    return (
+      <span
+        data-testid={`admin-org-discount-${index}`}
+        className="font-mono text-xs text-slate-500 select-none"
+        title="Discounts are disabled for demo mode"
+      >
+        —
+      </span>
+    );
+  }
   return (
     <>
       <button
