@@ -624,15 +624,21 @@ def admin_get_trial_reminders_preview(kind: str = Query("day4")) -> dict[str, An
 
 
 @router.get("/api/admin/staff")
-def admin_get_staff() -> list[dict[str, Any]]:
+def admin_get_staff(request: Request) -> list[dict[str, Any]]:
     st = store.get_state()
+    current_u = get_current_user(request)
+    current_uid = current_u.get("id") if current_u else None
+    out = []
     # Onboarding status lives on the login record; mirror it so the list is always current.
     for s in st.get("admin_staff", []):
-        u = st.get("users_by_id", {}).get(s.get("id"))
+        item = dict(s)
+        u = st.get("users_by_id", {}).get(item.get("id"))
         if u:
-            s["google_linked"] = bool(u.get("google_linked") or s.get("google_linked"))
-            s["must_change_password"] = bool(u.get("must_change_password"))
-    return st.get("admin_staff", [])
+            item["google_linked"] = bool(u.get("google_linked") or item.get("google_linked"))
+            item["must_change_password"] = bool(u.get("must_change_password"))
+        item["you"] = bool(current_uid and item.get("id") == current_uid)
+        out.append(item)
+    return out
 
 
 def _get_app_url(request: Request) -> str:
@@ -806,15 +812,19 @@ def admin_delete_staff_device(user: str, device: str, request: Request) -> list[
 
 
 @router.get("/api/admin/staff-lockdown")
-def admin_get_staff_lockdown() -> dict[str, Any]:
+def admin_get_staff_lockdown(request: Request) -> dict[str, Any]:
     st = store.get_state()
-    return st.get("staff_lockdown", {
+    current_u = get_current_user(request)
+    lockdown = dict(st.get("staff_lockdown", {
         "enabled": False,
         "you_signed_in_with_google": True,
         "staff_domain": "salvagepulse.com",
         "google_linked": 1,
         "staff_total": 1,
-    })
+    }))
+    if current_u:
+        lockdown["you_signed_in_with_google"] = bool(current_u.get("google_linked"))
+    return lockdown
 
 
 @router.put("/api/admin/staff-lockdown")
