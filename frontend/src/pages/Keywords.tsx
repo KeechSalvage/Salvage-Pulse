@@ -170,7 +170,7 @@ export default function Keywords() {
   return (
     <>
       <PageHeader overline="Keyword tracker" title="Words that move parts" />
-      <Panel className="mb-6" testId="keyword-add-panel">
+      <Panel id="keywords-add-tile" className="mb-6 scroll-mt-6" testId="keyword-add-panel">
         <Overline>Track a new keyword</Overline>
         <form
           className="mt-3 flex flex-wrap gap-3"
@@ -188,7 +188,7 @@ export default function Keywords() {
         <p className="mt-2 text-xs text-slate-500">Use “/” to group synonyms. Matching is case-insensitive whole-word across every transcript, including past calls.</p>
       </Panel>
 
-      <Panel className="mb-6" testId="keyword-suggestions-panel">
+      <Panel id="keywords-suggested" className="mb-6 scroll-mt-6" testId="keyword-suggestions-panel">
         <Overline>Suggested words</Overline>
         <p className="mt-1 text-xs text-slate-500">Come up often in your calls but no tile tracks them yet. Tap one to start tracking it.</p>
         {!!org.data?.suggestion_cap && (
@@ -223,7 +223,7 @@ export default function Keywords() {
         </div>
       </Panel>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3" data-testid="keyword-list">
+      <div id="keywords-active-tiles" className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 scroll-mt-6" data-testid="keyword-list">
         {(keywords.data ?? []).map((k) => {
           const s = stat(k.keyword);
           const pct = total ? Math.round(((s?.calls ?? 0) / total) * 100) : 0;
@@ -262,7 +262,9 @@ export default function Keywords() {
           );
         })}
       </div>
-      <RepWordUsePanel />
+      <div id="keywords-rep-usage" className="scroll-mt-6">
+        <RepWordUsePanel />
+      </div>
       <TileCallsDialog pick={pick} onClose={() => setPick(null)} />
     </>
   );

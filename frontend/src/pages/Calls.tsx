@@ -89,7 +89,7 @@ export default function Calls() {
     <>
       <PageHeader overline="Call library" title={isManager ? "All incoming calls" : "My calls"}>{isManager && <CallCleanup />}</PageHeader>
 
-      <div className="mb-4 flex flex-wrap gap-2" data-testid="category-pills">
+      <div id="calls-categories" className="mb-4 flex flex-wrap gap-2 scroll-mt-6" data-testid="category-pills">
         {["all", ...(meta.data?.categories ?? [])].map((c) => (
           <button
             key={c}
@@ -106,7 +106,7 @@ export default function Calls() {
         ))}
       </div>
 
-      <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-3">
+      <div id="calls-search-filter" className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-3 scroll-mt-6">
         <form
           className="relative min-w-[240px] flex-1"
           onSubmit={(e) => {
@@ -169,7 +169,7 @@ export default function Calls() {
         </span>
       </div>
 
-      <div className="-mt-3 mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card/60 p-3" data-testid="calls-vehicle-filters">
+      <div id="calls-vehicle-filter" className="-mt-3 mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card/60 p-3 scroll-mt-6" data-testid="calls-vehicle-filters">
         <span className="flex items-center gap-1.5 px-1 font-mono text-[11px] uppercase tracking-wider text-slate-500">
           <Car className="size-3.5" /> Vehicle
         </span>
@@ -244,7 +244,7 @@ export default function Calls() {
         <EmptyState testId="calls-empty" title="No calls found" body={isError ? "Couldn't load calls right now." : "Try clearing filters or upload a new call."} />
       )}
       {calls && calls.length > 0 && (
-        <div className="overflow-hidden rounded-xl border border-border bg-card">
+        <div id="calls-table-section" className="overflow-hidden rounded-xl border border-border bg-card scroll-mt-6">
           {isManager && picked.size > 0 && (
             <div data-testid="calls-bulk-bar" className="sticky top-2 z-20 mb-3 flex items-center gap-3 rounded-lg border border-red-500/40 bg-card/95 px-4 py-2.5 backdrop-blur">
               <span data-testid="calls-selected-count" className="text-sm text-white">{picked.size} selected</span>

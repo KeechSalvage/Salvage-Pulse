@@ -57,7 +57,7 @@ export default function TagVehicles() {
         vehicle demand, stock alerts and vehicle arrival lists.
       </p>
       <div className="grid items-start gap-6 xl:grid-cols-[1fr_320px]">
-      <div>
+      <div id="tagging-active-card" className="scroll-mt-6">
       {queue.isLoading ? (
         <Panel><Loader2 className="size-5 animate-spin text-slate-400" /></Panel>
       ) : !current ? (
@@ -81,7 +81,9 @@ export default function TagVehicles() {
         </p>
       )}
       </div>
-      <TagLeaderboardPanel />
+      <div id="tagging-leaderboard-section" className="scroll-mt-6">
+        <TagLeaderboardPanel />
+      </div>
       </div>
     </>
   );

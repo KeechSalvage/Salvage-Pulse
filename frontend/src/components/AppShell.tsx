@@ -14,6 +14,7 @@ import {
   BarChart3,
   Bot,
   Building2,
+  ChevronDown,
   CreditCard,
   Plug,
   Gauge,
@@ -34,6 +35,7 @@ import {
   ShieldCheck,
   TrendingUp,
 } from "lucide-react";
+import { YARD_PAGE_SECTIONS } from "@/lib/navSections";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost, errorMessage } from "@/lib/api";
 import { useMe } from "@/lib/hooks";
@@ -221,12 +223,14 @@ function Sidebar({ me, org, isStaff, branding, badges }: { me: User; org?: OrgIn
   const [activeHash, setActiveHash] = useState(loc.hash || "#admin-yards");
 
   useEffect(() => {
-    const onHashChange = () => {
-      setActiveHash(window.location.hash || "#admin-yards");
-    };
-    window.addEventListener("hashchange", onHashChange);
-    return () => window.removeEventListener("hashchange", onHashChange);
-  }, []);
+    if (loc.hash) {
+      const id = loc.hash.replace("#", "");
+      const timer = setTimeout(() => {
+        scrollToSection(id);
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [loc.pathname, loc.hash]);
 
   useEffect(() => {
     if (!isStaff || loc.pathname !== "/admin") return;
@@ -277,37 +281,138 @@ function Sidebar({ me, org, isStaff, branding, badges }: { me: User; org?: OrgIn
           <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.18em] text-amber-400/80">{isStaff ? "Platform console" : (org?.name ?? "Salvage Pulse")}</p>
         </div>
       </div>
-      <nav className="mt-4 flex-1 space-y-1 px-3">
-        {(NAV[me.role] || NAV.rep).map((n) => {
-          const isAnchor = Boolean(n.hash && isStaff && loc.pathname === "/admin");
-          const active = isAnchor ? activeHash === n.hash : undefined;
-          return (
-            <NavLink
-              key={n.to}
-              to={n.to}
-              data-testid={`nav-${n.id}`}
-              onClick={(e) => handleNavClick(e, n)}
-              className={({ isActive }) =>
-                cn(
-                  "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors duration-150",
-                  (isAnchor ? active : isActive)
-                    ? "bg-sidebar-accent text-white shadow-[inset_2px_0_0_var(--color-amber-500)]"
-                    : "text-slate-400 hover:bg-sidebar-accent/60 hover:text-white",
-                )
-              }
-            >
-              <n.icon className="size-4 transition-transform duration-150 group-hover:scale-110" />
-              {n.label}
-              <NavBadge id={n.id} isRep={me.role === "rep" || me.role === "sales_rep"} badges={badges} />
-            </NavLink>
-          );
-        })}
+      <nav className="mt-4 flex-1 space-y-1 overflow-y-auto px-3">
+        {(NAV[me.role] || NAV.rep).map((n) => (
+          <SidebarNavItem
+            key={n.to}
+            item={n}
+            isStaff={isStaff}
+            activeHash={activeHash}
+            onNavClick={handleNavClick}
+            badges={badges}
+            role={me.role}
+          />
+        ))}
       </nav>
       <div className="mt-auto">
         <UserCard me={me} />
         <AppFooter compact className="border-t border-sidebar-border/40 mx-2" />
       </div>
     </aside>
+  );
+}
+
+function scrollToSection(sectionId: string) {
+  const el = document.getElementById(sectionId);
+  if (el) {
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    el.classList.add("ring-2", "ring-amber-500/50");
+    setTimeout(() => el.classList.remove("ring-2", "ring-amber-500/50"), 1200);
+  }
+}
+
+function SidebarNavItem({
+  item,
+  isStaff,
+  activeHash,
+  onNavClick,
+  badges,
+  role,
+}: {
+  item: { to: string; label: string; icon: typeof Gauge; id: string; hash?: string };
+  isStaff: boolean;
+  activeHash?: string;
+  onNavClick: (e: React.MouseEvent, n: { to: string; hash?: string }) => void;
+  badges: NavBadges;
+  role: Role;
+}) {
+  const loc = useLocation();
+  const isRep = role === "rep" || role === "sales_rep";
+  const sections = !isStaff ? YARD_PAGE_SECTIONS[item.id] : undefined;
+  const hasSections = Boolean(sections && sections.length > 0);
+
+  // Check if we are currently on this item's page route
+  const isCurrentPage = loc.pathname === item.to || (item.to !== "/" && loc.pathname.startsWith(`${item.to}/`));
+  const [expanded, setExpanded] = useState(isCurrentPage);
+
+  // Keep expanded in sync when navigating to/from this page
+  useEffect(() => {
+    if (isCurrentPage) {
+      setExpanded(true);
+    }
+  }, [isCurrentPage]);
+
+  const isAnchor = Boolean(item.hash && isStaff && loc.pathname === "/admin");
+  const isNavActive = isAnchor ? activeHash === item.hash : isCurrentPage;
+
+  return (
+    <div className="space-y-0.5" data-testid={`nav-item-wrapper-${item.id}`}>
+      <div className="group relative flex items-center">
+        <NavLink
+          to={item.to}
+          data-testid={`nav-${item.id}`}
+          onClick={(e) => onNavClick(e, item)}
+          className={cn(
+            "flex flex-1 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150",
+            isNavActive
+              ? "bg-sidebar-accent text-white shadow-[inset_2px_0_0_var(--color-amber-500)]"
+              : "text-slate-400 hover:bg-sidebar-accent/60 hover:text-white",
+          )}
+        >
+          <item.icon className="size-4 shrink-0 transition-transform duration-150 group-hover:scale-110" />
+          <span className="truncate">{item.label}</span>
+          <NavBadge id={item.id} isRep={isRep} badges={badges} />
+        </NavLink>
+
+        {hasSections && (
+          <button
+            type="button"
+            data-testid={`nav-expand-${item.id}`}
+            title={`Quick navigation for ${item.label}`}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setExpanded(!expanded);
+            }}
+            className={cn(
+              "ml-1 flex size-7 items-center justify-center rounded-md text-slate-400 transition-all duration-150 hover:bg-slate-800 hover:text-amber-300",
+              expanded && "text-amber-400 rotate-180",
+            )}
+          >
+            <ChevronDown className="size-3.5 transition-transform duration-200" />
+          </button>
+        )}
+      </div>
+
+      {hasSections && expanded && (
+        <div
+          data-testid={`nav-sections-${item.id}`}
+          className="ml-6 space-y-0.5 border-l border-slate-800/80 py-1 pl-2.5 animate-in fade-in slide-in-from-top-1 duration-150"
+        >
+          {sections!.map((sec) => (
+            <button
+              key={sec.id}
+              type="button"
+              data-testid={`nav-section-${item.id}-${sec.id}`}
+              onClick={(e) => {
+                e.preventDefault();
+                if (!isCurrentPage) {
+                  // Navigate to the target page, then scroll after transition
+                  window.location.assign(`${item.to}#${sec.id}`);
+                } else {
+                  window.history.pushState(null, "", `#${sec.id}`);
+                  scrollToSection(sec.id);
+                }
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs text-slate-400 transition-colors duration-150 hover:bg-slate-800/60 hover:text-amber-300"
+            >
+              <span className="size-1 rounded-full bg-slate-600 shrink-0" />
+              <span className="truncate">{sec.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

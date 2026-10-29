@@ -97,36 +97,38 @@ export default function Performance() {
 
       <PremiumGate feature="leaderboards" hidden><WinnerBanner testId="rep-winner-banner" /></PremiumGate>
 
-      <TileGrid
-        page="performance-stats"
-        selfArrange
-        label="stat tiles"
-        className="grid grid-cols-2 gap-4 lg:grid-cols-4"
-        tiles={[
-          { id: "calls", label: "My calls", span: "", node: (
-            <StatCard label="My calls" value={ov?.total_calls ?? "—"} sub={ov ? `avg ${fmtDuration(ov.avg_duration_sec)} · ${ov.inbound} in / ${ov.outbound} out` : ""} testId="rep-stat-calls" />
-          ) },
-          { id: "avg-score", label: "Avg QA score", span: "", node: (
-            <StatCard label="Avg QA score" value={ov?.avg_score ?? "—"} sub={team.data ? `team ${team.data.avg_score}` : "out of 100"} testId="rep-stat-avg-score" accent />
-          ) },
-          { id: "close-rate", label: "Close rate", span: "", node: (
-            <StatCard
-              label="Close rate"
-              value={ov ? `${ov.conversion_rate}%` : "—"}
-              sub={ov ? `${ov.won ?? 0} won of ${(ov.won ?? 0) + (ov.lost ?? 0) + (ov.pending ?? 0)} sales calls${team.data ? ` · team ${team.data.conversion_rate}%` : ""}` : ""}
-              testId="rep-stat-conversion"
-            />
-          ) },
-          { id: "warranty", label: "Warranty pitched", span: "", node: (
-            <StatCard
-              label="Warranty pitched"
-              value={ov ? `${ov.warranty_pitch_rate}%` : "—"}
-              sub={team.data ? `team ${team.data.warranty_pitch_rate}% · ${ov?.roleplay_sessions ?? 0} role-plays` : `${ov?.roleplay_sessions ?? 0} role-plays`}
-              testId="rep-stat-warranty"
-            />
-          ) },
-        ]}
-      />
+      <div id="performance-stats" className="scroll-mt-6">
+        <TileGrid
+          page="performance-stats"
+          selfArrange
+          label="stat tiles"
+          className="grid grid-cols-2 gap-4 lg:grid-cols-4"
+          tiles={[
+            { id: "calls", label: "My calls", span: "", node: (
+              <StatCard label="My calls" value={ov?.total_calls ?? "—"} sub={ov ? `avg ${fmtDuration(ov.avg_duration_sec)} · ${ov.inbound} in / ${ov.outbound} out` : ""} testId="rep-stat-calls" />
+            ) },
+            { id: "avg-score", label: "Avg QA score", span: "", node: (
+              <StatCard label="Avg QA score" value={ov?.avg_score ?? "—"} sub={team.data ? `team ${team.data.avg_score}` : "out of 100"} testId="rep-stat-avg-score" accent />
+            ) },
+            { id: "close-rate", label: "Close rate", span: "", node: (
+              <StatCard
+                label="Close rate"
+                value={ov ? `${ov.conversion_rate}%` : "—"}
+                sub={ov ? `${ov.won ?? 0} won of ${(ov.won ?? 0) + (ov.lost ?? 0) + (ov.pending ?? 0)} sales calls${team.data ? ` · team ${team.data.conversion_rate}%` : ""}` : ""}
+                testId="rep-stat-conversion"
+              />
+            ) },
+            { id: "warranty", label: "Warranty pitched", span: "", node: (
+              <StatCard
+                label="Warranty pitched"
+                value={ov ? `${ov.warranty_pitch_rate}%` : "—"}
+                sub={team.data ? `team ${team.data.warranty_pitch_rate}% · ${ov?.roleplay_sessions ?? 0} role-plays` : `${ov?.roleplay_sessions ?? 0} role-plays`}
+                testId="rep-stat-warranty"
+              />
+            ) },
+          ]}
+        />
+      </div>
 
       <PremiumGate feature="leaderboards" hidden><RepTrophyCase repId={targetId} isSelf={isSelf} /></PremiumGate>
 

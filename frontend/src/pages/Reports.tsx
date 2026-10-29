@@ -238,7 +238,7 @@ export default function Reports() {
         <span className="ml-auto font-mono text-xs text-slate-500" data-testid="report-range-label">{from} → {to}{isFetching ? " · loading…" : ""}</span>
       </div>
       {isError && <p className="mb-4 text-sm text-red-300">Couldn't build this report — check the dates.</p>}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+      <div id="report-summary-stats" className="grid grid-cols-2 gap-4 lg:grid-cols-5 scroll-mt-6">
         <StatCard label="Calls" value={t?.calls ?? "—"} sub={t ? `${t.inbound} in · ${t.outbound} out · ${t.voicemails} vm` : ""} testId="report-stat-calls" />
         <StatCard label="Avg QA score" value={t?.avg_score ?? "—"} sub={t ? `avg ${fmtDuration(t.avg_duration_sec)} per call` : ""} testId="report-stat-score" accent />
         <StatCard label="Sales calls" value={t?.sales_calls ?? "—"} sub={t ? `${t.won} won` : ""} testId="report-stat-sales" />

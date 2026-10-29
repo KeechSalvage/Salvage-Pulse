@@ -80,7 +80,7 @@ export default function Callbacks() {
   return (
     <>
       <PageHeader overline="Missed call alerts" title={isManagerLike(me?.role) ? "Callbacks queue" : "My callbacks"}>
-        <div className="grid grid-cols-2 gap-1 rounded-lg bg-surface p-1">
+        <div id="callbacks-status-tabs" className="grid grid-cols-2 gap-1 rounded-lg bg-surface p-1 scroll-mt-6">
           {(["open", "resolved"] as const).map((t) => (
             <button
               key={t}
@@ -102,7 +102,7 @@ export default function Callbacks() {
         otherwise call them back and mark it done.
       </p>
 
-      <div className="mb-5 flex flex-wrap items-center gap-2" data-testid="callbacks-sources">
+      <div id="callbacks-sources-bar" className="mb-5 flex flex-wrap items-center gap-2 scroll-mt-6" data-testid="callbacks-sources">
         {[{ id: "", label: "Everything" }, { id: "missed", label: "Missed calls" }, { id: "assigned", label: "Added by manager" }, ...(lists.data ?? []).map((l) => ({ id: l.id, label: `${l.name}${isManager ? ` · ${l.rep_name}` : ""} (${l.open})${l.due_date ? ` · ${l.overdue ? "overdue" : "due"} ${fmtDue(l.due_date)}` : ""}`, overdue: l.overdue }))].map((o) => (
           <button key={o.id || "all"} type="button" data-testid={`callbacks-source-${o.id || "all"}`} onClick={() => setSource(o.id)}
             className={cn("rounded-full border px-3 py-1 text-xs transition-colors duration-150",
@@ -158,7 +158,7 @@ export default function Callbacks() {
         />
       )}
 
-      <div className="space-y-3" data-testid="callbacks-list">
+      <div id="callbacks-queue-table" className="space-y-3 scroll-mt-6" data-testid="callbacks-list">
         {items.map((c, i) => {
           const resolvedBy = c.followed_up ? `Reconnected ${c.followed_up_at ? fmtDate(c.followed_up_at) : ""}` : c.callback_done ? `Called back by ${c.callback_by}` : "";
           return (

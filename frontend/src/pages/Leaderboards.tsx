@@ -254,7 +254,7 @@ export default function Leaderboards() {
   return (
     <>
       <PageHeader overline="Leaderboards" title="Who's on top" />
-      <div className="mb-6 flex flex-wrap gap-1 border-b border-border" data-testid="leaderboard-tabs">
+      <div id="leaderboards-tabs" className="mb-6 flex flex-wrap gap-1 border-b border-border scroll-mt-6" data-testid="leaderboard-tabs">
         {TABS.map((t) => (
           <button key={t.id} type="button" data-testid={`leaderboard-tab-${t.id}`} onClick={() => setTab(t.id)}
             className={cn("-mb-px border-b-2 px-4 py-2 text-sm transition-colors duration-150", tab === t.id ? "border-amber-500 text-white" : "border-transparent text-slate-400 hover:text-white")}>
@@ -262,26 +262,28 @@ export default function Leaderboards() {
           </button>
         ))}
       </div>
-      {tab === "trophies" && <TrophyCase lot={lot} />}
-      {tab === "lists" && <ListBoard lot={lot} />}
-      {byLot && (
-        <div className="mb-4 flex flex-wrap items-center gap-3">
-          <LotSwitcher value={lot} onChange={setLot} testId="leaderboard-lot-switcher" allLabel="Whole yard" />
-          {lot && <span data-testid="leaderboard-lot-note" className="text-xs text-slate-400">Only people working at this lot now — their own race for trophies and streaks.</span>}
-        </div>
-      )}
-      {tab === "vehicles" && <PremiumGate feature="leaderboards"><TruckLeaderboard lot={lot} /></PremiumGate>}
-      {tab === "winback" && <PremiumGate feature="leaderboards"><WinBackLeaderboardPanel lot={lot} /></PremiumGate>}
-      {tab === "streaks" && (
-        <PremiumGate feature="leaderboards">
-          <StreakBreakBanner lot={lot} />
-          <TrophyWallPanel lot={lot} />
-        </PremiumGate>
-      )}
-      {tab === "tagging" && <TagBoard lot={lot} />}
-      {tab === "delivery" && <DeliveryBoard lot={lot} />}
-      {tab === "team" && <TeamPlayerBoardPanel lot={lot} />}
-      {tab === "roleplay" && <RoleplayScoreboardPanel />}
+      <div id="leaderboard-main-view" className="scroll-mt-6">
+        {tab === "trophies" && <TrophyCase lot={lot} />}
+        {tab === "lists" && <ListBoard lot={lot} />}
+        {byLot && (
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <LotSwitcher value={lot} onChange={setLot} testId="leaderboard-lot-switcher" allLabel="Whole yard" />
+            {lot && <span data-testid="leaderboard-lot-note" className="text-xs text-slate-400">Only people working at this lot now — their own race for trophies and streaks.</span>}
+          </div>
+        )}
+        {tab === "vehicles" && <PremiumGate feature="leaderboards"><TruckLeaderboard lot={lot} /></PremiumGate>}
+        {tab === "winback" && <PremiumGate feature="leaderboards"><WinBackLeaderboardPanel lot={lot} /></PremiumGate>}
+        {tab === "streaks" && (
+          <PremiumGate feature="leaderboards">
+            <StreakBreakBanner lot={lot} />
+            <TrophyWallPanel lot={lot} />
+          </PremiumGate>
+        )}
+        {tab === "tagging" && <TagBoard lot={lot} />}
+        {tab === "delivery" && <DeliveryBoard lot={lot} />}
+        {tab === "team" && <TeamPlayerBoardPanel lot={lot} />}
+        {tab === "roleplay" && <RoleplayScoreboardPanel />}
+      </div>
     </>
   );
 }

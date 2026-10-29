@@ -137,55 +137,59 @@ export default function Roleplay() {
                 Free-trial limit: {org.data.roleplay_daily_cap} role-play call per person per day for the rest of your trial. Upgrade on the Billing page for unlimited practice.
               </p>
             )}
-            <RoleplayAssignments isManager={isManager} scenarios={scenarios.data ?? []} onStart={(id) => start.mutate(id)} />
-            <Overline className="mb-3">Pick a caller</Overline>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {(scenarios.data ?? []).map((sc, i) => (
-                <div key={sc.id} className="group/card relative">
-                <motion.button
-                  {...fadeUp}
-                  transition={{ duration: 0.2, delay: i * 0.05 }}
-                  data-testid={`scenario-card-${sc.id}`}
-                  disabled={start.isPending}
-                  onClick={() => start.mutate(sc.id)}
-                  className="group flex h-full w-full flex-col rounded-xl border border-border bg-card p-5 text-left transition-[border-color,transform] duration-150 hover:-translate-y-0.5 hover:border-amber-500/50 disabled:opacity-60"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className={cn("rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider", DIFF[sc.difficulty])}>{sc.difficulty}</span>
-                    {start.isPending && start.variables === sc.id ? (
-                      <Loader2 className="size-4 animate-spin text-amber-400" />
-                    ) : (
-                      <PhoneCall className="size-4 text-slate-600 transition-colors duration-150 group-hover:text-amber-400" />
-                    )}
+            <div id="roleplay-assignments" className="scroll-mt-6">
+              <RoleplayAssignments isManager={isManager} scenarios={scenarios.data ?? []} onStart={(id) => start.mutate(id)} />
+            </div>
+            <div id="roleplay-picker" className="scroll-mt-6">
+              <Overline className="mb-3">Pick a caller</Overline>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                {(scenarios.data ?? []).map((sc, i) => (
+                  <div key={sc.id} className="group/card relative">
+                  <motion.button
+                    {...fadeUp}
+                    transition={{ duration: 0.2, delay: i * 0.05 }}
+                    data-testid={`scenario-card-${sc.id}`}
+                    disabled={start.isPending}
+                    onClick={() => start.mutate(sc.id)}
+                    className="group flex h-full w-full flex-col rounded-xl border border-border bg-card p-5 text-left transition-[border-color,transform] duration-150 hover:-translate-y-0.5 hover:border-amber-500/50 disabled:opacity-60"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className={cn("rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider", DIFF[sc.difficulty])}>{sc.difficulty}</span>
+                      {start.isPending && start.variables === sc.id ? (
+                        <Loader2 className="size-4 animate-spin text-amber-400" />
+                      ) : (
+                        <PhoneCall className="size-4 text-slate-600 transition-colors duration-150 group-hover:text-amber-400" />
+                      )}
+                    </div>
+                    <h3 className="mt-4 font-heading text-lg font-bold text-white">{sc.title}</h3>
+                    <p className="mt-1 text-sm text-sky-300">{sc.persona}</p>
+                    <p className="mt-3 text-sm leading-relaxed text-slate-400">
+                      <span className="font-mono text-[10px] uppercase tracking-wider text-amber-400/80">Your goal · </span>
+                      {sc.objective}
+                    </p>
+                    {sc.custom && <span data-testid={`scenario-custom-badge-${sc.id}`} className="mt-3 self-start rounded bg-sky-500/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-sky-300">Your yard's role-play</span>}
+                  </motion.button>
+                  {sc.custom && isManager && (
+                    <div className="absolute right-12 top-4 flex gap-2 opacity-60 transition-opacity duration-150 group-hover/card:opacity-100">
+                      <button data-testid={`scenario-edit-${sc.id}`} title="Edit" onClick={() => openEditor(sc)} className="text-slate-400 transition-colors duration-150 hover:text-amber-300">
+                        <Pencil className="size-4" />
+                      </button>
+                      <button
+                        data-testid={`scenario-delete-${sc.id}`}
+                        title="Delete"
+                        onClick={() => window.confirm(`Delete "${sc.title}"? Past sessions stay in history.`) && removeScenario.mutate(sc.id)}
+                        className="text-slate-500 transition-colors duration-150 hover:text-red-400"
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
+                    </div>
+                  )}
                   </div>
-                  <h3 className="mt-4 font-heading text-lg font-bold text-white">{sc.title}</h3>
-                  <p className="mt-1 text-sm text-sky-300">{sc.persona}</p>
-                  <p className="mt-3 text-sm leading-relaxed text-slate-400">
-                    <span className="font-mono text-[10px] uppercase tracking-wider text-amber-400/80">Your goal · </span>
-                    {sc.objective}
-                  </p>
-                  {sc.custom && <span data-testid={`scenario-custom-badge-${sc.id}`} className="mt-3 self-start rounded bg-sky-500/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-sky-300">Your yard's role-play</span>}
-                </motion.button>
-                {sc.custom && isManager && (
-                  <div className="absolute right-12 top-4 flex gap-2 opacity-60 transition-opacity duration-150 group-hover/card:opacity-100">
-                    <button data-testid={`scenario-edit-${sc.id}`} title="Edit" onClick={() => openEditor(sc)} className="text-slate-400 transition-colors duration-150 hover:text-amber-300">
-                      <Pencil className="size-4" />
-                    </button>
-                    <button
-                      data-testid={`scenario-delete-${sc.id}`}
-                      title="Delete"
-                      onClick={() => window.confirm(`Delete "${sc.title}"? Past sessions stay in history.`) && removeScenario.mutate(sc.id)}
-                      className="text-slate-500 transition-colors duration-150 hover:text-red-400"
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
-                  </div>
-                )}
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
-          <Panel className="xl:col-span-4" testId="roleplay-history-panel">
+          <Panel id="roleplay-past-sessions" className="xl:col-span-4 scroll-mt-6" testId="roleplay-history-panel">
             <Overline>Past sessions</Overline>
             <div className="mt-4 space-y-2">
               {(sessions.data ?? []).slice(0, 10).map((ps) => (

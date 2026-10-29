@@ -68,7 +68,7 @@ export default function ShiftCalendar() {
     <>
       <PageHeader overline="Team" title="Shift calendar" />
       <p className="-mt-4 mb-6 max-w-2xl text-sm text-slate-400">Mark who's away. Away reps can't be given callbacks, their overdue alerts pause, and if you pick a cover rep their open callbacks move over the morning the time off starts.</p>
-      <Panel testId="timeoff-form-panel" className="mb-6">
+      <Panel id="calendar-add-timeoff" testId="timeoff-form-panel" className="mb-6 scroll-mt-6">
         <Overline>Add time off</Overline>
         <form className="mt-3 flex flex-wrap items-end gap-2" onSubmit={(e) => (e.preventDefault(), add.mutate())}>
           <select data-testid="timeoff-rep" value={f.rep_id} onChange={(e) => setF({ ...f, rep_id: e.target.value })} className={sel}>
@@ -86,7 +86,7 @@ export default function ShiftCalendar() {
           <Button type="submit" data-testid="timeoff-save" disabled={!f.rep_id || !f.start || !f.end || add.isPending}><Plane className="size-4" /> Add</Button>
         </form>
       </Panel>
-      <Panel testId="coverage-settings" className="mb-6">
+      <Panel id="calendar-coverage-rules" testId="coverage-settings" className="mb-6 scroll-mt-6">
         <div className="flex flex-wrap items-center gap-3 text-sm text-slate-300">
           <AlertTriangle className="size-4 text-amber-300" />
           <span>Warn when</span>
@@ -100,7 +100,7 @@ export default function ShiftCalendar() {
         </div>
       </Panel>
       <CoverRequestsOverview />
-      <Panel testId="shift-calendar">
+      <Panel id="calendar-month-grid" testId="shift-calendar" className="scroll-mt-6">
         <div className="mb-4 flex items-center gap-3">
           <Button size="sm" variant="ghost" data-testid="calendar-prev" onClick={() => shift(-1)} aria-label="Previous month"><ChevronLeft className="size-4" /></Button>
           <h3 data-testid="calendar-month" className="text-lg font-bold text-white">{MONTH_LONG(month)}</h3>

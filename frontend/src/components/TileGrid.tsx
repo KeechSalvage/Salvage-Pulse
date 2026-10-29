@@ -135,7 +135,7 @@ export default function TileGrid({ page, tiles, className, label = "tiles", self
         <div className={className} data-testid={`tiles-${page}`}>
           {ordered.map((t) => (
             <Fragment key={t.id}>
-              <div data-tile={t.id} className={cn(t.span, "min-w-0 empty:hidden [&>*]:h-full")}>{t.node}</div>
+              <div id={t.id} data-tile={t.id} className={cn(t.span, "min-w-0 empty:hidden [&>*]:h-full scroll-mt-6")}>{t.node}</div>
             </Fragment>
           ))}
         </div>

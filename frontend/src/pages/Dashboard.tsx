@@ -70,33 +70,35 @@ export default function Dashboard() {
       <LocationLeaderboard lot={lot} />
       {!lot && <PremiumGate feature="monthly_trends" hidden><LotCompare /></PremiumGate>}
 
-      <TileGrid
-        page="dashboard-stats"
-        label="stat tiles"
-        className="grid grid-cols-2 gap-4 lg:grid-cols-5"
-        tiles={[
-          { id: "total-calls", label: "Calls tracked", span: "", node: (
-            <StatCard label="Calls tracked" value={ov?.total_calls ?? "—"} testId="stat-total-calls" />
-          ) },
-          { id: "avg-score", label: "Avg QA score", span: "", node: (
-            <StatCard label="Avg QA score" value={ov?.avg_score ?? "—"} sub="out of 100" testId="stat-avg-score" accent />
-          ) },
-          { id: "handle-time", label: "Avg handle time", span: "", node: (
-            <StatCard label="Avg handle time" value={ov ? fmtDuration(ov.avg_duration_sec) : "—"} sub="minutes per call" testId="stat-avg-duration" />
-          ) },
-          { id: "warranty", label: "Warranty pitched", span: "", node: (
-            <StatCard label="Warranty pitched" value={ov ? `${ov.warranty_pitch_rate}%` : "—"} sub="of connected calls" testId="stat-warranty-rate" />
-          ) },
-          { id: "close-rate", label: "Close rate", span: "", node: (
-            <StatCard
-              label="Close rate"
-              value={ov ? `${ov.conversion_rate}%` : "—"}
-              sub={ov ? `${ov.won ?? 0} won of ${(ov.won ?? 0) + (ov.lost ?? 0) + (ov.pending ?? 0)} sales calls` : ""}
-              testId="stat-conversion"
-            />
-          ) },
-        ]}
-      />
+      <div id="dashboard-stats" className="scroll-mt-6">
+        <TileGrid
+          page="dashboard-stats"
+          label="stat tiles"
+          className="grid grid-cols-2 gap-4 lg:grid-cols-5"
+          tiles={[
+            { id: "total-calls", label: "Calls tracked", span: "", node: (
+              <StatCard label="Calls tracked" value={ov?.total_calls ?? "—"} testId="stat-total-calls" />
+            ) },
+            { id: "avg-score", label: "Avg QA score", span: "", node: (
+              <StatCard label="Avg QA score" value={ov?.avg_score ?? "—"} sub="out of 100" testId="stat-avg-score" accent />
+            ) },
+            { id: "handle-time", label: "Avg handle time", span: "", node: (
+              <StatCard label="Avg handle time" value={ov ? fmtDuration(ov.avg_duration_sec) : "—"} sub="minutes per call" testId="stat-avg-duration" />
+            ) },
+            { id: "warranty", label: "Warranty pitched", span: "", node: (
+              <StatCard label="Warranty pitched" value={ov ? `${ov.warranty_pitch_rate}%` : "—"} sub="of connected calls" testId="stat-warranty-rate" />
+            ) },
+            { id: "close-rate", label: "Close rate", span: "", node: (
+              <StatCard
+                label="Close rate"
+                value={ov ? `${ov.conversion_rate}%` : "—"}
+                sub={ov ? `${ov.won ?? 0} won of ${(ov.won ?? 0) + (ov.lost ?? 0) + (ov.pending ?? 0)} sales calls` : ""}
+                testId="stat-conversion"
+              />
+            ) },
+          ]}
+        />
+      </div>
 
       <TileGrid
         page="dashboard"

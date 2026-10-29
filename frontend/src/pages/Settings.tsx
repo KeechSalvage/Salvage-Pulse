@@ -44,7 +44,8 @@ export default function Settings() {
       <nav className="mb-6 flex flex-wrap gap-1 rounded-xl border border-border bg-card/60 p-1 backdrop-blur" aria-label="Settings sections">
         {tabs.map((t) => (
           <NavLink key={t.id} to={`/settings/${t.id}`} data-testid={`settings-tab-${t.id}`}
-            className={({ isActive }) => cn("flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors duration-150",
+            id={`settings-${t.id}`}
+            className={({ isActive }) => cn("flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors duration-150 scroll-mt-6",
               isActive ? "bg-sidebar-accent text-white shadow-[inset_0_-2px_0_var(--color-amber-500)]" : "text-slate-400 hover:bg-sidebar-accent/60 hover:text-white")}>
             <t.icon className="size-4" /> {t.label}
           </NavLink>
