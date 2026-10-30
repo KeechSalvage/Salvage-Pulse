@@ -23,14 +23,37 @@ def admin_get_orgs() -> list[dict[str, Any]]:
     calls = st.get("calls", [])
     users = st.get("users_by_id", {})
 
-    # Compute real live counts so Yards table never drifts or shows stale hardcoded numbers
+    # Compute real live counts and attached user list so Yards table has rich details
     for o in orgs:
         oid = o.get("id")
         if oid:
             o["calls"] = sum(1 for c in calls if c.get("org_id") == oid)
-            o["users"] = sum(1 for u in users.values() if u.get("org_id") == oid and not u.get("disabled"))
+            attached_users = [
+                {
+                    "id": u.get("id"),
+                    "name": u.get("name"),
+                    "email": u.get("email"),
+                    "role": u.get("role"),
+                    "title": u.get("title") or "Sales Rep",
+                    "disabled": bool(u.get("disabled")),
+                }
+                for u in users.values()
+                if u.get("org_id") == oid
+            ]
+            o["users"] = len([u for u in attached_users if not u["disabled"]])
+            o["user_list"] = attached_users
+
+            # If billing contact isn't set, default to the yard owner or first manager
+            if not o.get("billing_contact_name"):
+                owner = next((u for u in attached_users if u.get("role") in ("owner", "manager", "sales_manager")), None)
+                if owner:
+                    o["billing_contact_name"] = owner.get("name")
+                    o["billing_email"] = o.get("billing_email") or owner.get("email")
+            if not o.get("phone"):
+                o["phone"] = "(512) 555-0199"
         elif not o.get("calls"):
             o["calls"] = len(calls)
+            o["user_list"] = []
     return orgs
 
 

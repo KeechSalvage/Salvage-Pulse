@@ -1069,6 +1069,15 @@ export interface PaymentStatus {
   payment_status: string;
 }
 
+export interface AdminOrgUser {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  title: string;
+  disabled: boolean;
+}
+
 export interface AdminOrg {
   id: string;
   name: string;
@@ -1086,6 +1095,12 @@ export interface AdminOrg {
   sites: number;
   max_sites: number;
   extra_sites: number; // Enterprise Platinum add-on ($100/mo each)
+  phone?: string;
+  billing_contact_name?: string;
+  billing_email?: string;
+  billing_phone?: string;
+  address?: string;
+  user_list?: AdminOrgUser[];
 }
 
 export interface YardDiscount {

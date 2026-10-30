@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import DiscountButton, { DiscountRevenuePanel } from "@/components/AdminDiscount";
-import { Copy, KeyRound, LogIn, Plus, Trash2 } from "lucide-react";
+import { Building2, Copy, Eye, KeyRound, LogIn, Mail, Phone, Plus, Trash2, UserRound, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -343,10 +343,135 @@ function NewUserDialog({ open, onClose, defaultOrgId, orgs }: { open: boolean; o
   );
 }
 
+function YardDetailDialog({
+  org,
+  onClose,
+  onFilterUsers,
+}: {
+  org: AdminOrg | null;
+  onClose: () => void;
+  onFilterUsers?: (orgId: string) => void;
+}) {
+  if (!org) return null;
+  const users = org.user_list ?? [];
+  const activeCount = users.filter((u) => !u.disabled).length;
+
+  return (
+    <Dialog open={Boolean(org)} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent data-testid="yard-detail-dialog" className="max-w-xl">
+        <DialogHeader>
+          <div className="flex items-center gap-2">
+            <Building2 className="size-5 text-amber-400" />
+            <DialogTitle className="text-xl text-white">{org.name}</DialogTitle>
+          </div>
+          <p className="text-xs text-slate-400">Yard details, billing contacts, and staff directory.</p>
+        </DialogHeader>
+
+        <div className="space-y-5 pt-2">
+          {/* Contact & Billing Information */}
+          <div className="rounded-xl border border-border/70 bg-surface/50 p-4 space-y-3">
+            <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
+              Contact &amp; Billing
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              <div className="space-y-1">
+                <span className="text-xs text-slate-400 flex items-center gap-1.5">
+                  <Phone className="size-3.5 text-slate-500" /> Main Phone
+                </span>
+                <p className="font-mono text-white font-medium">{org.phone || "—"}</p>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs text-slate-400 flex items-center gap-1.5">
+                  <UserRound className="size-3.5 text-slate-500" /> Billing Contact
+                </span>
+                <p className="text-white font-medium">{org.billing_contact_name || "—"}</p>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs text-slate-400 flex items-center gap-1.5">
+                  <Mail className="size-3.5 text-slate-500" /> Billing Email
+                </span>
+                <p className="text-slate-300 font-mono text-xs">{org.billing_email || "—"}</p>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs text-slate-400 flex items-center gap-1.5">
+                  <Phone className="size-3.5 text-slate-500" /> Billing Phone
+                </span>
+                <p className="font-mono text-white text-xs">{org.billing_phone || org.phone || "—"}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick List of Users and Titles */}
+          <div className="rounded-xl border border-border/70 bg-surface/50 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400 font-semibold flex items-center gap-1.5">
+                <Users className="size-3.5 text-slate-400" /> Assigned Users ({activeCount} active{users.length > activeCount ? `, ${users.length - activeCount} disabled` : ""})
+              </div>
+              <span className="font-mono text-[11px] text-slate-500">{org.calls} calls tracked</span>
+            </div>
+
+            <div className="max-h-60 overflow-y-auto divide-y divide-border/50 border border-border/40 rounded-lg">
+              {users.length === 0 ? (
+                <div className="p-4 text-center text-xs text-slate-500">
+                  No users currently assigned to this yard.
+                </div>
+              ) : (
+                users.map((u) => (
+                  <div key={u.id} className="flex items-center justify-between px-3 py-2 text-xs hover:bg-slate-800/30">
+                    <div className="min-w-0 pr-3">
+                      <div className="flex items-center gap-1.5">
+                        <span className={cn("font-medium text-white truncate", u.disabled && "text-slate-500 line-through")}>
+                          {u.name}
+                        </span>
+                        {u.disabled && (
+                          <span className="rounded bg-red-500/20 px-1 py-0.2 font-mono text-[9px] text-red-300">
+                            Disabled
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-400 truncate">{u.email}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="inline-block rounded-md bg-slate-800/90 border border-border px-2 py-0.5 font-mono text-[10px] text-amber-300">
+                        {u.title || roleLabel(u.role)}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter className="mt-2 flex items-center justify-between sm:justify-between">
+          {onFilterUsers ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="text-xs border-slate-700 hover:bg-slate-800"
+              onClick={() => {
+                onFilterUsers(org.id);
+                onClose();
+              }}
+            >
+              Filter users table below
+            </Button>
+          ) : <div />}
+          <Button variant="ghost" onClick={onClose}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function AdminConsole() {
   const { data: me } = useMe();
   const qc = useQueryClient();
   const [orgId, setOrgId] = useState<string>("");
+  const [selectedYard, setSelectedYard] = useState<AdminOrg | null>(null);
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [passwordUser, setPasswordUser] = useState<AdminUser | null>(null);
@@ -480,6 +605,7 @@ export default function AdminConsole() {
         </div>
       </PageHeader>
       <NewYardDialog open={open} onClose={() => setOpen(false)} />
+      <YardDetailDialog org={selectedYard} onClose={() => setSelectedYard(null)} />
       <SetPasswordDialog user={passwordUser} onClose={() => setPasswordUser(null)} />
       <NewUserDialog open={userDialogOpen} onClose={() => setUserDialogOpen(false)} defaultOrgId={orgId} orgs={orgs.data ?? []} />
 
@@ -519,8 +645,23 @@ export default function AdminConsole() {
                   <tr key={o.id} data-testid={`admin-org-row-${i}`} className={cn(orgId === o.id && "bg-sky-500/[0.06]", isOrgDisabled && "opacity-75")}>
                     <td className="py-3 px-4 font-medium">
                       <div className="flex items-center gap-2">
-                        <button data-testid={`admin-org-name-${i}`} className="font-medium text-white hover:underline text-left" onClick={() => setOrgId(orgId === o.id ? "" : o.id)}>
+                        <button
+                          type="button"
+                          data-testid={`admin-org-name-${i}`}
+                          className="font-medium text-white hover:text-amber-300 hover:underline text-left cursor-pointer"
+                          title="Click to view yard info & staff"
+                          onClick={() => setSelectedYard(o)}
+                        >
                           {o.name}
+                        </button>
+                        <button
+                          type="button"
+                          data-testid={`admin-org-info-btn-${i}`}
+                          className="rounded p-1 text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                          title="View yard details and users"
+                          onClick={() => setSelectedYard(o)}
+                        >
+                          <Eye className="size-3.5" />
                         </button>
                         {isOrgDisabled && (
                           <span className="rounded bg-red-500/20 px-1.5 py-0.5 font-mono text-[10px] text-red-300">
@@ -839,6 +980,12 @@ export default function AdminConsole() {
           ))}
         </div>
       </Panel>
+
+      <YardDetailDialog
+        org={selectedYard}
+        onClose={() => setSelectedYard(null)}
+        onFilterUsers={(id) => setOrgId(id)}
+      />
     </>
   );
 }
