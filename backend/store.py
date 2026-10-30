@@ -515,7 +515,7 @@ def _ensure_demo_users(st: dict[str, Any]) -> dict[str, Any]:
     if calls:
         generic = [
             c for c in calls
-            if not str(c.get("id", "")).startswith("demo-") and c.get("org_id") in (None, "", KEECH_ORG_ID)
+            if not str(c.get("id", "")).startswith("demo-") and not str(c.get("id", "")).startswith("hist-") and c.get("org_id") in (None, "", KEECH_ORG_ID)
         ]
         for c in generic:
             # Legacy test calls belong to the owner so they don't skew rep rankings

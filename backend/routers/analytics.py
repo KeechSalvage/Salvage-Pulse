@@ -253,13 +253,55 @@ def get_team_benchmark(request: Request) -> dict[str, Any]:
 
 
 @router.get("/api/analytics/monthly")
-def get_analytics_monthly(request: Request) -> dict[str, Any]:
+def get_analytics_monthly(request: Request, rep_id: Optional[str] = Query(None)) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
     org_id = u.get("org_id")
-    if org_id == store.KEECH_ORG_ID:
-        return st["seed"].get("/analytics/monthly", {})
-    return {"months": []}
+    calls = [c for c in st.get("calls", []) if not org_id or c.get("org_id") == org_id]
+    if rep_id:
+        calls = [c for c in calls if c.get("rep_id") == rep_id]
+
+    # Compute dynamic monthly trend points from the calls dataset
+    months_map: dict[str, list[dict[str, Any]]] = {}
+    for c in calls:
+        m = (c.get("created_at") or store.today_str())[:7]
+        months_map.setdefault(m, []).append(c)
+
+    all_months = sorted(months_map.keys())
+    if not all_months:
+        return {"months": [], "avg_order_value": 0.0}
+
+    month_points = []
+    total_sales_val = 0.0
+    total_sales_count = 0
+
+    for m in all_months:
+        mcalls = months_map[m]
+        m_sales = [c for c in mcalls if c.get("outcome") in ("won", "lost", "pending")]
+        m_won = [c for c in mcalls if c.get("outcome") == "won"]
+        sales_calls_cnt = len(m_sales)
+        won_cnt = len(m_won)
+        close_rate = round(won_cnt / max(sales_calls_cnt, 1) * 100, 1) if sales_calls_cnt else 0.0
+        val = sum(float(c.get("order_value") or 0.0) for c in m_won)
+        if won_cnt > 0:
+            total_sales_val += val
+            total_sales_count += won_cnt
+
+        month_points.append({
+            "month": m,
+            "calls": len(mcalls),
+            "sales_calls": sales_calls_cnt,
+            "won": won_cnt,
+            "close_rate": close_rate,
+            "est_value": round(val, 2),
+        })
+
+    avg_order_value = round(total_sales_val / max(total_sales_count, 1), 1) if total_sales_count else 350.0
+
+    return {
+        "months": month_points,
+        "avg_order_value": avg_order_value,
+    }
 
 
 def _build_monthly_reps(st: dict[str, Any], org_id: Optional[str]) -> dict[str, Any]:
