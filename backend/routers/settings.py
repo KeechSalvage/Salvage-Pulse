@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import datetime as dt
 import uuid
 from typing import Any, Optional
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
@@ -27,6 +28,36 @@ def get_org_me(request: Request) -> dict[str, Any]:
     if u_org_id:
         yard = next((o for o in st.get("admin_orgs", []) if o.get("id") == u_org_id), None)
         if yard:
+            is_past_due = yard.get("status") == "past_due"
+            past_due_days = 0
+            if is_past_due:
+                since = yard.get("past_due_since")
+                if since:
+                    try:
+                        p_dt = dt.datetime.fromisoformat(since.replace("Z", "+00:00"))
+                        now = dt.datetime.now(dt.timezone.utc)
+                        past_due_days = max(1, (now - p_dt).days)
+                    except Exception:
+                        past_due_days = 1
+                else:
+                    past_due_days = 1
+
+            # Check if trial has ended
+            trial_ended = False
+            days_left = 7
+            if yard.get("status") == "trialing":
+                t_end_str = yard.get("trial_ends_at")
+                if t_end_str:
+                    try:
+                        t_end_dt = dt.datetime.fromisoformat(t_end_str.replace("Z", "+00:00"))
+                        now_utc = dt.datetime.now(dt.timezone.utc)
+                        diff = (t_end_dt - now_utc).total_seconds()
+                        days_left = max(0, int(round(diff / 86400)))
+                        if diff <= 0:
+                            trial_ended = True
+                    except Exception:
+                        pass
+
             return {
                 "id": yard.get("id", ""),
                 "name": yard.get("name", "Yard"),
@@ -35,8 +66,11 @@ def get_org_me(request: Request) -> dict[str, Any]:
                 "no_card_trial": yard.get("status") == "trialing" and not yard.get("card_on_file"),
                 "email_verified": True,
                 "trial_ends_at": yard.get("trial_ends_at"),
-                "days_left": 7,
+                "trial_ended": trial_ended,
+                "days_left": days_left,
                 "access": not bool(yard.get("blocked") or yard.get("status") == "canceled"),
+                "past_due_days": past_due_days if is_past_due else 0,
+                "past_due_since": yard.get("past_due_since"),
                 "reps": yard.get("users", 1),
                 "max_reps": 10,
                 "card_on_file": bool(yard.get("card_on_file", False)),

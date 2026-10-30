@@ -101,7 +101,27 @@ def admin_patch_org(oid: str, body: dict[str, Any], request: Request) -> dict[st
             was_canceled = o.get("status") == "canceled"
             was_disabled = was_blocked or was_canceled
 
+            was_status = o.get("status")
             o.update(body)
+
+            new_status = o.get("status")
+            # If status becomes past_due, record when it went past due if not already recorded
+            if new_status == "past_due":
+                if not o.get("past_due_since"):
+                    o["past_due_since"] = store.now_iso()
+            elif was_status == "past_due" and new_status != "past_due":
+                o.pop("past_due_since", None)
+
+            # If a yard moves out of trial state into an active/demo/subscribed/past_due state,
+            # clear trial_ends_at and ensure full access by clearing blocking flags.
+            if was_status == "trialing" and new_status in ("active", "demo", "incomplete", "past_due"):
+                o["trial_ends_at"] = None
+                if new_status in ("active", "demo", "past_due"):
+                    o["blocked"] = False
+                    o["cancel_reason"] = ""
+            elif "status" in body and body["status"] != "trialing":
+                # Clear trial_ends_at whenever status is explicitly set to non-trialing
+                o["trial_ends_at"] = None
 
             now_blocked = bool(o.get("blocked", False))
             now_canceled = o.get("status") == "canceled"

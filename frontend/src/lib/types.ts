@@ -997,8 +997,11 @@ export interface OrgInfo {
   no_card_trial: boolean;
   email_verified: boolean;
   trial_ends_at: string | null;
+  trial_ended?: boolean;
   days_left: number | null;
   access: boolean;
+  past_due_days?: number;
+  past_due_since?: string | null;
   reps: number;
   max_reps: number | null;
   card_on_file: boolean;

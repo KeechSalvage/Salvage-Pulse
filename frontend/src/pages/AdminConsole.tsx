@@ -555,7 +555,9 @@ export default function AdminConsole() {
                       {STATUSES.map((s) => <option key={s}>{s}</option>)}
                     </select>
                   </td>
-                  <td className="py-3 px-3 font-mono text-xs text-slate-400 whitespace-nowrap">{o.trial_ends_at ? fmtDate(o.trial_ends_at) : "—"}</td>
+                  <td className="py-3 px-3 font-mono text-xs text-slate-400 whitespace-nowrap">
+                    {o.status === "trialing" && o.trial_ends_at ? fmtDate(o.trial_ends_at) : "—"}
+                  </td>
                   <td className="py-3 px-3 text-xs" data-testid={`admin-org-card-${i}`}>
                     {isDemo ? (
                       <span className="font-mono text-slate-500 select-none" title="Card not applicable in demo mode">—</span>

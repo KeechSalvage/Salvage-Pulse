@@ -1,4 +1,5 @@
 from __future__ import annotations
+import datetime as dt
 import hashlib
 import os
 import re
@@ -98,10 +99,29 @@ def _track_session(st: dict[str, Any], token: str, uid: str, request: Request) -
         m["last_seen"] = now
 
 
+MAX_INACTIVITY_SECONDS = 3600  # 1 hour auto-logout for inactivity
+
+
 def get_current_user(request: Request) -> dict[str, Any]:
     st = store.get_state()
     cookie_token = request.cookies.get("sp_session")
     if cookie_token and cookie_token in st.get("sessions", {}):
+        meta = st.get("session_meta", {}).get(cookie_token)
+        if meta and meta.get("last_seen"):
+            try:
+                last_seen_dt = dt.datetime.fromisoformat(meta["last_seen"].replace("Z", "+00:00"))
+                now_utc = dt.datetime.now(dt.timezone.utc)
+                if (now_utc - last_seen_dt).total_seconds() > MAX_INACTIVITY_SECONDS:
+                    # Session expired due to inactivity
+                    st.get("sessions", {}).pop(cookie_token, None)
+                    st.get("session_meta", {}).pop(cookie_token, None)
+                    store.save_state()
+                    raise HTTPException(status_code=401, detail="Session expired due to inactivity. Please sign in again.")
+            except HTTPException:
+                raise
+            except Exception:
+                pass
+
         uid = st["sessions"][cookie_token]
         user = st.get("users_by_id", {}).get(uid)
         if user and not user.get("disabled"):

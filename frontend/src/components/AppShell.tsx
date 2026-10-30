@@ -25,6 +25,7 @@ import {
   Users,
   Car,
   CarFront,
+  Clock,
   FileBarChart, Trophy, CalendarDays,
   Truck,
   Palette,
@@ -42,6 +43,9 @@ import { useMe } from "@/lib/hooks";
 import { ChangePasswordPanel } from "@/components/StaffSecurity";
 import type { CallbackItem } from "@/lib/types";
 import { endSession } from "@/lib/session";
+import { useInactivityLogout } from "@/lib/useInactivityLogout";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useAssignments } from "@/components/AssignmentNudge";
 import type { Branding, OrgInfo, ResendResult, Role, User } from "@/lib/types";
@@ -177,33 +181,41 @@ function FirstPasswordScreen({ name }: { name: string }) {
 export default function AppShell({ managerOnly = false, platform = false }: { managerOnly?: boolean; platform?: boolean }) {
   const loc = useLocation();
   const d = useShellData();
+  useInactivityLogout(Boolean(d.me.data));
   if (d.loading) return <ShellLoading />;
   const to = redirectFor(d, loc.pathname, managerOnly, platform);
   const me = d.me.data;
   if (to || !me) return <Navigate to={to ?? "/login"} replace state={to === "/login" ? { from: loc.pathname } : undefined} />;
   if (me.must_change_password && !me.impersonated_by) return <FirstPasswordScreen name={me.name} />;
 
+  const isTrialEnded = Boolean(!d.isStaff && d.org?.status === "trialing" && d.org.trial_ended);
+
   return (
-    <div className="min-h-screen bg-background">
-      <Sidebar me={me} org={d.org} isStaff={d.isStaff} branding={d.branding} badges={d.badges} />
-      <MobileBar me={me} branding={d.branding} />
-      <main className="bg-grid min-h-screen lg:pl-64">
-        {me.impersonated_by && <ImpersonationBanner me={me} orgName={d.org?.name} />}
-        {!d.isStaff && (
-          <>
-            <PreviewEndingBanner />
-            <EnterpriseTour />
-            <DemoLimitDialog />
-          </>
-        )}
-        {d.org?.status === "trialing" && d.org.access && <TrialBanner org={d.org} isManager={isManagerLike(me.role)} />}
-        <div className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-[1400px] flex-col px-4 py-8 md:px-8 md:py-10">
-          <DrillProvider>
-            <Outlet />
-          </DrillProvider>
-          <AppFooter />
-        </div>
-      </main>
+    <div className="min-h-screen bg-background relative">
+      <div className={cn("transition-[filter] duration-300", isTrialEnded && "filter blur-md pointer-events-none select-none")}>
+        <Sidebar me={me} org={d.org} isStaff={d.isStaff} branding={d.branding} badges={d.badges} />
+        <MobileBar me={me} branding={d.branding} />
+        <main className="bg-grid min-h-screen lg:pl-64">
+          {me.impersonated_by && <ImpersonationBanner me={me} orgName={d.org?.name} />}
+          {!d.isStaff && (
+            <>
+              <PreviewEndingBanner />
+              <EnterpriseTour />
+              <DemoLimitDialog />
+            </>
+          )}
+          {d.org?.status === "trialing" && d.org.access && !isTrialEnded && <TrialBanner org={d.org} isManager={isManagerLike(me.role)} />}
+          {d.org?.status === "past_due" && <PastDueBanner org={d.org} isManager={isManagerLike(me.role)} />}
+          <div className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-[1400px] flex-col px-4 py-8 md:px-8 md:py-10">
+            <DrillProvider>
+              <Outlet />
+            </DrillProvider>
+            <AppFooter />
+          </div>
+        </main>
+      </div>
+
+      {isTrialEnded && <TrialExpiredModal isManager={isManagerLike(me.role)} />}
     </div>
   );
 }
@@ -605,6 +617,112 @@ function TrialBanner({ org, isManager }: { org: OrgInfo; isManager: boolean }) {
         </NavLink>
       )}
     </div>
+  );
+}
+
+function PastDueBanner({ org, isManager }: { org: OrgInfo; isManager: boolean }) {
+  const days = org.past_due_days ?? 1;
+  return (
+    <div
+      data-testid="past-due-banner"
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-red-500/40 bg-red-500/15 px-6 py-2.5 text-sm text-red-100"
+    >
+      <span className="flex items-center gap-2 font-medium" data-testid="past-due-banner-text">
+        <span className="size-2 rounded-full bg-red-400 animate-pulse" />
+        <strong>Payment Overdue:</strong> Your yard&apos;s subscription payment is <strong>{days} {days === 1 ? "day" : "days"}</strong> overdue.
+      </span>
+      <span className="text-xs text-red-200/80">
+        {isManager ? "Please update your payment method to ensure uninterrupted account access." : "Please notify your manager or administrator to update the payment method."}
+      </span>
+      {isManager && (
+        <NavLink
+          to="/settings/billing"
+          data-testid="past-due-banner-link"
+          className="ml-auto rounded-md bg-red-500/20 px-3 py-1 font-semibold text-white transition-colors hover:bg-red-500/30 ring-1 ring-red-500/40"
+        >
+          Update payment method
+        </NavLink>
+      )}
+    </div>
+  );
+}
+
+function TrialExpiredModal({ isManager }: { isManager: boolean }) {
+  const [contactOpen, setContactOpen] = useState(false);
+
+  return (
+    <>
+      <div
+        data-testid="trial-ended-modal"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-md bg-slate-950/80 animate-in fade-in duration-300"
+      >
+        <div className="relative w-full max-w-lg rounded-2xl border border-border/80 bg-card p-6 md:p-8 shadow-2xl text-center space-y-5">
+          <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/30">
+            <Clock className="size-7" />
+          </div>
+
+          <div className="space-y-2">
+            <h2 className="font-heading text-2xl font-bold text-white tracking-tight">Your Free Trial Has Ended</h2>
+            <p className="text-sm text-slate-300 leading-relaxed">
+              {isManager
+                ? "Your yard's trial period has expired. To restore full access and keep using Salvage Pulse for your team, please contact our sales team to select and purchase a plan."
+                : "Your yard's trial period has concluded. Full access has been paused. Please contact your manager or yard owner to purchase a subscription, or sign out below."}
+            </p>
+          </div>
+
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+            {isManager && (
+              <Button
+                type="button"
+                data-testid="trial-ended-contact-sales-btn"
+                onClick={() => setContactOpen(true)}
+                className="w-full sm:w-auto bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold gap-2 shadow-lg shadow-amber-500/20"
+              >
+                <MessageSquare className="size-4" /> Contact Sales to Purchase
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant={isManager ? "outline" : "default"}
+              data-testid="trial-ended-sign-out-btn"
+              onClick={() => endSession()}
+              className={cn("w-full sm:w-auto gap-2", !isManager && "bg-slate-800 hover:bg-slate-700 text-white")}
+            >
+              <LogOut className="size-4" /> Sign Out
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <Dialog open={contactOpen} onOpenChange={setContactOpen}>
+        <DialogContent data-testid="trial-sales-contact-dialog" className="sm:max-w-lg z-[60]">
+          <DialogHeader>
+            <DialogTitle>Contact Sales</DialogTitle>
+            <DialogDescription>
+              Speak with the Salvage Pulse sales team to set up your subscription plan.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="rounded-xl border border-border bg-surface p-4 space-y-2 text-left">
+              <p className="text-xs font-mono uppercase tracking-wider text-slate-400">Direct Inquiries</p>
+              <p className="text-sm text-white font-medium">sales@salvagepulse.com</p>
+              <p className="text-xs text-slate-400">Response within 1 business day · Enterprise and multi-yard volume options available.</p>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setContactOpen(false)}>Close</Button>
+              <Button
+                onClick={() => {
+                  window.location.href = "mailto:sales@salvagepulse.com?subject=Purchasing%20Salvage%20Pulse%20Subscription";
+                }}
+                className="gap-1.5"
+              >
+                Send Email
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
