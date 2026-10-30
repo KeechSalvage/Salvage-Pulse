@@ -542,6 +542,13 @@ def _ensure_demo_users(st: dict[str, Any]) -> dict[str, Any]:
     for summary, full in build_extra_calls():
         if summary["id"] not in existing_ids:
             calls.append(summary)
+            existing_ids[summary["id"]] = summary
+        full_calls.setdefault(summary["id"], full)
+    from generate_history import build_history_calls
+    for summary, full in build_history_calls():
+        if summary["id"] not in existing_ids:
+            calls.append(summary)
+            existing_ids[summary["id"]] = summary
         full_calls.setdefault(summary["id"], full)
     calls.sort(key=lambda c: c.get("created_at") or "", reverse=True)
 

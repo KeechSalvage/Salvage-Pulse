@@ -42,18 +42,8 @@ MONTHS = [
 ]
 
 
-def generate_history():
-    st = store.get_state()
-    calls = st.setdefault("calls", [])
-    full_calls = st.setdefault("full_calls", {})
-
-    # Remove existing generated 'hist-' calls if re-running
-    calls[:] = [c for c in calls if not str(c.get("id", "")).startswith("hist-")]
-    for k in list(full_calls.keys()):
-        if str(k).startswith("hist-"):
-            del full_calls[k]
-
-    new_summaries = []
+def build_history_calls() -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    pairs: list[tuple[dict[str, Any], dict[str, Any]]] = []
 
     for rep_id, rep_name, role, prefix, (min_mo, max_mo), base_score, p_won, p_lost, p_warr, seed in USER_CONFIGS:
         rnd = random.Random(seed)
@@ -155,13 +145,29 @@ def generate_history():
                     "external_url": "",
                 })
 
-                new_summaries.append(summary)
-                full_calls[cid] = full
+                pairs.append((summary, full))
 
-    calls.extend(new_summaries)
+    return pairs
+
+
+def generate_history():
+    st = store.get_state()
+    calls = st.setdefault("calls", [])
+    full_calls = st.setdefault("full_calls", {})
+
+    # Remove existing generated 'hist-' calls if re-running
+    calls[:] = [c for c in calls if not str(c.get("id", "")).startswith("hist-")]
+    for k in list(full_calls.keys()):
+        if str(k).startswith("hist-"):
+            del full_calls[k]
+
+    for summary, full in build_history_calls():
+        calls.append(summary)
+        full_calls[summary["id"]] = full
+
     calls.sort(key=lambda c: c.get("created_at") or "", reverse=True)
     store.save_state()
-    print(f"Generated {len(new_summaries)} historical calls across 14 months.")
+    print(f"Generated {len(calls)} historical calls across 14 months.")
 
 
 if __name__ == "__main__":

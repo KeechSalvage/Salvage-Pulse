@@ -1285,9 +1285,151 @@ def post_leaderboards_posters_send_now() -> dict[str, Any]:
 # Reports
 @router.get("/api/reports/summary")
 def get_reports_summary(
+    request: Request,
     date_from: str = Query("2026-01-01"),
     date_to: str = Query("2026-12-31"),
     site_id: Optional[str] = Query(None),
 ) -> dict[str, Any]:
     st = store.get_state()
-    return st["seed"].get("/reports/summary?date_from=2026-01-01&date_to=2026-12-31", {})
+    u = get_current_user(request)
+    org_id = u.get("org_id")
+
+    calls = [c for c in st.get("calls", []) if not org_id or c.get("org_id") == org_id]
+    if site_id:
+        calls = [c for c in calls if c.get("site_id") == site_id]
+
+    # Filter by date range (inclusive)
+    from_iso = f"{date_from}T00:00:00Z" if len(date_from) == 10 else date_from
+    to_iso = f"{date_to}T23:59:59Z" if len(date_to) == 10 else date_to
+    calls = [c for c in calls if from_iso <= (c.get("created_at") or "") <= to_iso]
+
+    if not calls:
+        return {
+            "date_from": date_from,
+            "date_to": date_to,
+            "totals": {
+                "calls": 0, "inbound": 0, "outbound": 0, "voicemails": 0,
+                "avg_score": 0.0, "avg_duration_sec": 0.0, "sales_calls": 0,
+                "won": 0, "close_rate": 0.0, "revenue": 0.0,
+            },
+            "by_rep": [],
+            "by_category": [],
+            "top_parts": [],
+            "top_vehicles": [],
+            "daily": [],
+            "arrivals": 0,
+            "avg_order_value": 0.0,
+            "parts_sold": 0,
+            "price_missing": 0,
+        }
+
+    scored = [c for c in calls if c.get("overall_score")]
+    avg_score = round(sum(c.get("overall_score", 0) for c in scored) / len(scored), 1) if scored else 0.0
+    durations = [c.get("duration_sec", 0) for c in calls if c.get("duration_sec")]
+    avg_dur = round(sum(durations) / len(durations), 1) if durations else 0.0
+    inbound = sum(1 for c in calls if c.get("direction", "inbound") == "inbound")
+    outbound = sum(1 for c in calls if c.get("direction") == "outbound")
+    sales_calls = [c for c in calls if c.get("outcome") in ("won", "lost", "pending")]
+    won = [c for c in calls if c.get("outcome") == "won"]
+    revenue = sum(float(c.get("order_value") or 0.0) for c in won)
+    close_rate = round(len(won) / max(len(sales_calls), 1) * 100, 1) if sales_calls else 0.0
+
+    # by_rep
+    rep_map: dict[str, list[dict[str, Any]]] = {}
+    for c in calls:
+        rid = c.get("rep_id") or "unassigned"
+        rep_map.setdefault(rid, []).append(c)
+
+    by_rep = []
+    users = st.get("users_by_id", {})
+    for rid, rcalls in rep_map.items():
+        user = users.get(rid, {})
+        rname = user.get("name") or (rcalls[0].get("rep_name") if rcalls else "Rep")
+        r_scored = [c for c in rcalls if c.get("overall_score")]
+        r_avg_score = round(sum(c.get("overall_score", 0) for c in r_scored) / len(r_scored), 1) if r_scored else 0.0
+        r_sales = [c for c in rcalls if c.get("outcome") in ("won", "lost", "pending")]
+        r_won = [c for c in rcalls if c.get("outcome") == "won"]
+        r_rev = sum(float(c.get("order_value") or 0.0) for c in r_won)
+        r_close = round(len(r_won) / max(len(r_sales), 1) * 100, 1) if r_sales else 0.0
+        by_rep.append({
+            "rep_id": rid,
+            "name": rname,
+            "calls": len(rcalls),
+            "avg_score": r_avg_score,
+            "sales_calls": len(r_sales),
+            "won": len(r_won),
+            "close_rate": r_close,
+            "revenue": round(r_rev, 2),
+        })
+    by_rep.sort(key=lambda x: x["calls"], reverse=True)
+
+    # by_category
+    cat_map: dict[str, int] = {}
+    for c in calls:
+        cat = c.get("category") or "Other"
+        cat_map[cat] = cat_map.get(cat, 0) + 1
+    by_category = [{"label": k, "calls": v, "won": 0, "key": ""} for k, v in sorted(cat_map.items(), key=lambda kv: -kv[1])]
+
+    # top_parts
+    parts_map: dict[str, dict[str, int]] = {}
+    for c in calls:
+        p = c.get("part_requested")
+        if p:
+            entry = parts_map.setdefault(p, {"calls": 0, "won": 0})
+            entry["calls"] += 1
+            if c.get("outcome") == "won":
+                entry["won"] += 1
+    top_parts = [
+        {"label": k, "calls": v["calls"], "won": v["won"], "key": k.lower()}
+        for k, v in sorted(parts_map.items(), key=lambda kv: -kv[1]["calls"])[:10]
+    ]
+
+    # top_vehicles
+    veh_map: dict[str, dict[str, int]] = {}
+    for c in calls:
+        v = c.get("vehicle")
+        if v:
+            entry = veh_map.setdefault(v, {"calls": 0, "won": 0})
+            entry["calls"] += 1
+            if c.get("outcome") == "won":
+                entry["won"] += 1
+    top_vehicles = [
+        {"label": k, "calls": v["calls"], "won": v["won"], "key": k}
+        for k, v in sorted(veh_map.items(), key=lambda kv: -kv[1]["calls"])[:10]
+    ]
+
+    # daily
+    daily_map: dict[str, dict[str, int]] = {}
+    for c in calls:
+        d = (c.get("created_at") or store.today_str())[:10]
+        entry = daily_map.setdefault(d, {"calls": 0, "won": 0})
+        entry["calls"] += 1
+        if c.get("outcome") == "won":
+            entry["won"] += 1
+    daily = [{"date": k, "calls": v["calls"], "won": v["won"]} for k, v in sorted(daily_map.items())]
+
+    return {
+        "date_from": date_from,
+        "date_to": date_to,
+        "totals": {
+            "calls": len(calls),
+            "inbound": inbound,
+            "outbound": outbound,
+            "voicemails": sum(1 for c in calls if c.get("category") == "Voicemail"),
+            "avg_score": avg_score,
+            "avg_duration_sec": avg_dur,
+            "sales_calls": len(sales_calls),
+            "won": len(won),
+            "close_rate": close_rate,
+            "revenue": round(revenue, 2),
+        },
+        "by_rep": by_rep,
+        "by_category": by_category,
+        "top_parts": top_parts,
+        "top_vehicles": top_vehicles,
+        "daily": daily,
+        "arrivals": 0,
+        "avg_order_value": round(revenue / max(len(won), 1), 1) if won else 350.0,
+        "parts_sold": len(won),
+        "price_missing": 0,
+    }
