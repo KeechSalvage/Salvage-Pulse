@@ -486,16 +486,14 @@ export default function AdminConsole() {
   const [sortKey, setSortKey] = useState<SortKey>("yard-asc");
 
   const sortedUsers = useMemo(() => {
-    const list = [...(users.data ?? [])];
+    const list = (users.data ?? []).filter((u) => u.role !== "master" && u.role !== "admin");
     const roleRank: Record<string, number> = {
-      master: 0,
-      admin: 1,
-      owner: 2,
-      sales_manager: 3,
-      manager: 3,
-      inventory_manager: 4,
-      rep: 5,
-      sales_rep: 5,
+      owner: 1,
+      sales_manager: 2,
+      manager: 2,
+      inventory_manager: 3,
+      rep: 4,
+      sales_rep: 4,
     };
     list.sort((a, b) => {
       if (sortKey === "yard-asc") {

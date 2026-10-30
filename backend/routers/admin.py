@@ -378,13 +378,20 @@ def admin_create_user(req: AdminCreateUserReq, request: Request) -> dict[str, An
 
 
 @router.get("/api/admin/users")
-def admin_get_users(org_id: Optional[str] = Query(None), q: Optional[str] = Query(None)) -> list[dict[str, Any]]:
+def admin_get_users(
+    org_id: Optional[str] = Query(None),
+    q: Optional[str] = Query(None),
+    include_staff: bool = Query(False),
+) -> list[dict[str, Any]]:
     st = store.get_state()
     out = []
     org_map = {o["id"]: o.get("name", "Yard") for o in st.get("admin_orgs", [])}
     default_org_name = st.get("org", {}).get("name", "Salvage Pulse")
 
     for u in st["users_by_id"].values():
+        is_staff = u.get("role") in ("master", "admin")
+        if not include_staff and is_staff:
+            continue
         u_org_id = u.get("org_id", "")
         if org_id and u_org_id != org_id:
             continue
