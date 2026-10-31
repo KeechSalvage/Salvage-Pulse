@@ -57,7 +57,14 @@ export function isInventoryManager(role?: string): boolean {
 }
 
 export function canManageInventory(role?: string): boolean {
-  return role === "owner" || role === "inventory_manager" || role === "master" || role === "admin";
+  return (
+    role === "owner" ||
+    role === "inventory_manager" ||
+    role === "manager" ||
+    role === "sales_manager" ||
+    role === "master" ||
+    role === "admin"
+  );
 }
 
 export function isRep(role?: string): boolean {

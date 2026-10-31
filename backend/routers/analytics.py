@@ -842,7 +842,7 @@ def get_keyword_calls(kid: str, month: Optional[str] = Query(None)) -> list[dict
 # Arrivals & Yard Inventory Lifecycle
 def require_inventory_permission(user: dict[str, Any]) -> None:
     role = user.get("role", "")
-    if role not in ("owner", "inventory_manager", "master", "admin"):
+    if role not in ("owner", "inventory_manager", "master", "admin", "manager", "sales_manager"):
         raise HTTPException(
             status_code=403,
             detail="Only Owners and Inventory Managers can manage yard inventory and crushing queues.",

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckSquare, PhoneCall, Trash2, Truck } from "lucide-react";
+import { CheckSquare, LayoutList, PhoneCall, TableProperties, Trash2, Truck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -181,6 +181,7 @@ export default function TruckArrivals({ isManager, rank = "calls" }: { isManager
   const [stockQ, setStockQ] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [viewCategory, setViewCategory] = useState<"newly_arrived" | "all">("newly_arrived");
+  const [viewMode, setViewMode] = useState<"split" | "table">("split");
 
   const q = stockQ.trim().toLowerCase();
   const newlyArrivedVehicles = (data ?? []).filter((a) => !a.inventory_status || a.inventory_status === "newly_arrived");
@@ -202,14 +203,15 @@ export default function TruckArrivals({ isManager, rank = "calls" }: { isManager
     onError: (e) => toast.error(errorMessage(e, "Check-in failed")),
   });
 
-  const allShownSelected =
-    shownArrivals.length > 0 && shownArrivals.every((a) => selectedIds.includes(a.id));
+  const newlyArrivedShown = shownArrivals.filter((a) => !a.inventory_status || a.inventory_status === "newly_arrived");
+  const allNewlyArrivedSelected =
+    newlyArrivedShown.length > 0 && newlyArrivedShown.every((a) => selectedIds.includes(a.id));
 
   const toggleSelectAll = () => {
-    if (allShownSelected) {
+    if (allNewlyArrivedSelected) {
       setSelectedIds([]);
     } else {
-      setSelectedIds(shownArrivals.map((a) => a.id));
+      setSelectedIds(newlyArrivedShown.map((a) => a.id));
     }
   };
 
@@ -242,6 +244,7 @@ export default function TruckArrivals({ isManager, rank = "calls" }: { isManager
 
   return (
     <Panel testId="vehicle-arrivals-panel">
+      {/* Top Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Truck className="size-4 text-amber-300" />
@@ -254,23 +257,68 @@ export default function TruckArrivals({ isManager, rank = "calls" }: { isManager
           </span>
         </div>
 
-        {canManage && (
-          <Button
-            size="sm"
-            data-testid="arrival-check-in-btn"
-            disabled={selectedIds.length === 0 || checkInMutation.isPending}
-            onClick={() => checkInMutation.mutate(selectedIds)}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium gap-1.5 h-8 text-xs"
-          >
-            <CheckSquare className="size-4" />
-            Check In {selectedIds.length > 0 ? `(${selectedIds.length})` : ""}
-          </Button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {canManage && newlyArrivedVehicles.length > 0 && (
+            <div className="flex items-center rounded-lg border border-border p-0.5">
+              <button
+                type="button"
+                data-testid="mode-split-view"
+                onClick={() => setViewMode("split")}
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1 text-xs rounded transition-colors",
+                  viewMode === "split" ? "bg-surface text-white font-medium" : "text-slate-400 hover:text-white",
+                )}
+              >
+                <LayoutList className="size-3.5" />
+                List & Callers
+              </button>
+              <button
+                type="button"
+                data-testid="mode-table-view"
+                onClick={() => setViewMode("table")}
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1 text-xs rounded transition-colors",
+                  viewMode === "table" ? "bg-surface text-white font-medium" : "text-slate-400 hover:text-white",
+                )}
+              >
+                <TableProperties className="size-3.5" />
+                Batch Table ({newlyArrivedVehicles.length})
+              </button>
+            </div>
+          )}
+
+          {canManage && (
+            selectedIds.length > 0 ? (
+              <Button
+                size="sm"
+                data-testid="arrival-check-in-btn"
+                disabled={checkInMutation.isPending}
+                onClick={() => checkInMutation.mutate(selectedIds)}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-1.5 h-8 text-xs shadow"
+              >
+                <CheckSquare className="size-4" />
+                Check In ({selectedIds.length}) Selected Cars
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                data-testid="arrival-check-in-all-btn"
+                disabled={newlyArrivedVehicles.length === 0 || checkInMutation.isPending}
+                onClick={() => checkInMutation.mutate(newlyArrivedVehicles.map((a) => a.id))}
+                className="border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10 font-medium gap-1.5 h-8 text-xs"
+              >
+                <CheckSquare className="size-4" />
+                Check In All ({newlyArrivedVehicles.length}) Incoming Cars
+              </Button>
+            )
+          )}
+        </div>
       </div>
 
       <p className="mt-1 text-xs text-slate-500">
         {isManager
-          ? "Cars in the newly arrived category. Select vehicles and click 'Check In' to move them into Yard Inventory."
+          ? "Cars in the newly arrived category. Check in multiple cars at once to move them into Yard Inventory."
           : "Vehicles that just came in, and the callers you spoke with who asked about one. Call them and mark how it went."}
       </p>
       {isManager && <NewArrival rank={rank} onCreated={(a) => (qc.invalidateQueries({ queryKey: ["arrivals"] }), setSelId(a.id), setPrompt(a))} />}
@@ -282,52 +330,216 @@ export default function TruckArrivals({ isManager, rank = "calls" }: { isManager
         </p>
       )}
       {isManager && data && data.length > 1 && <ArrivalPayoff arrivals={data} />}
-      {!data?.length ? (
-        <p className="mt-5 text-sm text-slate-500" data-testid="arrivals-empty">{isManager ? "No arrivals logged yet." : "No callers for you on recent arrivals."}</p>
-      ) : (
-        <div className="mt-5 grid gap-5 lg:grid-cols-[280px_1fr]">
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-1 border-b border-border/60 pb-2">
-              <div className="flex items-center gap-1 font-mono text-[11px]">
-                <button
-                  type="button"
-                  data-testid="tab-newly-arrived"
-                  onClick={() => setViewCategory("newly_arrived")}
-                  className={cn(
-                    "rounded px-2 py-0.5 transition-colors",
-                    viewCategory === "newly_arrived"
-                      ? "bg-amber-500/20 text-amber-300 font-semibold"
-                      : "text-slate-400 hover:text-white",
-                  )}
-                >
-                  Newly Arrived ({newlyArrivedVehicles.length})
-                </button>
-                <button
-                  type="button"
-                  data-testid="tab-all-arrivals"
-                  onClick={() => setViewCategory("all")}
-                  className={cn(
-                    "rounded px-2 py-0.5 transition-colors",
-                    viewCategory === "all"
-                      ? "bg-amber-500/20 text-amber-300 font-semibold"
-                      : "text-slate-400 hover:text-white",
-                  )}
-                >
-                  All ({data?.length ?? 0})
-                </button>
-              </div>
 
-              {canManage && shownArrivals.length > 0 && (
-                <label className="flex items-center gap-1.5 cursor-pointer text-xs text-slate-400">
+      {!data?.length ? (
+        <p className="mt-5 text-sm text-slate-500" data-testid="arrivals-empty">
+          {isManager ? "No arrivals logged yet." : "No callers for you on recent arrivals."}
+        </p>
+      ) : viewMode === "table" ? (
+        /* Full Batch Table View */
+        <div className="mt-5 space-y-3" data-testid="newly-arrived-batch-table">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-y border-border/60 py-2.5">
+            <div className="flex items-center gap-3">
+              {canManage && newlyArrivedVehicles.length > 0 && (
+                <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300 hover:text-white">
                   <input
                     type="checkbox"
-                    data-testid="arrival-select-all"
-                    checked={allShownSelected}
+                    data-testid="batch-table-select-all"
+                    checked={allNewlyArrivedSelected}
                     onChange={toggleSelectAll}
-                    className="size-3.5 rounded border-border text-emerald-500 focus:ring-emerald-500"
+                    className="size-4 rounded border-border text-emerald-500 focus:ring-emerald-500"
                   />
-                  <span className="font-mono text-[10px]">Select all</span>
+                  <span className="font-mono font-medium">Select all ({newlyArrivedVehicles.length})</span>
                 </label>
+              )}
+              {selectedIds.length > 0 && (
+                <span className="font-mono text-xs text-emerald-400 font-semibold">
+                  {selectedIds.length} car{selectedIds.length === 1 ? "" : "s"} selected
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Input
+                data-testid="batch-table-search"
+                value={stockQ}
+                onChange={(e) => setStockQ(e.target.value)}
+                placeholder="Search stock #, make, model…"
+                className="h-8 w-56 text-xs"
+              />
+              {canManage && (
+                <Button
+                  size="sm"
+                  data-testid="batch-check-in-btn"
+                  disabled={selectedIds.length === 0 || checkInMutation.isPending}
+                  onClick={() => checkInMutation.mutate(selectedIds)}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-1.5 h-8 text-xs shadow"
+                >
+                  <CheckSquare className="size-4" /> Check In ({selectedIds.length}) Selected
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-border bg-surface/50 font-mono text-[11px] uppercase tracking-wider text-slate-500">
+                <tr>
+                  {canManage && <th className="w-10 px-3 py-2.5"></th>}
+                  <th className="px-3 py-2.5 font-normal">Stock #</th>
+                  <th className="px-3 py-2.5 font-normal">Vehicle</th>
+                  <th className="px-3 py-2.5 font-normal">Logged</th>
+                  <th className="px-3 py-2.5 font-normal">Paid / Cost</th>
+                  <th className="px-3 py-2.5 font-normal">Callers</th>
+                  <th className="px-3 py-2.5 font-normal">Note</th>
+                  {canManage && <th className="px-3 py-2.5 text-right font-normal">Action</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {shownArrivals.map((a) => {
+                  const isSelected = selectedIds.includes(a.id);
+                  const isNewlyArrived = !a.inventory_status || a.inventory_status === "newly_arrived";
+                  return (
+                    <tr
+                      key={a.id}
+                      data-testid={`batch-row-${a.id}`}
+                      onClick={() => isNewlyArrived && toggleSelectOne(a.id)}
+                      className={cn(
+                        "cursor-pointer transition-colors duration-150 hover:bg-surface/60",
+                        isSelected && "bg-emerald-500/10",
+                      )}
+                    >
+                      {canManage && (
+                        <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                          {isNewlyArrived ? (
+                            <input
+                              type="checkbox"
+                              data-testid={`batch-checkbox-${a.id}`}
+                              checked={isSelected}
+                              onChange={() => toggleSelectOne(a.id)}
+                              className="size-4 rounded border-border text-emerald-500 focus:ring-emerald-500"
+                            />
+                          ) : (
+                            <span className="font-mono text-[10px] text-slate-500">In Yard</span>
+                          )}
+                        </td>
+                      )}
+                      <td className="px-3 py-3 font-mono text-xs font-semibold text-amber-300">
+                        {a.stock_number || "—"}
+                      </td>
+                      <td className="px-3 py-3 font-medium text-white">
+                        {a.vehicle_year} {a.vehicle_make} {a.vehicle_model}
+                      </td>
+                      <td className="px-3 py-3 font-mono text-xs text-slate-400">
+                        {new Date(a.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-3 py-3 font-mono text-xs text-slate-200">
+                        {a.cost != null ? fmtMoney(a.cost) : "—"}
+                      </td>
+                      <td className="px-3 py-3 font-mono text-xs text-slate-300">
+                        {a.callers.length} callers
+                      </td>
+                      <td className="px-3 py-3 text-xs text-slate-400">
+                        {a.note || "—"}
+                      </td>
+                      {canManage && (
+                        <td className="px-3 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                          {isNewlyArrived && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              data-testid={`batch-row-check-in-${a.id}`}
+                              onClick={() => checkInMutation.mutate([a.id])}
+                              disabled={checkInMutation.isPending}
+                              className="h-7 text-xs text-emerald-400 hover:bg-emerald-500/15 hover:text-emerald-300"
+                            >
+                              <CheckSquare className="mr-1 size-3.5" /> Check In
+                            </Button>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        /* Split & Callers View */
+        <div className="mt-5 grid gap-5 lg:grid-cols-[290px_1fr]">
+          <div className="space-y-2">
+            {/* Top Toolbar in Sidebar */}
+            <div className="space-y-2 border-b border-border/60 pb-2">
+              <div className="flex items-center justify-between gap-1">
+                <div className="flex items-center gap-1 font-mono text-[11px]">
+                  <button
+                    type="button"
+                    data-testid="tab-newly-arrived"
+                    onClick={() => setViewCategory("newly_arrived")}
+                    className={cn(
+                      "rounded px-2 py-0.5 transition-colors",
+                      viewCategory === "newly_arrived"
+                        ? "bg-amber-500/20 text-amber-300 font-semibold"
+                        : "text-slate-400 hover:text-white",
+                    )}
+                  >
+                    Newly Arrived ({newlyArrivedVehicles.length})
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="tab-all-arrivals"
+                    onClick={() => setViewCategory("all")}
+                    className={cn(
+                      "rounded px-2 py-0.5 transition-colors",
+                      viewCategory === "all"
+                        ? "bg-amber-500/20 text-amber-300 font-semibold"
+                        : "text-slate-400 hover:text-white",
+                    )}
+                  >
+                    All ({data?.length ?? 0})
+                  </button>
+                </div>
+              </div>
+
+              {canManage && (
+                <div className="flex items-center justify-between gap-1 pt-1">
+                  <label className="flex items-center gap-1.5 cursor-pointer text-xs text-slate-300">
+                    <input
+                      type="checkbox"
+                      data-testid="arrival-select-all"
+                      checked={allNewlyArrivedSelected}
+                      onChange={toggleSelectAll}
+                      className="size-4 rounded border-border text-emerald-500 focus:ring-emerald-500"
+                    />
+                    <span className="font-mono text-xs font-medium">Select all ({newlyArrivedVehicles.length})</span>
+                  </label>
+
+                  {selectedIds.length > 0 ? (
+                    <Button
+                      size="sm"
+                      data-testid="arrival-sidebar-check-in-btn"
+                      disabled={checkInMutation.isPending}
+                      onClick={() => checkInMutation.mutate(selectedIds)}
+                      className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-2.5 gap-1 shadow"
+                    >
+                      <CheckSquare className="size-3.5" />
+                      Check In ({selectedIds.length})
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      data-testid="arrival-sidebar-check-in-all-btn"
+                      disabled={newlyArrivedVehicles.length === 0 || checkInMutation.isPending}
+                      onClick={() => checkInMutation.mutate(newlyArrivedVehicles.map((a) => a.id))}
+                      className="h-7 text-xs border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10 font-medium px-2 gap-1"
+                    >
+                      <CheckSquare className="size-3.5" />
+                      Check In All
+                    </Button>
+                  )}
+                </div>
               )}
             </div>
 
@@ -337,15 +549,16 @@ export default function TruckArrivals({ isManager, rank = "calls" }: { isManager
               {shownArrivals.map((a) => {
                 const done = a.callers.filter((c) => c.status !== "to_call").length;
                 const isSelected = selectedIds.includes(a.id);
+                const isNewlyArrived = !a.inventory_status || a.inventory_status === "newly_arrived";
                 return (
                   <li key={a.id} className="flex items-center gap-2">
-                    {canManage && (!a.inventory_status || a.inventory_status === "newly_arrived") && (
+                    {canManage && isNewlyArrived && (
                       <input
                         type="checkbox"
                         data-testid={`arrival-checkbox-${a.id}`}
                         checked={isSelected}
                         onChange={() => toggleSelectOne(a.id)}
-                        className="size-4 rounded border-border text-emerald-500 focus:ring-emerald-500 shrink-0"
+                        className="size-4 rounded border-border text-emerald-500 focus:ring-emerald-500 shrink-0 cursor-pointer"
                       />
                     )}
                     <button
@@ -354,7 +567,7 @@ export default function TruckArrivals({ isManager, rank = "calls" }: { isManager
                       className={cn(
                         "w-full flex-1 rounded-lg border px-3 py-2.5 text-left transition-colors duration-150",
                         sel?.id === a.id ? "border-amber-500/60 bg-amber-500/10" : "border-border bg-surface hover:border-slate-500",
-                        isSelected && "ring-1 ring-emerald-500/50",
+                        isSelected && "ring-1 ring-emerald-500/50 bg-emerald-500/5",
                       )}
                     >
                       <div className="flex items-center justify-between">
@@ -428,18 +641,30 @@ export default function TruckArrivals({ isManager, rank = "calls" }: { isManager
                     </p>
                   )}
                 </div>
+
                 <div className="flex items-center gap-2">
-                  {canManage && (!sel.inventory_status || sel.inventory_status === "newly_arrived") && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      data-testid="detail-check-in-btn"
-                      disabled={checkInMutation.isPending}
-                      onClick={() => checkInMutation.mutate([sel.id])}
-                      className="border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10 gap-1.5 text-xs h-8"
-                    >
-                      <CheckSquare className="size-3.5" /> Check In
-                    </Button>
+                  {canManage && (
+                    selectedIds.length > 1 ? (
+                      <Button
+                        size="sm"
+                        data-testid="detail-check-in-multiple-btn"
+                        disabled={checkInMutation.isPending}
+                        onClick={() => checkInMutation.mutate(selectedIds)}
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-1.5 text-xs h-8 shadow"
+                      >
+                        <CheckSquare className="size-4" /> Check In All ({selectedIds.length}) Selected Cars
+                      </Button>
+                    ) : (!sel.inventory_status || sel.inventory_status === "newly_arrived") ? (
+                      <Button
+                        size="sm"
+                        data-testid="detail-check-in-btn"
+                        disabled={checkInMutation.isPending}
+                        onClick={() => checkInMutation.mutate([sel.id])}
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white gap-1.5 text-xs h-8 font-medium shadow"
+                      >
+                        <CheckSquare className="size-3.5" /> Check In This Car
+                      </Button>
+                    ) : null
                   )}
                   {isManager && <TextBlastDialog arrival={sel} />}
                   {isManager && (
@@ -528,6 +753,36 @@ export default function TruckArrivals({ isManager, rank = "calls" }: { isManager
               </ul>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Floating Bottom Multi-Car Action Pill */}
+      {canManage && selectedIds.length > 0 && (
+        <div
+          data-testid="floating-check-in-bar"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-full bg-slate-900 border border-emerald-500/70 px-5 py-2.5 shadow-2xl backdrop-blur-md"
+        >
+          <span className="font-mono text-sm text-white font-medium">
+            <span className="text-emerald-400 font-bold">{selectedIds.length}</span> car{selectedIds.length === 1 ? "" : "s"} selected
+          </span>
+          <Button
+            size="sm"
+            data-testid="floating-check-in-btn"
+            disabled={checkInMutation.isPending}
+            onClick={() => checkInMutation.mutate(selectedIds)}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold gap-2 px-4 shadow h-8"
+          >
+            <CheckSquare className="size-4" />
+            Check In ({selectedIds.length}) to Yard Inventory
+          </Button>
+          <button
+            type="button"
+            data-testid="floating-clear-selection-btn"
+            onClick={() => setSelectedIds([])}
+            className="text-xs text-slate-400 hover:text-white underline-offset-2 hover:underline font-mono ml-1"
+          >
+            Clear
+          </button>
         </div>
       )}
     </Panel>
