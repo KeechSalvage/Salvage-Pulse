@@ -51,13 +51,13 @@ class DemoLoginReq(BaseModel):
 
 
 DEMO_ROLE_MAP = {
-    "owner": "user-owner-linda",
-    "sales_manager": "user-sales-mgr-marcus",
-    "sales": "user-sales-mgr-marcus",
-    "inventory_manager": "user-inv-mgr-rick",
-    "inventory": "user-inv-mgr-rick",
-    "rep": "user-rep-tyler",
-    "sales_rep": "user-rep-tyler",
+    "owner": "user-keech-owner",
+    "sales_manager": "user-keech-sales-mgr",
+    "sales": "user-keech-sales-mgr",
+    "inventory_manager": "user-keech-inv-mgr",
+    "inventory": "user-keech-inv-mgr",
+    "rep": "user-keech-rep",
+    "sales_rep": "user-keech-rep",
     "master": "master-brettk",
     "admin": "master-brettk",
 }

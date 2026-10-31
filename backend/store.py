@@ -508,6 +508,7 @@ def _ensure_demo_users(st: dict[str, Any]) -> dict[str, Any]:
                 o["users"] = 8
 
     st.setdefault("org", {})["name"] = "Keech's Auto Salvage"
+    st.setdefault("org", {})["id"] = KEECH_ORG_ID
     st.setdefault("branding", {})["yard_name"] = "Keech's Auto Salvage"
 
     # Legacy un-scoped calls belong to the Keech demo yard

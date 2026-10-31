@@ -56,9 +56,9 @@ def get_meta(request: Request = None) -> dict[str, Any]:
 def get_scoring_settings(request: Request) -> dict[str, Any]:
     u = get_current_user(request)
     org_id = u.get("org_id")
-    if not org_id:
+    if not org_id or org_id in ("", "5d4e9f0f-9147-4cd5-be02-e7239c74c462"):
         st = store.get_state()
-        org_id = st.get("org", {}).get("id") or "org-keech-salvage"
+        org_id = st.get("org", {}).get("id") or store.KEECH_ORG_ID
 
     scoring = _get_yard_scoring(org_id)
     return {
@@ -77,8 +77,8 @@ def update_scoring_settings(request: Request, body: dict[str, Any]) -> dict[str,
 
     org_id = u.get("org_id")
     st = store.get_state()
-    if not org_id:
-        org_id = st.get("org", {}).get("id") or "org-keech-salvage"
+    if not org_id or org_id in ("", "5d4e9f0f-9147-4cd5-be02-e7239c74c462"):
+        org_id = st.get("org", {}).get("id") or store.KEECH_ORG_ID
 
     custom_scoring = bool(body.get("custom_scoring", False))
     raw_weights = body.get("weights") or {}

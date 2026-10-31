@@ -16,9 +16,19 @@ def sync_store_to_sql():
         # Sync Orgs
         org = st.get("org", {})
         org_id = org.get("id") or store.KEECH_ORG_ID
+        org_cs = 1 if (org.get("custom_scoring") or (st.get("admin_orgs") and any(ao.get("id") == org_id and ao.get("custom_scoring") for ao in st.get("admin_orgs", [])))) else 0
+        org_weights = json.dumps(org.get("metric_weights") or next((ao.get("metric_weights") for ao in st.get("admin_orgs", []) if ao.get("id") == org_id and ao.get("metric_weights")), {}))
         conn.execute("""
-            INSERT OR REPLACE INTO orgs (id, name, yard_name, plan, status, webhook_token, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO orgs (id, name, yard_name, plan, status, webhook_token, custom_scoring, metric_weights_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                yard_name = excluded.yard_name,
+                plan = excluded.plan,
+                status = excluded.status,
+                webhook_token = excluded.webhook_token,
+                custom_scoring = CASE WHEN excluded.custom_scoring = 1 THEN 1 ELSE orgs.custom_scoring END,
+                metric_weights_json = CASE WHEN excluded.custom_scoring = 1 THEN excluded.metric_weights_json ELSE orgs.metric_weights_json END
         """, (
             org_id,
             org.get("name") or "Keech's Auto Salvage",
@@ -26,14 +36,27 @@ def sync_store_to_sql():
             org.get("plan") or "pro",
             org.get("status") or "trialing",
             org.get("webhook_token") or "default_token",
+            org_cs,
+            org_weights,
             store.now_iso(),
         ))
 
         # Admin orgs
         for ao in st.get("admin_orgs", []):
+            ao_cs = 1 if ao.get("custom_scoring") else 0
+            ao_weights = json.dumps(ao.get("metric_weights") or {})
             conn.execute("""
-                INSERT OR REPLACE INTO orgs (id, name, yard_name, plan, status, webhook_token, is_demo, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO orgs (id, name, yard_name, plan, status, webhook_token, is_demo, custom_scoring, metric_weights_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    name = excluded.name,
+                    yard_name = excluded.yard_name,
+                    plan = excluded.plan,
+                    status = excluded.status,
+                    webhook_token = excluded.webhook_token,
+                    is_demo = excluded.is_demo,
+                    custom_scoring = CASE WHEN excluded.custom_scoring = 1 THEN 1 ELSE orgs.custom_scoring END,
+                    metric_weights_json = CASE WHEN excluded.custom_scoring = 1 THEN excluded.metric_weights_json ELSE orgs.metric_weights_json END
             """, (
                 ao.get("id"),
                 ao.get("name") or "Yard",
@@ -42,6 +65,8 @@ def sync_store_to_sql():
                 ao.get("status") or "active",
                 "admin_tok",
                 1 if ao.get("is_demo") else 0,
+                ao_cs,
+                ao_weights,
                 ao.get("created_at") or store.now_iso(),
             ))
 
