@@ -9,7 +9,7 @@ import analyzer
 from auth_utils import get_current_user, get_uploads_dir
 from gemini_service import analyze_audio_call_llm, is_gemini_configured, normalize_audio_mime
 import store
-from database import get_org_scoring_config
+from database import get_org_scoring_config, compute_weighted_overall_score
 
 router = APIRouter(tags=["calls"])
 
@@ -327,8 +327,90 @@ def delete_call_assignment(call_id: str) -> dict[str, Any]:
 
 
 @router.post("/api/calls/{call_id}/reanalyze")
-def post_call_reanalyze(call_id: str) -> dict[str, Any]:
-    return get_call_detail(call_id)
+def post_call_reanalyze(call_id: str, request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    u = get_current_user(request)
+    org_id = u.get("org_id") or store.KEECH_ORG_ID
+    full_calls = st.get("full_calls", {})
+
+    # Locate call in calls, callbacks_open, or callbacks_resolved
+    match = next((c for c in st.get("calls", []) if c.get("id") == call_id), None)
+    if not match:
+        match = next((c for c in st.get("callbacks_open", []) if c.get("id") == call_id), None)
+    if not match:
+        match = next((c for c in st.get("callbacks_resolved", []) if c.get("id") == call_id), None)
+
+    if not match:
+        raise HTTPException(status_code=404, detail="Call not found")
+
+    if org_id and match.get("org_id") and match.get("org_id") != org_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Get yard scoring configuration
+    yard_org_id = match.get("org_id") or org_id
+    has_custom, yard_weights = get_org_scoring_config(yard_org_id)
+    custom_weights = yard_weights if has_custom else None
+
+    # Get full call detail / transcript
+    full = full_calls.get(call_id)
+    if not full:
+        full = store.synthesize_call_details(match)
+        full_calls[call_id] = full
+
+    transcript = full.get("transcript") or match.get("summary") or ""
+    cust_name = match.get("customer_name") or "Direct Caller"
+    rep_name = match.get("rep_name") or "Sales Rep"
+
+    # Re-analyze transcript with the yard's active weights
+    if transcript:
+        analyzed = analyzer.analyze_transcript(
+            transcript, customer_name=cust_name, rep_name=rep_name, custom_weights=custom_weights
+        )
+        if analyzed:
+            for k in [
+                "overall_score",
+                "category",
+                "outcome",
+                "sentiment",
+                "order_value",
+                "quoted_value",
+                "vehicle",
+                "part_requested",
+                "parts_sold",
+                "warranty_pitched",
+                "loss_reason",
+                "summary",
+                "coaching_feedback",
+                "strengths",
+                "improvements",
+                "insights",
+                "topics",
+                "metrics",
+            ]:
+                if k in analyzed:
+                    match[k] = analyzed[k]
+                    full[k] = analyzed[k]
+
+    # Recalculate score from metrics if metrics exist
+    metrics = full.get("metrics") or match.get("metrics")
+    if metrics:
+        new_score = compute_weighted_overall_score(metrics, custom_weights=custom_weights)
+        match["overall_score"] = new_score
+        full["overall_score"] = new_score
+
+    store.save_state()
+
+    # Update in database if exists
+    try:
+        with database.get_db() as conn:
+            conn.execute(
+                "UPDATE calls SET overall_score = ?, category = ?, outcome = ? WHERE id = ?",
+                (match.get("overall_score", 70), match.get("category", "Part Inquiry/Quote"), match.get("outcome", "pending"), call_id),
+            )
+    except Exception:
+        pass
+
+    return full
 
 
 @router.delete("/api/calls/{call_id}")
