@@ -1690,6 +1690,7 @@ export interface Arrival {
   callback_list_id: string; // set once its waiting callers became a callback list
   created_by: string;
   created_at: string;
+  body_type?: string;
   inventory_status?: InventoryStatus;
   checked_in_at?: string | null;
   checked_in_by?: string | null;

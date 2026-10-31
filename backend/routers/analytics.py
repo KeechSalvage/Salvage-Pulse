@@ -860,9 +860,46 @@ def get_arrivals(request: Request) -> list[dict[str, Any]]:
     purged = False
     surviving = []
 
+    MODEL_BODY_MAP = {
+        "f-150": "pickup", "f-250": "pickup", "f-350": "pickup", "silverado": "pickup",
+        "silverado 1500": "pickup", "silverado 2500": "pickup", "sierra": "pickup",
+        "sierra 1500": "pickup", "ram 1500": "pickup", "ram 2500": "pickup", "1500": "pickup",
+        "2500": "pickup", "tacoma": "pickup", "tundra": "pickup", "colorado": "pickup",
+        "canyon": "pickup", "ranger": "pickup", "frontier": "pickup",
+        "grand cherokee": "suv", "cherokee": "suv", "wrangler": "suv", "explorer": "suv",
+        "equinox": "suv", "traverse": "suv", "tahoe": "suv", "suburban": "suv", "yukon": "suv",
+        "rav4": "suv", "highlander": "suv", "4runner": "suv", "cr-v": "suv", "pilot": "suv",
+        "rogue": "suv", "pathfinder": "suv", "tucson": "suv", "cx-5": "suv", "outback": "suv",
+        "transit": "van", "grand caravan": "van", "caravan": "van", "pacifica": "van",
+        "promaster": "van", "express": "van", "sienna": "van", "odyssey": "van",
+        "camry": "car", "corolla": "car", "accord": "car", "civic": "car", "altima": "car",
+        "sentra": "car", "fusion": "car", "malibu": "car", "impala": "car", "optima": "car",
+        "elantra": "car", "sonata": "car", "charger": "car", "3 series": "car", "328i": "car",
+    }
+
     for a in items:
         status = a.get("inventory_status") or "newly_arrived"
         a["inventory_status"] = status
+
+        if not a.get("body_type"):
+            m = (a.get("vehicle_model") or "").strip().lower()
+            make = (a.get("vehicle_make") or "").strip().lower()
+            if m in MODEL_BODY_MAP:
+                a["body_type"] = MODEL_BODY_MAP[m]
+            elif "pickup" in m or "truck" in m or "1500" in m or "tacoma" in m or "silverado" in m or "f-150" in m:
+                a["body_type"] = "pickup"
+            elif "suv" in m or "cherokee" in m or "explorer" in m or "equinox" in m or "tahoe" in m or "cr-v" in m:
+                a["body_type"] = "suv"
+            elif "van" in m or "transit" in m or "caravan" in m:
+                a["body_type"] = "van"
+            elif "car" in m or "sedan" in m or "camry" in m or "civic" in m or "accord" in m or "altima" in m:
+                a["body_type"] = "car"
+            elif make == "ram":
+                a["body_type"] = "pickup"
+            elif make == "jeep":
+                a["body_type"] = "suv"
+            else:
+                a["body_type"] = "other"
 
         # If vehicle is in crushing queue, check deadline
         if status == "to_be_crushed":
