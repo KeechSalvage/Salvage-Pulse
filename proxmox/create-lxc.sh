@@ -145,7 +145,7 @@ done
 
 # 6. Execute Provisioning inside Container
 echo -e "\n${YELLOW}--> Running Salvage Pulse installer inside container...${NC}"
-INSTALLER_URL="https://raw.githubusercontent.com/Keechb/Salvage-Pulse/main/proxmox/build-lxc.sh"
+INSTALLER_URL="https://raw.githubusercontent.com/KeechSalvage/Salvage-Pulse/main/proxmox/build-lxc.sh"
 
 pct exec "$CT_ID" -- env GEMINI_API_KEY="$GEMINI_KEY" bash -c "$(curl -fsSL "$INSTALLER_URL")"
 

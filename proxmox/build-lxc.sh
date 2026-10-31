@@ -23,7 +23,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 APP_DIR="/opt/salvage-pulse"
-REPO_URL="https://github.com/Keechb/Salvage-Pulse.git"
+REPO_URL="https://github.com/KeechSalvage/Salvage-Pulse.git"
 
 echo -e "${YELLOW}--> Updating system packages...${NC}"
 export DEBIAN_FRONTEND=noninteractive

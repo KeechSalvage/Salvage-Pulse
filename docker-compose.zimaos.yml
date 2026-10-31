@@ -6,7 +6,7 @@
 name: salvage-pulse
 services:
   salvage-pulse:
-    image: ghcr.io/keechb/salvage-pulse:latest
+    image: ghcr.io/keechsalvage/salvage-pulse:latest
     container_name: salvage-pulse-app
     restart: unless-stopped
     ports:
@@ -41,7 +41,7 @@ services:
         - container: /app/backend/data
           description:
             en_us: Persistent application database and uploads
-      icon: https://raw.githubusercontent.com/Keechb/Salvage-Pulse/main/salvage-pulse-logo.png
+      icon: https://raw.githubusercontent.com/KeechSalvage/Salvage-Pulse/main/salvage-pulse-logo.png
       title:
         en_us: Salvage Pulse
       tagline:

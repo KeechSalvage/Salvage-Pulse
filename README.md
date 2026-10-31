@@ -37,7 +37,7 @@ docker compose down
 Run this command directly in your **Proxmox VE Node Shell**:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/Keechb/Salvage-Pulse/main/proxmox/create-lxc.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/KeechSalvage/Salvage-Pulse/main/proxmox/create-lxc.sh)"
 ```
 
 This provisions an ultra-lightweight (~100MB RAM) Debian 12 LXC container with automatic startup, systemd management (`salvage-pulse.service`), and one-command updates via `salvage-pulse-update`. See [`proxmox/README.md`](proxmox/README.md) for full options.
@@ -48,7 +48,7 @@ If you are using **ZimaOS** or **CasaOS** at home:
 
 1. **Option A (Terminal / SSH into ZimaOS)**:
    ```bash
-   git clone https://github.com/Keechb/Salvage-Pulse.git
+   git clone https://github.com/KeechSalvage/Salvage-Pulse.git
    cd Salvage-Pulse
    docker compose up -d --build
    ```

@@ -9,7 +9,7 @@ This directory contains turnkey scripts and configuration to deploy **Salvage Pu
 Run this single command directly in your **Proxmox VE Node Shell** (via PVE Web GUI -> Select Node -> **Shell**, or via SSH to the PVE host):
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/Keechb/Salvage-Pulse/main/proxmox/create-lxc.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/KeechSalvage/Salvage-Pulse/main/proxmox/create-lxc.sh)"
 ```
 
 ### What this script does automatically:
@@ -34,7 +34,7 @@ If you already created a blank Debian 12 or Ubuntu 22.04/24.04 container:
    ```
 2. Run the in-guest installation script:
    ```bash
-   bash -c "$(curl -fsSL https://raw.githubusercontent.com/Keechb/Salvage-Pulse/main/proxmox/build-lxc.sh)"
+   bash -c "$(curl -fsSL https://raw.githubusercontent.com/KeechSalvage/Salvage-Pulse/main/proxmox/build-lxc.sh)"
    ```
 
 ---
