@@ -2,22 +2,138 @@ from __future__ import annotations
 
 import base64
 import datetime as dt
+import json
 import uuid
 from typing import Any, Optional
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from auth_utils import get_current_user
 import store
+from database import METRICS, get_db, get_org_scoring_config
 
 router = APIRouter(tags=["settings"])
+
+
+def _get_yard_scoring(org_id: str) -> dict[str, Any]:
+    """Helper to fetch custom scoring configuration strictly for a specific yard (org_id)."""
+    defaults = {m["key"]: m["weight"] for m in METRICS}
+    if not org_id:
+        return {"custom_scoring": False, "weights": defaults, "defaults": defaults}
+
+    cs, weights = get_org_scoring_config(org_id)
+    return {"custom_scoring": cs, "weights": weights, "defaults": defaults}
 
 
 # ==========================================
 # Meta, Org, Branding, Settings
 # ==========================================
 @router.get("/api/meta")
-def get_meta() -> dict[str, Any]:
+def get_meta(request: Request = None) -> dict[str, Any]:
     st = store.get_state()
-    return st["seed"]["/meta"]
+    base_meta = dict(st["seed"]["/meta"])
+    metrics_list = [dict(m) for m in METRICS]
+
+    org_id = None
+    if request:
+        try:
+            u = get_current_user(request)
+            org_id = u.get("org_id")
+        except Exception:
+            pass
+
+    if org_id:
+        scoring = _get_yard_scoring(org_id)
+        if scoring["custom_scoring"]:
+            weights = scoring["weights"]
+            for m in metrics_list:
+                if m["key"] in weights:
+                    m["weight"] = weights[m["key"]]
+
+    base_meta["metrics"] = metrics_list
+    return base_meta
+
+
+@router.get("/api/settings/scoring")
+def get_scoring_settings(request: Request) -> dict[str, Any]:
+    u = get_current_user(request)
+    org_id = u.get("org_id")
+    if not org_id:
+        st = store.get_state()
+        org_id = st.get("org", {}).get("id") or "org-keech-salvage"
+
+    scoring = _get_yard_scoring(org_id)
+    return {
+        "custom_scoring": scoring["custom_scoring"],
+        "weights": scoring["weights"],
+        "defaults": scoring["defaults"],
+        "metrics": METRICS,
+    }
+
+
+@router.put("/api/settings/scoring")
+def update_scoring_settings(request: Request, body: dict[str, Any]) -> dict[str, Any]:
+    u = get_current_user(request)
+    if u.get("role") not in ("owner", "sales_manager", "manager", "master", "admin"):
+        raise HTTPException(status_code=403, detail="Only owners and sales managers can adjust scoring weights.")
+
+    org_id = u.get("org_id")
+    st = store.get_state()
+    if not org_id:
+        org_id = st.get("org", {}).get("id") or "org-keech-salvage"
+
+    custom_scoring = bool(body.get("custom_scoring", False))
+    raw_weights = body.get("weights") or {}
+    defaults = {m["key"]: m["weight"] for m in METRICS}
+
+    weights: dict[str, int] = {}
+    for m in METRICS:
+        k = m["key"]
+        val = raw_weights.get(k, defaults[k])
+        try:
+            val_int = int(val)
+        except (ValueError, TypeError):
+            val_int = defaults[k]
+        if val_int < 0:
+            raise HTTPException(status_code=400, detail=f"Weight for {m['name']} cannot be negative.")
+        weights[k] = val_int
+
+    if custom_scoring:
+        total = sum(weights.values())
+        if total != 100:
+            raise HTTPException(status_code=400, detail=f"Metric weights must total exactly 100%. Current total: {total}%.")
+
+    # Update only the target yard in memory store
+    for yard in st.get("admin_orgs", []):
+        if yard.get("id") == org_id:
+            yard["custom_scoring"] = custom_scoring
+            yard["metric_weights"] = weights
+
+    if st.get("org", {}).get("id") == org_id:
+        st["org"]["custom_scoring"] = custom_scoring
+        st["org"]["metric_weights"] = weights
+
+    store.save_state()
+
+    # Persist in SQLite strictly isolated to this org_id
+    try:
+        with get_db() as conn:
+            conn.execute(
+                """
+                UPDATE orgs
+                SET custom_scoring = ?, metric_weights_json = ?
+                WHERE id = ?
+                """,
+                (1 if custom_scoring else 0, json.dumps(weights), org_id),
+            )
+    except Exception as e:
+        print(f"Error persisting scoring settings to SQLite: {e}")
+
+    return {
+        "ok": True,
+        "custom_scoring": custom_scoring,
+        "weights": weights,
+        "defaults": defaults,
+        "metrics": METRICS,
+    }
 
 
 @router.get("/api/org/me")

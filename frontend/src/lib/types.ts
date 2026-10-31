@@ -378,6 +378,14 @@ export interface MetricDef {
   name: string;
   weight: number;
   description: string;
+  ai_criteria?: string;
+}
+
+export interface ScoringSettings {
+  custom_scoring: boolean;
+  weights: Record<string, number>;
+  defaults: Record<string, number>;
+  metrics: MetricDef[];
 }
 
 export interface Meta {

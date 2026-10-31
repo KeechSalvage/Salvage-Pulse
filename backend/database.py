@@ -27,42 +27,49 @@ METRICS = [
         "name": "Greeting & Brand",
         "weight": 10,
         "description": "Professional yard identification, rep name, warm tone.",
+        "ai_criteria": "Evaluates whether the rep opens the call with clear yard identification, states their name, maintains a polite and welcoming tone, and establishes immediate credibility.",
     },
     {
         "key": "needs_discovery",
         "name": "Needs Discovery",
         "weight": 15,
         "description": "Year/Make/Model, engine/trim, VIN or Hollander interchange, mileage needs.",
+        "ai_criteria": "Evaluates how thoroughly the rep clarifies vehicle fitment: asking for VIN or Hollander interchange, confirming year/make/model, engine, transmission, trim package, and customer mileage expectations before quoting.",
     },
     {
         "key": "product_knowledge",
         "name": "Product Knowledge",
         "weight": 15,
         "description": "Interchange accuracy, part grade/condition, testing notes, warranty terms.",
+        "ai_criteria": "Evaluates the rep's explanation of part condition (Grade A/B), bench/run testing notes, mileage on the donor vehicle, interchange options, and clearly outlining what components are included with the assembly.",
     },
     {
         "key": "upsell_crosssell",
         "name": "Upsell & Cross-sell",
         "weight": 15,
         "description": "Companion parts, extended warranty, bundles, core incentives.",
+        "ai_criteria": "Evaluates proactive recommendations for necessary companion items (gaskets, seals, hardware, fluid, matching wire harnesses, brackets) and presenting extended parts & labor warranty packages.",
     },
     {
         "key": "objection_handling",
         "name": "Objection Handling",
         "weight": 15,
         "description": "Price pushback, OEM used vs aftermarket, shipping concerns.",
+        "ai_criteria": "Evaluates how effectively the rep counters price resistance, defends genuine OEM used fit & durability against cheap aftermarket alternatives, and resolves delivery or lead-time hesitations.",
     },
     {
         "key": "closing",
         "name": "Closing & Next Steps",
         "weight": 15,
         "description": "Asks for the sale/payment, sets pickup/freight, confirms invoice details.",
+        "ai_criteria": "Evaluates asking directly for the order or credit card deposit, confirming delivery bay / shipping schedule or counter hold, and establishing clear follow-up expectations.",
     },
     {
         "key": "courtesy",
         "name": "Courtesy & Professionalism",
         "weight": 15,
         "description": "Active listening, clear language, no hold abuse, thanks the customer.",
+        "ai_criteria": "Evaluates polite active listening, clean phone etiquette, minimal and courteous hold times, clear non-slang communication, and thanking the caller by name.",
     },
 ]
 
@@ -357,13 +364,49 @@ def infer_vehicle_body(make: Optional[str], model: Optional[str]) -> str:
     return "car"
 
 
-def compute_weighted_overall_score(metrics: Dict[str, Any]) -> int:
+def compute_weighted_overall_score(metrics: Dict[str, Any], custom_weights: Optional[Dict[str, float]] = None) -> int:
     total = 0.0
     for m in METRICS:
         val = float(metrics.get(m["key"], 0) or 0)
-        val = max(0.0, min(10.0, val))
-        total += val * float(m["weight"]) / 10.0
+        # Normalize metric score: if 0-10 scale, convert to 0-100; if already 0-100, use as is
+        val_pct = val * 10.0 if val <= 10.0 else val
+        val_pct = max(0.0, min(100.0, val_pct))
+        weight = float(custom_weights.get(m["key"], m["weight"])) if custom_weights else float(m["weight"])
+        total += (val_pct * weight) / 100.0
     return int(round(max(0.0, min(100.0, total))))
+
+
+def get_org_scoring_config(org_id: Optional[str]) -> Tuple[bool, Dict[str, int]]:
+    """Returns (custom_scoring_enabled: bool, weights: dict[str, int]) for a specific yard/org.
+    Isolated per org_id, never affecting any other yard on the platform.
+    """
+    defaults = {m["key"]: int(m["weight"]) for m in METRICS}
+    if not org_id:
+        return False, defaults
+
+    try:
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT custom_scoring, metric_weights_json FROM orgs WHERE id = ?",
+                (org_id,),
+            ).fetchone()
+            if row:
+                cs = bool(row["custom_scoring"])
+                raw_json = row["metric_weights_json"] or "{}"
+                mw = json.loads(raw_json)
+                weights = dict(defaults)
+                if cs and isinstance(mw, dict) and mw:
+                    for k in defaults:
+                        if k in mw:
+                            try:
+                                weights[k] = int(mw[k])
+                            except (ValueError, TypeError):
+                                pass
+                return cs, weights
+    except Exception:
+        pass
+
+    return False, defaults
 
 
 @contextmanager
@@ -424,6 +467,8 @@ def init_schema():
                 sample_data INTEGER NOT NULL DEFAULT 1,
                 signup_network TEXT NOT NULL DEFAULT '198.51.100.0/24',
                 is_demo INTEGER NOT NULL DEFAULT 0,
+                custom_scoring INTEGER NOT NULL DEFAULT 0,
+                metric_weights_json TEXT NOT NULL DEFAULT '{}',
                 created_at TEXT NOT NULL
             );
 

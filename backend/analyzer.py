@@ -83,7 +83,7 @@ def extract_vehicle_and_part(text: str, topics: Optional[List[str]] = None) -> D
     }
 
 
-def _analyze_transcript_heuristic(transcript: str, customer_name: str = "") -> Dict[str, Any]:
+def _analyze_transcript_heuristic(transcript: str, customer_name: str = "", custom_weights: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
     turns = parse_turns(transcript)
     low = (transcript or "").lower()
     rep_text = " ".join(t["text"] for t in turns if t["speaker"] == "Rep").lower() or low
@@ -158,7 +158,7 @@ def _analyze_transcript_heuristic(transcript: str, customer_name: str = "") -> D
         "closing": closing,
         "courtesy": courtesy,
     }
-    overall_score = compute_weighted_overall_score(metrics)
+    overall_score = compute_weighted_overall_score(metrics, custom_weights=custom_weights)
 
     loss_reason = ""
     if outcome in ("lost", "pending") and category in ("Part Inquiry/Quote", "Price Negotiation"):
@@ -244,11 +244,15 @@ def _analyze_transcript_heuristic(transcript: str, customer_name: str = "") -> D
 
 
 def analyze_transcript(
-    transcript: str, customer_name: str = "", rep_name: str = ""
+    transcript: str,
+    customer_name: str = "",
+    rep_name: str = "",
+    custom_weights: Optional[Dict[str, float]] = None,
 ) -> Dict[str, Any]:
     """Primary entry point for call scoring.
     Attempts Google Gemini 2.5 Flash analysis when configured,
     and seamlessly falls back to fast local heuristic analysis.
+    Respects custom metric weights for the specific yard.
     """
     if is_gemini_configured():
         try:
@@ -259,6 +263,12 @@ def analyze_transcript(
                 # Ensure turns list is populated
                 if not llm_result.get("turns"):
                     llm_result["turns"] = parse_turns(transcript)
+
+                # If yard has custom weights, recompute overall score using yard weights
+                if custom_weights and llm_result.get("metrics"):
+                    llm_result["overall_score"] = compute_weighted_overall_score(
+                        llm_result["metrics"], custom_weights=custom_weights
+                    )
 
                 # Ensure vehicle string exists
                 if not llm_result.get("vehicle"):
@@ -283,7 +293,9 @@ def analyze_transcript(
         except Exception as e:
             logger.warning(f"Gemini analysis exception: {e}, falling back to heuristics")
 
-    heuristic_result = _analyze_transcript_heuristic(transcript, customer_name=customer_name)
+    heuristic_result = _analyze_transcript_heuristic(
+        transcript, customer_name=customer_name, custom_weights=custom_weights
+    )
     heuristic_result["analysis_engine"] = "heuristic"
     return heuristic_result
 

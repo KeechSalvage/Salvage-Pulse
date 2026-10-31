@@ -9,6 +9,7 @@ import analyzer
 from auth_utils import get_current_user, get_uploads_dir
 from gemini_service import analyze_audio_call_llm, is_gemini_configured, normalize_audio_mime
 import store
+from database import get_org_scoring_config
 
 router = APIRouter(tags=["calls"])
 
@@ -363,8 +364,14 @@ def post_call_transcript(body: dict[str, Any], request: Request) -> dict[str, An
     transcript = body.get("transcript", "")
     cust_name = body.get("customer_name") or "Direct Caller"
     rep_name = rep.get("name", "Sales Rep")
+    yard_org_id = rep.get("org_id") or u.get("org_id") or store.KEECH_ORG_ID
 
-    analyzed = analyzer.analyze_transcript(transcript, customer_name=cust_name, rep_name=rep_name)
+    has_custom, yard_weights = get_org_scoring_config(yard_org_id)
+    custom_weights = yard_weights if has_custom else None
+
+    analyzed = analyzer.analyze_transcript(
+        transcript, customer_name=cust_name, rep_name=rep_name, custom_weights=custom_weights
+    )
 
     veh_str = analyzed.get("vehicle") or " ".join(
         str(x) for x in [analyzed.get("vehicle_year"), analyzed.get("vehicle_make"), analyzed.get("vehicle_model")] if x
@@ -372,7 +379,7 @@ def post_call_transcript(body: dict[str, Any], request: Request) -> dict[str, An
 
     summary_item = {
         "id": cid,
-        "org_id": rep.get("org_id") or u.get("org_id") or store.KEECH_ORG_ID,
+        "org_id": yard_org_id,
         "rep_id": rep["id"],
         "rep_name": rep["name"],
         "customer_name": cust_name,
@@ -454,18 +461,29 @@ async def post_call_audio(
     with open(saved_path, "wb") as f:
         f.write(audio_bytes)
 
+    yard_org_id = rep_user.get("org_id") or u.get("org_id") or store.KEECH_ORG_ID
+    has_custom, yard_weights = get_org_scoring_config(yard_org_id)
+    custom_weights = yard_weights if has_custom else None
+
     analyzed = None
     if is_gemini_configured():
         analyzed = analyze_audio_call_llm(
             audio_bytes, mime_type=mime_type, customer_name=cust_name, rep_name=rep_name
         )
+        if analyzed and custom_weights and analyzed.get("metrics"):
+            from database import compute_weighted_overall_score
+            analyzed["overall_score"] = compute_weighted_overall_score(
+                analyzed["metrics"], custom_weights=custom_weights
+            )
 
     if not analyzed:
         transcript = (
             f"Rep: Thanks for calling Salvage Pulse, this is {rep_name}. How can I help you today?\n"
             f"Customer: Hi {rep_name}, I'm calling to check price and availability on parts for my vehicle."
         )
-        analyzed = analyzer.analyze_transcript(transcript, customer_name=cust_name, rep_name=rep_name)
+        analyzed = analyzer.analyze_transcript(
+            transcript, customer_name=cust_name, rep_name=rep_name, custom_weights=custom_weights
+        )
         analyzed["transcript"] = transcript
 
     transcript = analyzed.get("transcript") or "Audio recording processed."
@@ -579,18 +597,29 @@ async def post_bulk_audio(
             with open(saved_path, "wb") as f:
                 f.write(audio_bytes)
 
+            batch_yard_org_id = rep_user.get("org_id") or u.get("org_id") or store.KEECH_ORG_ID
+            b_custom, b_weights = get_org_scoring_config(batch_yard_org_id)
+            b_custom_weights = b_weights if b_custom else None
+
             analyzed = None
             if is_gemini_configured():
                 analyzed = analyze_audio_call_llm(
                     audio_bytes, mime_type=mime_type, customer_name="Inbound Caller", rep_name=rep_name
                 )
+                if analyzed and b_custom_weights and analyzed.get("metrics"):
+                    from database import compute_weighted_overall_score
+                    analyzed["overall_score"] = compute_weighted_overall_score(
+                        analyzed["metrics"], custom_weights=b_custom_weights
+                    )
 
             if not analyzed:
                 fallback_text = (
                     f"Rep: Thanks for calling Salvage Pulse, this is {rep_name}. How can I help you today?\n"
                     f"Customer: Calling to check availability on recycled OEM parts."
                 )
-                analyzed = analyzer.analyze_transcript(fallback_text, customer_name="Inbound Caller", rep_name=rep_name)
+                analyzed = analyzer.analyze_transcript(
+                    fallback_text, customer_name="Inbound Caller", rep_name=rep_name, custom_weights=b_custom_weights
+                )
                 analyzed["transcript"] = fallback_text
 
             transcript = analyzed.get("transcript") or "Audio recording processed."
