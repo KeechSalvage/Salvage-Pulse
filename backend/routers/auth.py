@@ -39,13 +39,6 @@ def _find_master_or_actor(impersonator_id: str | None = None) -> dict[str, Any]:
 def auth_me(request: Request) -> dict[str, Any]:
     return get_current_user(request)
 
-    uid = st.get("current_user_id")
-    if uid and uid in st.get("users_by_id", {}):
-        return st["users_by_id"][uid]
-
-    # Return 401 if unauthenticated so frontend sends visitor to /login
-    raise HTTPException(status_code=401, detail="Not authenticated")
-
 
 @router.get("/api/auth/demo-login")
 def auth_demo_login_status() -> dict[str, Any]:
@@ -117,34 +110,14 @@ def auth_login(req: LoginReq, response: Response, request: Request) -> dict[str,
     st = store.get_state()
     email_clean = req.email.strip().lower()
 
+    if not email_clean:
+        raise HTTPException(status_code=400, detail="Email is required")
+
     match = None
-    for u in st["users_by_id"].values():
-        if u.get("email", "").lower() == email_clean:
+    for u in st.get("users_by_id", {}).values():
+        if u.get("email", "").strip().lower() == email_clean:
             match = u
             break
-
-    if not match:
-        if "master" in email_clean or "brettk" in email_clean:
-            match = next((u for u in st["users_by_id"].values() if u.get("role") == "master" and not u.get("disabled")), None)
-        elif "admin" in email_clean:
-            match = next((u for u in st["users_by_id"].values() if u.get("role") in ("admin", "master") and not u.get("disabled")), None)
-        elif "owner" in email_clean:
-            match = next((u for u in st["users_by_id"].values() if u.get("role") == "owner" and not u.get("disabled")), None)
-        elif "inventory" in email_clean:
-            match = next((u for u in st["users_by_id"].values() if u.get("role") == "inventory_manager" and not u.get("disabled")), None)
-        elif "sales" in email_clean or "manager" in email_clean:
-            match = next((u for u in st["users_by_id"].values() if u.get("role") in ("sales_manager", "manager") and not u.get("disabled")), None)
-        elif "rep4" in email_clean:
-            match = next((u for u in st["users_by_id"].values() if "rep4" in u.get("email", "").lower() and not u.get("disabled")), None)
-        elif "rep3" in email_clean:
-            match = next((u for u in st["users_by_id"].values() if "rep3" in u.get("email", "").lower() and not u.get("disabled")), None)
-        elif "rep2" in email_clean:
-            match = next((u for u in st["users_by_id"].values() if "rep2" in u.get("email", "").lower() and not u.get("disabled")), None)
-        elif "rep1" in email_clean or "rep" in email_clean:
-            match = next((u for u in st["users_by_id"].values() if ("rep1" in u.get("email", "").lower() or "rep@" in u.get("email", "").lower()) and not u.get("disabled")), None)
-        else:
-            reps = [u for u in st["users_by_id"].values() if u.get("role") in ("rep", "sales_rep") and not u.get("disabled")]
-            match = reps[0] if reps else None
 
     if not match:
         raise HTTPException(status_code=401, detail="Invalid email or password")

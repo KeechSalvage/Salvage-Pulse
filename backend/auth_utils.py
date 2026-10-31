@@ -137,7 +137,6 @@ def set_session_cookie(response: Response, user_id: str, request: Request | None
     if "sessions" not in st:
         st["sessions"] = {}
     st["sessions"][token] = user_id
-    st["current_user_id"] = user_id
     if request:
         _track_session(st, token, user_id, request)
     response.set_cookie(
