@@ -14,6 +14,10 @@ load_dotenv()
 
 from gemini_service import is_gemini_configured
 import store
+import database
+
+# Initialize database schema and run migrations
+database.init_schema()
 from routers import admin, analytics, auth, billing, calls, roleplay, settings, team
 
 app = FastAPI(title="Salvage Pulse AI API", version="0.1.0-beta.5")

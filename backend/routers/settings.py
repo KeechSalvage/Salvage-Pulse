@@ -15,10 +15,42 @@ router = APIRouter(tags=["settings"])
 
 def _get_yard_scoring(org_id: str) -> dict[str, Any]:
     """Helper to fetch custom scoring configuration strictly for a specific yard (org_id)."""
-    defaults = {m["key"]: m["weight"] for m in METRICS}
-    if not org_id:
-        return {"custom_scoring": False, "weights": defaults, "defaults": defaults}
+    defaults = {m["key"]: int(m["weight"]) for m in METRICS}
+    if not org_id or org_id in ("", "5d4e9f0f-9147-4cd5-be02-e7239c74c462"):
+        org_id = store.KEECH_ORG_ID
 
+    # 1. Primary check: in-memory state / preview_state.json
+    try:
+        st = store.get_state()
+        for yard in st.get("admin_orgs", []):
+            if yard.get("id") == org_id:
+                if yard.get("custom_scoring"):
+                    mw = yard.get("metric_weights") or {}
+                    w = dict(defaults)
+                    for k in defaults:
+                        if k in mw:
+                            try:
+                                w[k] = int(mw[k])
+                            except (ValueError, TypeError):
+                                pass
+                    return {"custom_scoring": True, "weights": w, "defaults": defaults}
+                elif yard.get("custom_scoring") is False and "metric_weights" in yard:
+                    return {"custom_scoring": False, "weights": defaults, "defaults": defaults}
+
+        if (st.get("org", {}).get("id") == org_id or org_id == store.KEECH_ORG_ID) and st.get("org", {}).get("custom_scoring"):
+            mw = st.get("org", {}).get("metric_weights") or {}
+            w = dict(defaults)
+            for k in defaults:
+                if k in mw:
+                    try:
+                        w[k] = int(mw[k])
+                    except (ValueError, TypeError):
+                        pass
+            return {"custom_scoring": True, "weights": w, "defaults": defaults}
+    except Exception:
+        pass
+
+    # 2. Check SQLite database
     cs, weights = get_org_scoring_config(org_id)
     return {"custom_scoring": cs, "weights": weights, "defaults": defaults}
 
@@ -107,7 +139,7 @@ def update_scoring_settings(request: Request, body: dict[str, Any]) -> dict[str,
             yard["custom_scoring"] = custom_scoring
             yard["metric_weights"] = weights
 
-    if st.get("org", {}).get("id") == org_id:
+    if st.get("org", {}).get("id") == org_id or org_id == store.KEECH_ORG_ID:
         st["org"]["custom_scoring"] = custom_scoring
         st["org"]["metric_weights"] = weights
 
@@ -118,7 +150,7 @@ def update_scoring_settings(request: Request, body: dict[str, Any]) -> dict[str,
     updated_calls_db = []
 
     for c in st.get("calls", []):
-        c_org = c.get("org_id") or "org-keech-salvage"
+        c_org = c.get("org_id") or store.KEECH_ORG_ID
         if c_org == org_id:
             cid = c.get("id")
             m = full_calls.get(cid, {}).get("metrics") or c.get("metrics")
@@ -135,7 +167,7 @@ def update_scoring_settings(request: Request, body: dict[str, Any]) -> dict[str,
     # Persist in SQLite strictly isolated to this org_id
     try:
         with get_db() as conn:
-            conn.execute(
+            cur = conn.execute(
                 """
                 UPDATE orgs
                 SET custom_scoring = ?, metric_weights_json = ?
@@ -143,6 +175,14 @@ def update_scoring_settings(request: Request, body: dict[str, Any]) -> dict[str,
                 """,
                 (1 if custom_scoring else 0, json.dumps(weights), org_id),
             )
+            if cur.rowcount == 0:
+                conn.execute(
+                    """
+                    INSERT INTO orgs (id, name, yard_name, plan, status, webhook_token, custom_scoring, metric_weights_json, created_at)
+                    VALUES (?, ?, ?, 'enterprise', 'active', 'tok', ?, ?, ?)
+                    """,
+                    (org_id, "Keech's Auto Salvage", "Keech's Auto Salvage", 1 if custom_scoring else 0, json.dumps(weights), store.now_iso()),
+                )
             # Batch update recalculated call scores in SQLite
             if updated_calls_db:
                 conn.executemany(

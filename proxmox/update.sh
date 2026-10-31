@@ -37,6 +37,9 @@ git reset --hard origin/main
 echo -e "${YELLOW}--> Updating Python requirements...${NC}"
 "$APP_DIR/backend/.venv/bin/pip" install -U -r "$APP_DIR/backend/requirements.txt"
 
+echo -e "${YELLOW}--> Running database migrations...${NC}"
+"$APP_DIR/backend/.venv/bin/python" -c "import sys; sys.path.insert(0, '$APP_DIR/backend'); import database; database.init_schema()"
+
 echo -e "${YELLOW}--> Rebuilding Frontend distribution...${NC}"
 cd "$APP_DIR/frontend"
 npm install --legacy-peer-deps
@@ -44,7 +47,11 @@ npm run build
 mkdir -p "$APP_DIR/backend/static"
 cp -a "$APP_DIR/frontend/dist/." "$APP_DIR/backend/static/"
 
-echo -e "${YELLOW}--> Restarting systemd service...${NC}"
+echo -e "${YELLOW}--> Updating systemd service & restarting...${NC}"
+if [ -f "$APP_DIR/proxmox/salvage-pulse.service" ]; then
+  cp -f "$APP_DIR/proxmox/salvage-pulse.service" /etc/systemd/system/salvage-pulse.service
+  systemctl daemon-reload
+fi
 systemctl restart salvage-pulse.service
 
 echo -e "${GREEN}======================================================${NC}"

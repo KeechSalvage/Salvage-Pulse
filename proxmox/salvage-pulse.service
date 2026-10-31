@@ -15,7 +15,7 @@ LimitNOFILE=65536
 # Sandboxing & security hardening
 ProtectSystem=full
 PrivateTmp=true
-ReadWritePaths=/opt/salvage-pulse/backend/data /opt/salvage-pulse/backend/uploads
+ReadWritePaths=/opt/salvage-pulse/backend /opt/salvage-pulse/backend/data /opt/salvage-pulse/backend/uploads
 
 [Install]
 WantedBy=multi-user.target

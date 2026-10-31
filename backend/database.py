@@ -407,7 +407,39 @@ def get_org_scoring_config(org_id: Optional[str]) -> Tuple[bool, Dict[str, int]]
                                 weights[k] = int(mw[k])
                             except (ValueError, TypeError):
                                 pass
-                return cs, weights
+                if cs:
+                    return True, weights
+    except Exception:
+        pass
+
+    # Fallback to store state (preview_state.json) if SQLite has not yet synced or had an error
+    try:
+        import store
+        st = store.get_state()
+        for yard in st.get("admin_orgs", []):
+            if yard.get("id") == org_id:
+                if yard.get("custom_scoring"):
+                    mw = yard.get("metric_weights") or {}
+                    w = dict(defaults)
+                    for k in defaults:
+                        if k in mw:
+                            try:
+                                w[k] = int(mw[k])
+                            except (ValueError, TypeError):
+                                pass
+                    return True, w
+                return False, defaults
+
+        if (org_id in (store.KEECH_ORG_ID, "") or st.get("org", {}).get("id") == org_id) and st.get("org", {}).get("custom_scoring"):
+            mw = st.get("org", {}).get("metric_weights") or {}
+            w = dict(defaults)
+            for k in defaults:
+                if k in mw:
+                    try:
+                        w[k] = int(mw[k])
+                    except (ValueError, TypeError):
+                        pass
+            return True, w
     except Exception:
         pass
 
@@ -716,3 +748,14 @@ def init_schema():
             );
             """
         )
+
+        # Safe schema migrations for existing databases
+        try:
+            cursor = conn.execute("PRAGMA table_info(orgs)")
+            existing_cols = {r[1] for r in cursor.fetchall()}
+            if "custom_scoring" not in existing_cols:
+                conn.execute("ALTER TABLE orgs ADD COLUMN custom_scoring INTEGER NOT NULL DEFAULT 0")
+            if "metric_weights_json" not in existing_cols:
+                conn.execute("ALTER TABLE orgs ADD COLUMN metric_weights_json TEXT NOT NULL DEFAULT '{}'")
+        except Exception as e:
+            logger.warning(f"Schema migration warning for orgs table: {e}")
