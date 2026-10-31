@@ -92,6 +92,23 @@ export default function ScoringSettings() {
   const handleResetToDefaults = () => {
     setWeights(data.defaults);
     setErrorMessage(null);
+    updateMutation.mutate({
+      custom_scoring: false,
+      weights: data.defaults,
+    });
+  };
+
+  const handleToggleDefault = (checked: boolean) => {
+    if (!canEdit) return;
+    setUseDefault(checked);
+    setErrorMessage(null);
+    if (checked) {
+      // User switched Default ON -> instantly save default configuration to yard
+      updateMutation.mutate({
+        custom_scoring: false,
+        weights: data.defaults,
+      });
+    }
   };
 
   const handleSave = () => {
@@ -152,14 +169,8 @@ export default function ScoringSettings() {
               id="scoring-default-toggle"
               testId="scoring-default-toggle"
               checked={useDefault}
-              onCheckedChange={(checked) => {
-                if (!canEdit) return;
-                setUseDefault(checked);
-                if (checked) {
-                  setErrorMessage(null);
-                }
-              }}
-              disabled={!canEdit}
+              onCheckedChange={handleToggleDefault}
+              disabled={!canEdit || updateMutation.isPending}
             />
           </div>
         </div>
