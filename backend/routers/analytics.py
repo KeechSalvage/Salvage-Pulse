@@ -983,6 +983,7 @@ def post_arrival_text(aid: str, body: dict[str, Any], request: Request) -> dict[
 def post_arrival_callback_list(aid: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
+    org_id = u.get("org_id")
     arrival = next((a for a in st.get("arrivals", []) if a.get("id") == aid), None)
     if not arrival:
         raise HTTPException(status_code=404, detail="Arrival not found")
@@ -995,10 +996,46 @@ def post_arrival_callback_list(aid: str, body: dict[str, Any], request: Request)
 
     created_lists = []
     base_name = body.get("name") or f"{arrival.get('vehicle_year')} {arrival.get('vehicle_make')} {arrival.get('vehicle_model')} callers"
+    due_date = body.get("due_date") or ""
+    waiting_callers = [c for c in arrival.get("callers", []) if c.get("status") == "to_call" and c.get("last_call_id")]
+
+    # Index calls by call id for quick lookup
+    calls_by_id = {c["id"]: c for c in st.get("calls", []) if c.get("id")}
 
     for rid in rep_ids:
         lid = str(uuid.uuid4())
         rep = st["users_by_id"].get(rid, u)
+        
+        # Add each waiting caller to callbacks_open under this rep and list
+        items_added = 0
+        for caller in waiting_callers:
+            call_id = caller.get("last_call_id")
+            original_call = calls_by_id.get(call_id, {})
+            
+            cb_item = dict(original_call)
+            cb_item["id"] = f"cb_{uuid.uuid4().hex[:12]}"
+            cb_item["original_call_id"] = call_id
+            cb_item["org_id"] = org_id
+            cb_item["rep_id"] = rep["id"]
+            cb_item["rep_name"] = rep["name"]
+            cb_item["customer_name"] = caller.get("customer_name") or cb_item.get("customer_name", "Caller")
+            cb_item["customer_phone"] = caller.get("customer_phone") or cb_item.get("customer_phone", "+15551234567")
+            cb_item["vehicle"] = caller.get("vehicle") or f"{arrival.get('vehicle_year')} {arrival.get('vehicle_make')} {arrival.get('vehicle_model')}".strip()
+            cb_item["part_requested"] = (caller.get("parts") or ["Part"])[0] if isinstance(caller.get("parts"), list) and caller.get("parts") else cb_item.get("part_requested", "")
+            cb_item["reason"] = f"Vehicle Arrival: {arrival.get('vehicle_year')} {arrival.get('vehicle_make')} {arrival.get('vehicle_model')}"
+            cb_item["followed_up"] = False
+            cb_item["followed_up_at"] = None
+            cb_item["assigned_list_id"] = lid
+            cb_item["assigned_list_name"] = base_name
+            cb_item["assigned_by"] = u.get("name", "Manager")
+            cb_item["assigned_note"] = body.get("note") or f"Vehicle arrived in stock ({arrival.get('stock_number', '')})"
+            cb_item["list_due_date"] = due_date
+            cb_item["list_overdue"] = False
+            cb_item["arrival_id"] = aid
+            
+            st.setdefault("callbacks_open", []).insert(0, cb_item)
+            items_added += 1
+
         new_list = {
             "id": lid,
             "name": base_name,
@@ -1006,13 +1043,13 @@ def post_arrival_callback_list(aid: str, body: dict[str, Any], request: Request)
             "rep_name": rep["name"],
             "created_by": u.get("name", "Manager"),
             "created_at": store.now_iso(),
-            "open": len(arrival.get("callers", [])),
-            "total": len(arrival.get("callers", [])),
+            "open": items_added,
+            "total": items_added,
             "done": 0,
             "sold": 0,
             "revenue": 0.0,
             "arrival_id": aid,
-            "due_date": body.get("due_date") or "",
+            "due_date": due_date,
             "overdue": False,
         }
         st.setdefault("callback_lists", []).insert(0, new_list)
