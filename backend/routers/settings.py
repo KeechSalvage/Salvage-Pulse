@@ -8,7 +8,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from auth_utils import get_current_user
 import store
-from database import METRICS, get_db, get_org_scoring_config
+from database import METRICS, get_db, get_org_scoring_config, compute_weighted_overall_score
 
 router = APIRouter(tags=["settings"])
 
@@ -111,6 +111,25 @@ def update_scoring_settings(request: Request, body: dict[str, Any]) -> dict[str,
         st["org"]["custom_scoring"] = custom_scoring
         st["org"]["metric_weights"] = weights
 
+    # Recalculate existing calls scored for this yard
+    active_weights = weights if custom_scoring else defaults
+    full_calls = st.get("full_calls", {})
+    recalc_count = 0
+    updated_calls_db = []
+
+    for c in st.get("calls", []):
+        c_org = c.get("org_id") or "org-keech-salvage"
+        if c_org == org_id:
+            cid = c.get("id")
+            m = full_calls.get(cid, {}).get("metrics") or c.get("metrics")
+            if m and isinstance(m, dict):
+                new_score = compute_weighted_overall_score(m, custom_weights=active_weights)
+                c["overall_score"] = new_score
+                if cid in full_calls:
+                    full_calls[cid]["overall_score"] = new_score
+                updated_calls_db.append((new_score, cid))
+                recalc_count += 1
+
     store.save_state()
 
     # Persist in SQLite strictly isolated to this org_id
@@ -124,6 +143,12 @@ def update_scoring_settings(request: Request, body: dict[str, Any]) -> dict[str,
                 """,
                 (1 if custom_scoring else 0, json.dumps(weights), org_id),
             )
+            # Batch update recalculated call scores in SQLite
+            if updated_calls_db:
+                conn.executemany(
+                    "UPDATE calls SET overall_score = ? WHERE id = ?",
+                    updated_calls_db,
+                )
     except Exception as e:
         print(f"Error persisting scoring settings to SQLite: {e}")
 
@@ -133,6 +158,7 @@ def update_scoring_settings(request: Request, body: dict[str, Any]) -> dict[str,
         "weights": weights,
         "defaults": defaults,
         "metrics": METRICS,
+        "recalculated_calls": recalc_count,
     }
 
 

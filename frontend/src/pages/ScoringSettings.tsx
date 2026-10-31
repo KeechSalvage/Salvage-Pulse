@@ -33,7 +33,7 @@ export default function ScoringSettings() {
 
   const [useDefault, setUseDefault] = useState<boolean>(true);
   const [weights, setWeights] = useState<Record<string, number>>({});
-  const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -45,13 +45,20 @@ export default function ScoringSettings() {
 
   const updateMutation = useMutation({
     mutationFn: (body: { custom_scoring: boolean; weights: Record<string, number> }) =>
-      apiPut<ScoringSettings>("/settings/scoring", body),
+      apiPut<ScoringSettings & { recalculated_calls?: number }>("/settings/scoring", body),
     onSuccess: (updated) => {
       queryClient.setQueryData(["scoring-settings"], updated);
       queryClient.invalidateQueries({ queryKey: ["meta"] });
-      setSaveSuccess(true);
+      queryClient.invalidateQueries({ queryKey: ["calls"] });
+      queryClient.invalidateQueries({ queryKey: ["analytics"] });
+      const count = updated.recalculated_calls ?? 0;
+      setSaveSuccess(
+        count > 0
+          ? `Scoring weights saved! Successfully recalculated overall scores for all ${count} calls in your yard.`
+          : "Scoring weights successfully updated and saved for your yard!"
+      );
       setErrorMessage(null);
-      setTimeout(() => setSaveSuccess(false), 3500);
+      setTimeout(() => setSaveSuccess(null), 4500);
     },
     onError: (err: any) => {
       setErrorMessage(err?.body?.detail || err?.message || "Failed to save scoring weights");
@@ -320,7 +327,7 @@ export default function ScoringSettings() {
       {saveSuccess && (
         <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-300">
           <CheckCircle2 className="size-4 shrink-0 text-emerald-400" />
-          <span>Scoring weights successfully updated and saved for your yard!</span>
+          <span>{saveSuccess}</span>
         </div>
       )}
 

@@ -366,8 +366,13 @@ def infer_vehicle_body(make: Optional[str], model: Optional[str]) -> str:
 
 def compute_weighted_overall_score(metrics: Dict[str, Any], custom_weights: Optional[Dict[str, float]] = None) -> int:
     total = 0.0
+    # Normalize courtesy vs tone_empathy if needed
+    m_dict = dict(metrics) if metrics else {}
+    if "courtesy" not in m_dict and "tone_empathy" in m_dict:
+        m_dict["courtesy"] = m_dict["tone_empathy"]
+
     for m in METRICS:
-        val = float(metrics.get(m["key"], 0) or 0)
+        val = float(m_dict.get(m["key"], 0) or 0)
         # Normalize metric score: if 0-10 scale, convert to 0-100; if already 0-100, use as is
         val_pct = val * 10.0 if val <= 10.0 else val
         val_pct = max(0.0, min(100.0, val_pct))
