@@ -382,22 +382,45 @@ def get_parts_seasonal(request: Request) -> dict[str, Any]:
 
 
 @router.get("/api/analytics/vehicles")
-def get_vehicles(request: Request, rank: str = Query("calls")) -> dict[str, Any]:
+def get_vehicles(
+    request: Request,
+    rank: str = Query("calls"),
+    body: Optional[str] = Query(None),
+) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
     org_id = u.get("org_id")
     if org_id == store.KEECH_ORG_ID:
-        return st["seed"].get("/analytics/vehicles?rank=calls", {})
-    return {"vehicles": [], "makes": [], "models": []}
+        base = st["seed"].get("/analytics/vehicles?rank=calls", {})
+        if not body or body == "all":
+            return base
+
+        res = copy.deepcopy(base)
+        models = [m for m in res.get("models", []) if m.get("body_type") == body]
+        res["models"] = models
+
+        # Filter makes to only those that have models matching this body style
+        allowed_makes = set(m["make"] for m in models)
+        makes = [mk for mk in res.get("makes", []) if mk.get("make") in allowed_makes]
+        res["makes"] = makes
+        return res
+    return {"vehicles": [], "makes": [], "models": [], "body_counts": {}, "tracked_calls": 0, "total_calls": 0}
 
 
 @router.get("/api/analytics/lost-vehicles")
-def get_lost_vehicles(request: Request, rank: str = Query("calls")) -> list[dict[str, Any]]:
+def get_lost_vehicles(
+    request: Request,
+    rank: str = Query("calls"),
+    body: Optional[str] = Query(None),
+) -> list[dict[str, Any]]:
     st = store.get_state()
     u = get_current_user(request)
     org_id = u.get("org_id")
     if org_id == store.KEECH_ORG_ID:
-        return st["seed"].get("/analytics/lost-vehicles?rank=calls", [])
+        base_lost = st["seed"].get("/analytics/lost-vehicles?rank=calls", [])
+        if not body or body == "all":
+            return base_lost
+        return [lv for lv in base_lost if lv.get("body_type") == body]
     return []
 
 
