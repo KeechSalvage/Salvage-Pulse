@@ -144,10 +144,13 @@ for i in {1..30}; do
 done
 
 # 6. Execute Provisioning inside Container
+echo -e "\n${YELLOW}--> Preparing container and installing core prerequisites...${NC}"
+pct exec "$CT_ID" -- bash -c "apt-get update -y && apt-get install -y curl ca-certificates"
+
 echo -e "\n${YELLOW}--> Running Salvage Pulse installer inside container...${NC}"
 INSTALLER_URL="https://raw.githubusercontent.com/KeechSalvage/Salvage-Pulse/main/proxmox/build-lxc.sh"
 
-pct exec "$CT_ID" -- env GEMINI_API_KEY="$GEMINI_KEY" bash -c "$(curl -fsSL "$INSTALLER_URL")"
+pct exec "$CT_ID" -- env GEMINI_API_KEY="$GEMINI_KEY" bash -c "curl -fsSL '$INSTALLER_URL' | bash"
 
 # 7. Retrieve IP Address
 CT_IP=$(pct exec "$CT_ID" -- hostname -I 2>/dev/null | awk '{print $1}' || echo "UNKNOWN")
