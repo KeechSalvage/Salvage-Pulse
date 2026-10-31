@@ -147,8 +147,13 @@ def get_analytics_overview(
         except ValueError:
             pass
         for k, v in (st.get("full_calls", {}).get(c.get("id"), {}).get("metrics") or {}).items():
+            val = float(v)
+            if 0 < val <= 10:
+                val *= 10
             if k in metric_vals:
-                metric_vals[k].append(v)
+                metric_vals[k].append(val)
+            elif k == "courtesy" and "tone_empathy" in metric_vals:
+                metric_vals["tone_empathy"].append(val)
     base["category_breakdown"] = [
         {"category": k, "count": len(v), "avg_score": round(sum(v) / len(v), 1)} for k, v in cat_counts.items()
     ]
@@ -240,8 +245,13 @@ def get_team_benchmark(request: Request) -> dict[str, Any]:
     metric_vals: dict[str, list[float]] = {k: [] for k, _ in METRIC_NAMES}
     for c in calls:
         for k, v in (st.get("full_calls", {}).get(c.get("id"), {}).get("metrics") or {}).items():
+            val = float(v)
+            if 0 < val <= 10:
+                val *= 10
             if k in metric_vals:
-                metric_vals[k].append(v)
+                metric_vals[k].append(val)
+            elif k == "courtesy" and "tone_empathy" in metric_vals:
+                metric_vals["tone_empathy"].append(val)
     return {
         "avg_score": s["avg_score"], "conversion_rate": s["conversion_rate"],
         "warranty_pitch_rate": s["warranty_pitch_rate"],

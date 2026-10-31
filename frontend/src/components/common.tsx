@@ -138,8 +138,11 @@ export function MetricBars({
   return (
     <div className="space-y-3.5">
       {defs.map((d, i) => {
-        const v = metrics[d.key] ?? 0;
-        const t = scoreTier(v * 10);
+        // Fallback for key synonyms (e.g. courtesy vs tone_empathy)
+        const raw = metrics[d.key] ?? (d.key === "courtesy" ? metrics.tone_empathy : undefined) ?? 0;
+        // Normalize: if recorded on a 0-10 scale, scale to 0-100 so all metrics are out of 100
+        const v = raw <= 10 && raw > 0 ? Math.round(raw * 10) : Math.round(raw);
+        const t = scoreTier(v);
         return (
           <div key={d.key} title={d.description}>
             <div className="mb-1.5 flex items-center justify-between text-sm">
@@ -147,7 +150,7 @@ export function MetricBars({
                 {d.name} <span className="font-mono text-[11px] text-slate-500">· {d.weight}%</span>
               </span>
               <span data-testid={`${testPrefix}-${d.key}`} className="font-mono tabular-nums" style={{ color: t.color }}>
-                {v}/10
+                {v}/100
               </span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
@@ -155,7 +158,7 @@ export function MetricBars({
                 className="h-full rounded-full"
                 style={{ backgroundColor: t.color }}
                 initial={{ width: 0 }}
-                animate={{ width: `${v * 10}%` }}
+                animate={{ width: `${Math.min(100, Math.max(0, v))}%` }}
                 transition={{ duration: 0.6, delay: i * 0.05, ease: "easeOut" }}
               />
             </div>

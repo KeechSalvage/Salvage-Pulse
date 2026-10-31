@@ -523,8 +523,15 @@ def build_overview_analytics(conn: Any, org_id: str, rep_id: Optional[str] = Non
     for c in scored_calls_list:
         mdata = json.loads(c["metrics_json"] or "{}")
         for mdef in METRICS:
-            if mdef["key"] in mdata:
-                metric_totals[mdef["key"]].append(float(mdata[mdef["key"]]))
+            val = mdata.get(mdef["key"])
+            if val is None and mdef["key"] == "courtesy":
+                val = mdata.get("tone_empathy")
+            if val is not None:
+                f_val = float(val)
+                # Normalize legacy single-digit metrics to 0-100 scale
+                if 0 < f_val <= 10:
+                    f_val *= 10
+                metric_totals[mdef["key"]].append(f_val)
     metric_averages = [
         {
             "key": mdef["key"],
