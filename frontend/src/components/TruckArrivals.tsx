@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { PhoneCall, Trash2, Truck } from "lucide-react";
+import { CheckSquare, PhoneCall, Trash2, Truck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,9 @@ import TextBlastDialog from "@/components/TextBlastDialog";
 import { SaleForm } from "@/components/SaleFields";
 import ArrivalListPrompt from "@/components/ArrivalListPrompt";
 import { rankStat } from "@/components/VehicleRankToggle";
+import { useMe } from "@/lib/hooks";
 import type { Arrival, ArrivalCallerUpdate, ArrivalCostUpdate, ArrivalCreate, ArrivalStatus, VehicleOptions, VehicleRank } from "@/lib/types";
+import { canManageInventory } from "@/lib/types";
 
 const STATUSES: { v: ArrivalStatus; label: string; cls: string }[] = [
   { v: "called", label: "Called", cls: "border-sky-500/50 text-sky-300 bg-sky-500/10" },
@@ -169,14 +171,54 @@ function ArrivalPayoff({ arrivals }: { arrivals: Arrival[] }) {
 /** Vehicle arrivals: log a vehicle that just came in and work the list of everyone who asked about one (±2 model years). */
 export default function TruckArrivals({ isManager, rank = "calls" }: { isManager: boolean; rank?: VehicleRank }) {
   const qc = useQueryClient();
+  const { data: me } = useMe();
+  const canManage = canManageInventory(me?.role);
+
   const { data } = useQuery({ queryKey: ["arrivals"], queryFn: () => apiGet<Arrival[]>("/arrivals") });
   const [selId, setSelId] = useState<string | null>(null);
   const [selling, setSelling] = useState<string | null>(null);
   const [prompt, setPrompt] = useState<Arrival | null>(null);
   const [stockQ, setStockQ] = useState("");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [viewCategory, setViewCategory] = useState<"newly_arrived" | "all">("newly_arrived");
+
   const q = stockQ.trim().toLowerCase();
-  const shownArrivals = (data ?? []).filter((a) => !q || a.stock_number.toLowerCase().includes(q) || `${a.vehicle_year} ${a.vehicle_make} ${a.vehicle_model}`.toLowerCase().includes(q));
-  const sel = data?.find((a) => a.id === selId) ?? data?.[0];
+  const newlyArrivedVehicles = (data ?? []).filter((a) => !a.inventory_status || a.inventory_status === "newly_arrived");
+  const baseArrivals = viewCategory === "newly_arrived" ? newlyArrivedVehicles : (data ?? []);
+
+  const shownArrivals = baseArrivals.filter(
+    (a) => !q || a.stock_number.toLowerCase().includes(q) || `${a.vehicle_year} ${a.vehicle_make} ${a.vehicle_model}`.toLowerCase().includes(q),
+  );
+
+  const sel = shownArrivals.find((a) => a.id === selId) ?? shownArrivals[0] ?? (data?.find((a) => a.id === selId) ?? data?.[0]);
+
+  const checkInMutation = useMutation({
+    mutationFn: (ids: string[]) => apiPost<{ ok: boolean; count: number }>("/arrivals/check-in", { ids }),
+    onSuccess: (res) => {
+      toast.success(`${res.count} vehicle${res.count === 1 ? "" : "s"} checked in to Yard Inventory.`);
+      setSelectedIds([]);
+      qc.invalidateQueries({ queryKey: ["arrivals"] });
+    },
+    onError: (e) => toast.error(errorMessage(e, "Check-in failed")),
+  });
+
+  const allShownSelected =
+    shownArrivals.length > 0 && shownArrivals.every((a) => selectedIds.includes(a.id));
+
+  const toggleSelectAll = () => {
+    if (allShownSelected) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(shownArrivals.map((a) => a.id));
+    }
+  };
+
+  const toggleSelectOne = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    );
+  };
+
   const mark = useMutation({
     mutationFn: ({ a, key, ...b }: ArrivalCallerUpdate & { a: string; key: string }) =>
       apiPatch<Arrival>(`/arrivals/${a}/callers/${encodeURIComponent(key)}`, b satisfies ArrivalCallerUpdate),
@@ -188,6 +230,7 @@ export default function TruckArrivals({ isManager, rank = "calls" }: { isManager
     },
     onError: (e) => toast.error(errorMessage(e)),
   });
+
   const remove = useMutation({
     mutationFn: (id: string) => apiDelete(`/arrivals/${id}`),
     onSuccess: () => {
@@ -199,13 +242,35 @@ export default function TruckArrivals({ isManager, rank = "calls" }: { isManager
 
   return (
     <Panel testId="vehicle-arrivals-panel">
-      <div className="flex items-center gap-2">
-        <Truck className="size-4 text-amber-300" />
-        <Overline>Vehicle arrivals</Overline>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Truck className="size-4 text-amber-300" />
+          <Overline>Newly Arrived Vehicles</Overline>
+          <span
+            data-testid="newly-arrived-count"
+            className="rounded bg-amber-500/15 px-2 py-0.5 font-mono text-[11px] font-semibold text-amber-300 ring-1 ring-amber-500/30"
+          >
+            {newlyArrivedVehicles.length} incoming
+          </span>
+        </div>
+
+        {canManage && (
+          <Button
+            size="sm"
+            data-testid="arrival-check-in-btn"
+            disabled={selectedIds.length === 0 || checkInMutation.isPending}
+            onClick={() => checkInMutation.mutate(selectedIds)}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium gap-1.5 h-8 text-xs"
+          >
+            <CheckSquare className="size-4" />
+            Check In {selectedIds.length > 0 ? `(${selectedIds.length})` : ""}
+          </Button>
+        )}
       </div>
+
       <p className="mt-1 text-xs text-slate-500">
         {isManager
-          ? "Just got a vehicle in? Log it and get a ready-to-call list of everyone who asked about one (±2 model years). Each rep sees the callers they spoke with."
+          ? "Cars in the newly arrived category. Select vehicles and click 'Check In' to move them into Yard Inventory."
           : "Vehicles that just came in, and the callers you spoke with who asked about one. Call them and mark how it went."}
       </p>
       {isManager && <NewArrival rank={rank} onCreated={(a) => (qc.invalidateQueries({ queryKey: ["arrivals"] }), setSelId(a.id), setPrompt(a))} />}
@@ -220,43 +285,114 @@ export default function TruckArrivals({ isManager, rank = "calls" }: { isManager
       {!data?.length ? (
         <p className="mt-5 text-sm text-slate-500" data-testid="arrivals-empty">{isManager ? "No arrivals logged yet." : "No callers for you on recent arrivals."}</p>
       ) : (
-        <div className="mt-5 grid gap-5 lg:grid-cols-[260px_1fr]">
+        <div className="mt-5 grid gap-5 lg:grid-cols-[280px_1fr]">
           <div className="space-y-2">
-          <Input data-testid="arrival-stock-search" value={stockQ} onChange={(e) => setStockQ(e.target.value)} placeholder="Search stock # or vehicle" className="h-9" />
-          {q && !shownArrivals.length && <p data-testid="arrival-search-empty" className="text-xs text-slate-500">No arrival with stock # “{stockQ}”.</p>}
-          <ul className="space-y-2" data-testid="arrivals-list">
-            {shownArrivals.map((a) => {
-              const done = a.callers.filter((c) => c.status !== "to_call").length;
-              return (
-                <li key={a.id}>
-                  <button
-                    data-testid={`arrival-${a.id}`}
-                    onClick={() => setSelId(a.id)}
-                    className={cn(
-                      "w-full rounded-lg border px-3 py-2.5 text-left transition-colors duration-150",
-                      sel?.id === a.id ? "border-amber-500/60 bg-amber-500/10" : "border-border bg-surface hover:border-slate-500",
+            <div className="flex items-center justify-between gap-1 border-b border-border/60 pb-2">
+              <div className="flex items-center gap-1 font-mono text-[11px]">
+                <button
+                  type="button"
+                  data-testid="tab-newly-arrived"
+                  onClick={() => setViewCategory("newly_arrived")}
+                  className={cn(
+                    "rounded px-2 py-0.5 transition-colors",
+                    viewCategory === "newly_arrived"
+                      ? "bg-amber-500/20 text-amber-300 font-semibold"
+                      : "text-slate-400 hover:text-white",
+                  )}
+                >
+                  Newly Arrived ({newlyArrivedVehicles.length})
+                </button>
+                <button
+                  type="button"
+                  data-testid="tab-all-arrivals"
+                  onClick={() => setViewCategory("all")}
+                  className={cn(
+                    "rounded px-2 py-0.5 transition-colors",
+                    viewCategory === "all"
+                      ? "bg-amber-500/20 text-amber-300 font-semibold"
+                      : "text-slate-400 hover:text-white",
+                  )}
+                >
+                  All ({data?.length ?? 0})
+                </button>
+              </div>
+
+              {canManage && shownArrivals.length > 0 && (
+                <label className="flex items-center gap-1.5 cursor-pointer text-xs text-slate-400">
+                  <input
+                    type="checkbox"
+                    data-testid="arrival-select-all"
+                    checked={allShownSelected}
+                    onChange={toggleSelectAll}
+                    className="size-3.5 rounded border-border text-emerald-500 focus:ring-emerald-500"
+                  />
+                  <span className="font-mono text-[10px]">Select all</span>
+                </label>
+              )}
+            </div>
+
+            <Input data-testid="arrival-stock-search" value={stockQ} onChange={(e) => setStockQ(e.target.value)} placeholder="Search stock # or vehicle" className="h-9" />
+            {q && !shownArrivals.length && <p data-testid="arrival-search-empty" className="text-xs text-slate-500">No arrival with stock # “{stockQ}”.</p>}
+            <ul className="space-y-2" data-testid="arrivals-list">
+              {shownArrivals.map((a) => {
+                const done = a.callers.filter((c) => c.status !== "to_call").length;
+                const isSelected = selectedIds.includes(a.id);
+                return (
+                  <li key={a.id} className="flex items-center gap-2">
+                    {canManage && (!a.inventory_status || a.inventory_status === "newly_arrived") && (
+                      <input
+                        type="checkbox"
+                        data-testid={`arrival-checkbox-${a.id}`}
+                        checked={isSelected}
+                        onChange={() => toggleSelectOne(a.id)}
+                        className="size-4 rounded border-border text-emerald-500 focus:ring-emerald-500 shrink-0"
+                      />
                     )}
-                  >
-                    <p className="font-medium text-white">{a.vehicle_year} {a.vehicle_make} {a.vehicle_model}{a.stock_number && <span className="ml-2 font-mono text-[11px] text-amber-200/80">#{a.stock_number}</span>}</p>
-                    <p className="font-mono text-[11px] text-slate-500">
-                      {new Date(a.created_at).toLocaleDateString()} · {done}/{a.callers.length} called{a.cost != null ? ` · ${fmtMoney(a.cost)}` : ""}
-                    </p>
-                    {a.results && (a.results.sold + a.results.orders + a.results.replied > 0) && (
-                      <p className="font-mono text-[11px] text-emerald-300/90">
-                        {a.results.sold} sold · {a.results.orders} orders · {a.results.replied} replied
+                    <button
+                      data-testid={`arrival-${a.id}`}
+                      onClick={() => setSelId(a.id)}
+                      className={cn(
+                        "w-full flex-1 rounded-lg border px-3 py-2.5 text-left transition-colors duration-150",
+                        sel?.id === a.id ? "border-amber-500/60 bg-amber-500/10" : "border-border bg-surface hover:border-slate-500",
+                        isSelected && "ring-1 ring-emerald-500/50",
+                      )}
+                    >
+                      <div className="flex items-center justify-between">
+                        <p className="font-medium text-white">{a.vehicle_year} {a.vehicle_make} {a.vehicle_model}{a.stock_number && <span className="ml-2 font-mono text-[11px] text-amber-200/80">#{a.stock_number}</span>}</p>
+                        {a.inventory_status === "yard_inventory" && (
+                          <span className="rounded bg-emerald-500/15 px-1.5 py-0.2 font-mono text-[9px] text-emerald-300 ring-1 ring-emerald-500/30">In Yard</span>
+                        )}
+                        {a.inventory_status === "to_be_crushed" && (
+                          <span className="rounded bg-rose-500/15 px-1.5 py-0.2 font-mono text-[9px] text-rose-300 ring-1 ring-rose-500/30">Crush Queue</span>
+                        )}
+                      </div>
+                      <p className="font-mono text-[11px] text-slate-500">
+                        {new Date(a.created_at).toLocaleDateString()} · {done}/{a.callers.length} called{a.cost != null ? ` · ${fmtMoney(a.cost)}` : ""}
                       </p>
-                    )}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+                      {a.results && (a.results.sold + a.results.orders + a.results.replied > 0) && (
+                        <p className="font-mono text-[11px] text-emerald-300/90">
+                          {a.results.sold} sold · {a.results.orders} orders · {a.results.replied} replied
+                        </p>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
           {sel && (
             <div data-testid="arrival-detail">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h3 className="font-heading text-xl font-bold text-white">{sel.vehicle_year} {sel.vehicle_make} {sel.vehicle_model}</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-heading text-xl font-bold text-white">{sel.vehicle_year} {sel.vehicle_make} {sel.vehicle_model}</h3>
+                    {sel.inventory_status === "yard_inventory" && (
+                      <span className="rounded bg-emerald-500/15 px-2 py-0.5 font-mono text-xs text-emerald-300 ring-1 ring-emerald-500/30">Yard Inventory</span>
+                    )}
+                    {sel.inventory_status === "to_be_crushed" && (
+                      <span className="rounded bg-rose-500/15 px-2 py-0.5 font-mono text-xs text-rose-300 ring-1 ring-rose-500/30">Crush Queue</span>
+                    )}
+                  </div>
                   <p className="text-xs text-slate-500">
                     {sel.stock_number && <span data-testid="arrival-stock-number" className="font-mono text-amber-200">Stock #{sel.stock_number} · </span>}
                     {sel.note && <span className="text-slate-300">{sel.note} · </span>}
@@ -292,12 +428,26 @@ export default function TruckArrivals({ isManager, rank = "calls" }: { isManager
                     </p>
                   )}
                 </div>
-                {isManager && <TextBlastDialog arrival={sel} />}
-                {isManager && (
-                  <Button variant="ghost" size="sm" data-testid="arrival-delete-button" onClick={() => window.confirm("Delete this arrival and its call list?") && remove.mutate(sel.id)}>
-                    <Trash2 className="size-4" /> Delete
-                  </Button>
-                )}
+                <div className="flex items-center gap-2">
+                  {canManage && (!sel.inventory_status || sel.inventory_status === "newly_arrived") && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      data-testid="detail-check-in-btn"
+                      disabled={checkInMutation.isPending}
+                      onClick={() => checkInMutation.mutate([sel.id])}
+                      className="border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10 gap-1.5 text-xs h-8"
+                    >
+                      <CheckSquare className="size-3.5" /> Check In
+                    </Button>
+                  )}
+                  {isManager && <TextBlastDialog arrival={sel} />}
+                  {isManager && (
+                    <Button variant="ghost" size="sm" data-testid="arrival-delete-button" onClick={() => window.confirm("Delete this arrival and its call list?") && remove.mutate(sel.id)}>
+                      <Trash2 className="size-4" /> Delete
+                    </Button>
+                  )}
+                </div>
               </div>
               <ul className="mt-3 divide-y divide-border">
                 {sel.callers.map((c) => (

@@ -58,7 +58,7 @@ const yardManagerNav = [
   { to: "/calls", label: "Call Library", icon: PhoneIncoming, id: "calls" },
   { to: "/callbacks", label: "Callbacks", icon: PhoneMissed, id: "callbacks" },
   { to: "/team", label: "Reps", icon: Users, id: "team" },
-  { to: "/vehicles", label: "Vehicles", icon: Car, id: "vehicles" },
+  { to: "/vehicles", label: "Vehicles & Stock", icon: Car, id: "vehicles" },
   { to: "/tag-vehicles", label: "Tag Vehicles", icon: CarFront, id: "tag-vehicles" },
   { to: "/reports", label: "Reports", icon: FileBarChart, id: "reports" },
   { to: "/leaderboards", label: "Leaderboards", icon: Trophy, id: "leaderboards" },

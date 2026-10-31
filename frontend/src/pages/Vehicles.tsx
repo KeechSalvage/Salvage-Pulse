@@ -7,6 +7,8 @@ import VehicleRankToggle from "@/components/VehicleRankToggle";
 import PremiumGate from "@/components/PremiumGate";
 import StockAlerts from "@/components/StockAlerts";
 import TruckArrivals from "@/components/TruckArrivals";
+import YardInventory from "@/components/YardInventory";
+import CrushQueue from "@/components/CrushQueue";
 import TruckLeaderboard from "@/components/TruckLeaderboard";
 import VehicleDemandPanel from "@/components/VehicleDemand";
 import WatchlistPanel from "@/components/Watchlist";
@@ -14,14 +16,14 @@ import { useMe } from "@/lib/hooks";
 import type { VehicleRank } from "@/lib/types";
 import { isManagerLike } from "@/lib/types";
 
-/** Vehicles tab: vehicle arrivals for everyone; demand, didn't-buy, stock alerts and the watchlist for managers. */
+/** Vehicles & Stock tab: vehicle arrivals, yard inventory, crushing queue, demand & watchlist. */
 export default function Vehicles() {
   const { data: me } = useMe();
   const isManager = isManagerLike(me?.role);
   const [rank, setRank] = useState<VehicleRank>("calls");
   return (
     <>
-      <PageHeader overline="Yard inventory" title={isManager ? "Vehicles & inventory" : "Vehicle arrivals"}>
+      <PageHeader overline="Yard inventory & stock" title={isManager ? "Vehicles & Stock" : "Vehicle arrivals"}>
         {me?.role !== "inventory_manager" && (
           <Link to="/tag-vehicles" data-testid="vehicles-tag-link" className="flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-slate-200 transition-colors duration-150 hover:border-amber-500/60 hover:text-white">
             <CarFront className="size-4 text-amber-300" /> Tag calls with no vehicle
@@ -36,9 +38,11 @@ export default function Vehicles() {
         tiles={[
           ...(isManager ? [{ id: "stock-alerts", label: "Stock alerts", span: "xl:col-span-12", node: <PremiumGate feature="trend_alerts" hidden><StockAlerts rank={rank} /></PremiumGate> }] : []),
           { id: "truck-leaderboard", label: "Vehicle-sales leaderboard", span: "xl:col-span-12", node: <PremiumGate feature="leaderboards" hidden><TruckLeaderboard /></PremiumGate> },
-          { id: "arrivals", label: "Vehicle arrivals", span: "xl:col-span-12", node: <PremiumGate feature="vehicle_arrivals"><TruckArrivals isManager={isManager} rank={rank} /></PremiumGate> },
+          { id: "arrivals", label: "Newly arrived vehicles", span: "xl:col-span-12", node: <PremiumGate feature="vehicle_arrivals"><TruckArrivals isManager={isManager} rank={rank} /></PremiumGate> },
           ...(isManager
             ? [
+                { id: "yard-inventory", label: "Yard inventory", span: "xl:col-span-12", node: <PremiumGate feature="vehicle_arrivals"><YardInventory isManager={isManager} /></PremiumGate> },
+                { id: "to-be-crushed", label: "To be crushed", span: "xl:col-span-12", node: <PremiumGate feature="vehicle_arrivals"><CrushQueue isManager={isManager} /></PremiumGate> },
                 { id: "vehicle-demand", label: "Vehicle demand", span: "xl:col-span-12", node: <PremiumGate feature="inventory_insights"><VehicleDemandPanel rank={rank} /></PremiumGate> },
                 { id: "watchlist", label: "Watchlist", span: "xl:col-span-12", node: <PremiumGate feature="inventory_insights" hidden><WatchlistPanel rank={rank} /></PremiumGate> },
               ]

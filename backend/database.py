@@ -648,6 +648,14 @@ def init_schema():
                 vehicle_model TEXT NOT NULL,
                 year_span INTEGER NOT NULL DEFAULT 2,
                 note TEXT NOT NULL DEFAULT '',
+                stock_number TEXT NOT NULL DEFAULT '',
+                cost REAL,
+                inventory_status TEXT NOT NULL DEFAULT 'newly_arrived',
+                checked_in_at TEXT,
+                checked_in_by TEXT,
+                queued_for_crush_at TEXT,
+                days_until_crushed INTEGER,
+                crush_deadline TEXT,
                 created_by TEXT NOT NULL,
                 blasts_json TEXT NOT NULL DEFAULT '[]',
                 created_at TEXT NOT NULL
@@ -757,5 +765,25 @@ def init_schema():
                 conn.execute("ALTER TABLE orgs ADD COLUMN custom_scoring INTEGER NOT NULL DEFAULT 0")
             if "metric_weights_json" not in existing_cols:
                 conn.execute("ALTER TABLE orgs ADD COLUMN metric_weights_json TEXT NOT NULL DEFAULT '{}'")
+
+            # Safe migrations for arrivals table
+            cursor = conn.execute("PRAGMA table_info(arrivals)")
+            arr_cols = {r[1] for r in cursor.fetchall()}
+            if "stock_number" not in arr_cols:
+                conn.execute("ALTER TABLE arrivals ADD COLUMN stock_number TEXT NOT NULL DEFAULT ''")
+            if "cost" not in arr_cols:
+                conn.execute("ALTER TABLE arrivals ADD COLUMN cost REAL")
+            if "inventory_status" not in arr_cols:
+                conn.execute("ALTER TABLE arrivals ADD COLUMN inventory_status TEXT NOT NULL DEFAULT 'newly_arrived'")
+            if "checked_in_at" not in arr_cols:
+                conn.execute("ALTER TABLE arrivals ADD COLUMN checked_in_at TEXT")
+            if "checked_in_by" not in arr_cols:
+                conn.execute("ALTER TABLE arrivals ADD COLUMN checked_in_by TEXT")
+            if "queued_for_crush_at" not in arr_cols:
+                conn.execute("ALTER TABLE arrivals ADD COLUMN queued_for_crush_at TEXT")
+            if "days_until_crushed" not in arr_cols:
+                conn.execute("ALTER TABLE arrivals ADD COLUMN days_until_crushed INTEGER")
+            if "crush_deadline" not in arr_cols:
+                conn.execute("ALTER TABLE arrivals ADD COLUMN crush_deadline TEXT")
         except Exception as e:
-            logger.warning(f"Schema migration warning for orgs table: {e}")
+            logger.warning(f"Schema migration warning: {e}")

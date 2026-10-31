@@ -131,10 +131,45 @@ def sync_store_to_sql():
                 created_at,
             ))
 
+        # Sync Arrivals
+        arrivals = st.get("arrivals", [])
+        for a in arrivals:
+            aid = a.get("id")
+            if not aid:
+                continue
+            conn.execute("""
+                INSERT OR REPLACE INTO arrivals (
+                    id, org_id, vehicle_year, vehicle_make, vehicle_model, year_span,
+                    note, stock_number, cost, inventory_status, checked_in_at, checked_in_by,
+                    queued_for_crush_at, days_until_crushed, crush_deadline, created_by,
+                    blasts_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                aid,
+                a.get("org_id") or org_id,
+                int(a.get("vehicle_year") or 2018),
+                a.get("vehicle_make") or "",
+                a.get("vehicle_model") or "",
+                int(a.get("year_span") or 2),
+                a.get("note") or "",
+                a.get("stock_number") or "",
+                a.get("cost"),
+                a.get("inventory_status") or "newly_arrived",
+                a.get("checked_in_at"),
+                a.get("checked_in_by"),
+                a.get("queued_for_crush_at"),
+                a.get("days_until_crushed"),
+                a.get("crush_deadline"),
+                a.get("created_by") or "Manager",
+                json.dumps(a.get("blasts") or []),
+                a.get("created_at") or store.now_iso(),
+            ))
+
         org_cnt = conn.execute("SELECT count(*) FROM orgs").fetchone()[0]
         user_cnt = conn.execute("SELECT count(*) FROM users").fetchone()[0]
         call_cnt = conn.execute("SELECT count(*) FROM calls").fetchone()[0]
-        print(f"SQL Database synced: {org_cnt} orgs, {user_cnt} users, {call_cnt} calls.")
+        arr_cnt = conn.execute("SELECT count(*) FROM arrivals").fetchone()[0]
+        print(f"SQL Database synced: {org_cnt} orgs, {user_cnt} users, {call_cnt} calls, {arr_cnt} arrivals.")
 
 if __name__ == "__main__":
     sync_store_to_sql()

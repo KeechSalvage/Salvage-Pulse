@@ -53,7 +53,11 @@ export function isSalesManager(role?: string): boolean {
 }
 
 export function isInventoryManager(role?: string): boolean {
-  return role === "inventory_manager" || role === "owner" || role === "manager";
+  return role === "inventory_manager" || role === "owner" || role === "manager" || role === "master" || role === "admin";
+}
+
+export function canManageInventory(role?: string): boolean {
+  return role === "owner" || role === "inventory_manager" || role === "master" || role === "admin";
 }
 
 export function isRep(role?: string): boolean {
@@ -1665,6 +1669,8 @@ export interface TruckLeaderboard {
   month: string;
   leaders: TruckLeader[];
 }
+export type InventoryStatus = "newly_arrived" | "yard_inventory" | "to_be_crushed";
+
 export interface Arrival {
   id: string;
   vehicle_year: number;
@@ -1677,6 +1683,13 @@ export interface Arrival {
   callback_list_id: string; // set once its waiting callers became a callback list
   created_by: string;
   created_at: string;
+  inventory_status?: InventoryStatus;
+  checked_in_at?: string | null;
+  checked_in_by?: string | null;
+  queued_for_crush_at?: string | null;
+  days_until_crushed?: number | null;
+  crush_deadline?: string | null;
+  days_remaining?: number | null;
   callers: ArrivalCaller[];
   blasts: ArrivalBlast[];
   results: ArrivalResults | null;

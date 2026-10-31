@@ -839,16 +839,61 @@ def get_keyword_calls(kid: str, month: Optional[str] = Query(None)) -> list[dict
     return st.get("calls", [])[:15]
 
 
-# Arrivals
+# Arrivals & Yard Inventory Lifecycle
+def require_inventory_permission(user: dict[str, Any]) -> None:
+    role = user.get("role", "")
+    if role not in ("owner", "inventory_manager", "master", "admin"):
+        raise HTTPException(
+            status_code=403,
+            detail="Only Owners and Inventory Managers can manage yard inventory and crushing queues.",
+        )
+
+
 @router.get("/api/arrivals")
 def get_arrivals(request: Request) -> list[dict[str, Any]]:
     st = store.get_state()
     u = get_current_user(request)
     org_id = u.get("org_id")
     items = st.get("arrivals", [])
+
+    now_dt = datetime.now(timezone.utc)
+    purged = False
+    surviving = []
+
+    for a in items:
+        status = a.get("inventory_status") or "newly_arrived"
+        a["inventory_status"] = status
+
+        # If vehicle is in crushing queue, check deadline
+        if status == "to_be_crushed":
+            days = a.get("days_until_crushed")
+            if days is not None and int(days) <= 0:
+                purged = True
+                continue
+            deadline_str = a.get("crush_deadline")
+            if deadline_str:
+                try:
+                    deadline_dt = datetime.fromisoformat(deadline_str.replace("Z", "+00:00"))
+                    if now_dt >= deadline_dt:
+                        # Vehicle hit crush deadline -> purged entirely
+                        purged = True
+                        continue
+                    diff = deadline_dt - now_dt
+                    a["days_remaining"] = max(0, int(diff.total_seconds() // 86400) + (1 if diff.total_seconds() % 86400 > 0 else 0))
+                except Exception:
+                    a["days_remaining"] = days or 0
+            else:
+                a["days_remaining"] = days or 0
+
+        surviving.append(a)
+
+    if purged:
+        st["arrivals"] = surviving
+        store.save_state()
+
     if org_id:
-        return [a for a in items if a.get("org_id") == org_id]
-    return items
+        return [a for a in surviving if a.get("org_id") == org_id]
+    return surviving
 
 
 @router.post("/api/arrivals")
@@ -904,6 +949,13 @@ def post_arrival(body: dict[str, Any], request: Request) -> dict[str, Any]:
         "stock_number": body.get("stock_number", f"STK-{uuid.uuid4().hex[:5].upper()}"),
         "year_span": body.get("year_span", 2),
         "cost": body.get("cost"),
+        "inventory_status": "newly_arrived",
+        "checked_in_at": None,
+        "checked_in_by": None,
+        "queued_for_crush_at": None,
+        "days_until_crushed": None,
+        "crush_deadline": None,
+        "days_remaining": None,
         "callback_list_id": "",
         "created_by": u.get("name", "Manager"),
         "created_at": store.now_iso(),
@@ -927,9 +979,138 @@ def post_arrival(body: dict[str, Any], request: Request) -> dict[str, Any]:
     return new_arr
 
 
-@router.delete("/api/arrivals/{aid}")
-def delete_arrival(aid: str) -> dict[str, Any]:
+@router.post("/api/arrivals/check-in")
+def check_in_arrivals(body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
+    u = get_current_user(request)
+    require_inventory_permission(u)
+    org_id = u.get("org_id")
+    ids = set(body.get("ids", []))
+    if not ids:
+        raise HTTPException(status_code=400, detail="No vehicle IDs provided for check-in")
+
+    updated = []
+    for a in st.get("arrivals", []):
+        if a.get("id") in ids and (not org_id or a.get("org_id") == org_id):
+            a["inventory_status"] = "yard_inventory"
+            a["checked_in_at"] = store.now_iso()
+            a["checked_in_by"] = u.get("name", "Manager")
+            updated.append(a.get("id"))
+
+    store.save_state()
+    return {"ok": True, "count": len(updated), "updated_ids": updated}
+
+
+@router.post("/api/arrivals/queue-crush")
+def queue_crush_arrivals(body: dict[str, Any], request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    u = get_current_user(request)
+    require_inventory_permission(u)
+    org_id = u.get("org_id")
+    ids = set(body.get("ids", []))
+    if not ids:
+        raise HTTPException(status_code=400, detail="No vehicle IDs provided for crush queue")
+
+    try:
+        days = int(body.get("days") or 30)
+    except (ValueError, TypeError):
+        days = 30
+    days = max(1, days)
+
+    now_dt = datetime.now(timezone.utc)
+    deadline_dt = now_dt + timedelta(days=days)
+
+    updated = []
+    for a in st.get("arrivals", []):
+        if a.get("id") in ids and (not org_id or a.get("org_id") == org_id):
+            a["inventory_status"] = "to_be_crushed"
+            a["queued_for_crush_at"] = now_dt.isoformat()
+            a["days_until_crushed"] = days
+            a["crush_deadline"] = deadline_dt.isoformat()
+            a["days_remaining"] = days
+            updated.append(a.get("id"))
+
+    store.save_state()
+    return {"ok": True, "count": len(updated), "updated_ids": updated}
+
+
+@router.patch("/api/arrivals/{aid}/crush-days")
+def patch_crush_days(aid: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    u = get_current_user(request)
+    require_inventory_permission(u)
+    org_id = u.get("org_id")
+
+    val = body.get("days")
+    if val is None:
+        raise HTTPException(status_code=400, detail="Days count is required")
+    try:
+        days = int(val)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Days must be a valid number")
+
+    # If days <= 0, the vehicle hits its crush deadline immediately: purge it entirely!
+    if days <= 0:
+        initial_len = len(st.get("arrivals", []))
+        st["arrivals"] = [a for a in st.get("arrivals", []) if a.get("id") != aid or (org_id and a.get("org_id") != org_id)]
+        if len(st["arrivals"]) < initial_len:
+            store.save_state()
+            return {"ok": True, "crushed": True, "id": aid, "message": "Vehicle hit crush deadline and was removed entirely."}
+        raise HTTPException(status_code=404, detail="Vehicle not found in queue")
+
+    for a in st.get("arrivals", []):
+        if a.get("id") == aid and (not org_id or a.get("org_id") == org_id):
+            now_dt = datetime.now(timezone.utc)
+            deadline_dt = now_dt + timedelta(days=days)
+            a["days_until_crushed"] = days
+            a["crush_deadline"] = deadline_dt.isoformat()
+            a["days_remaining"] = days
+            store.save_state()
+            return a
+
+    raise HTTPException(status_code=404, detail="Vehicle not found")
+
+
+@router.post("/api/arrivals/{aid}/crush")
+def post_crush_now(aid: str, request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    u = get_current_user(request)
+    require_inventory_permission(u)
+    org_id = u.get("org_id")
+
+    initial_len = len(st.get("arrivals", []))
+    st["arrivals"] = [a for a in st.get("arrivals", []) if a.get("id") != aid or (org_id and a.get("org_id") != org_id)]
+    if len(st["arrivals"]) < initial_len:
+        store.save_state()
+        return {"ok": True, "crushed": True, "id": aid, "message": "Vehicle crushed and removed from inventory."}
+    raise HTTPException(status_code=404, detail="Vehicle not found")
+
+
+@router.post("/api/arrivals/{aid}/restore")
+def post_restore_from_crush(aid: str, request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    u = get_current_user(request)
+    require_inventory_permission(u)
+    org_id = u.get("org_id")
+
+    for a in st.get("arrivals", []):
+        if a.get("id") == aid and (not org_id or a.get("org_id") == org_id):
+            a["inventory_status"] = "yard_inventory"
+            a["queued_for_crush_at"] = None
+            a["days_until_crushed"] = None
+            a["crush_deadline"] = None
+            a.pop("days_remaining", None)
+            store.save_state()
+            return a
+
+    raise HTTPException(status_code=404, detail="Vehicle not found")
+
+
+@router.delete("/api/arrivals/{aid}")
+def delete_arrival(aid: str, request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    u = get_current_user(request)
+    require_inventory_permission(u)
     st["arrivals"] = [a for a in st.get("arrivals", []) if a.get("id") != aid]
     store.save_state()
     return {"ok": True}

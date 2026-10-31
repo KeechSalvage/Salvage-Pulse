@@ -562,6 +562,49 @@ def _ensure_demo_users(st: dict[str, Any]) -> dict[str, Any]:
         "mode": "dark",
     }
 
+    # Seed demo arrivals for Keech's Auto Salvage across newly_arrived, yard_inventory, and to_be_crushed
+    arrivals = st.setdefault("arrivals", [])
+    if not arrivals or not any(a.get("org_id") == KEECH_ORG_ID for a in arrivals):
+        seed_arrivals = st.get("seed", {}).get("/arrivals", [])
+        if not seed_arrivals and os.path.exists(SEED_PATH):
+            try:
+                with open(SEED_PATH, "r", encoding="utf-8") as f:
+                    seed_arrivals = json.load(f).get("/arrivals", [])
+            except Exception:
+                pass
+        if seed_arrivals:
+            now_dt = dt.datetime.now(dt.timezone.utc)
+            for idx, a in enumerate(seed_arrivals[:5]):
+                arr = copy.deepcopy(a)
+                arr["org_id"] = KEECH_ORG_ID
+                if not arr.get("stock_number"):
+                    arr["stock_number"] = f"STK-{1080 + idx * 115}"
+                if idx < 2:
+                    # Newly arrived category
+                    arr["inventory_status"] = "newly_arrived"
+                    arr["checked_in_at"] = None
+                    arr["checked_in_by"] = None
+                    arr["queued_for_crush_at"] = None
+                    arr["days_until_crushed"] = None
+                    arr["crush_deadline"] = None
+                elif idx < 4:
+                    # Yard inventory category
+                    arr["inventory_status"] = "yard_inventory"
+                    arr["checked_in_at"] = (now_dt - dt.timedelta(days=(idx * 2 + 1))).isoformat()
+                    arr["checked_in_by"] = "Dale Miller"
+                    arr["queued_for_crush_at"] = None
+                    arr["days_until_crushed"] = None
+                    arr["crush_deadline"] = None
+                else:
+                    # To be crushed queue
+                    arr["inventory_status"] = "to_be_crushed"
+                    arr["checked_in_at"] = (now_dt - dt.timedelta(days=20)).isoformat()
+                    arr["checked_in_by"] = "Dale Miller"
+                    arr["queued_for_crush_at"] = (now_dt - dt.timedelta(days=6)).isoformat()
+                    arr["days_until_crushed"] = 14
+                    arr["crush_deadline"] = (now_dt + dt.timedelta(days=14)).isoformat()
+                arrivals.append(arr)
+
     # Disable demo mode on login screen as requested
     st.setdefault("demo_login_switch", {})["enabled"] = False
     return st
