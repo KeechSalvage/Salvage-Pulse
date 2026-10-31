@@ -1028,6 +1028,8 @@ def post_arrival_callback_list(aid: str, body: dict[str, Any], request: Request)
             cb_item["assigned_list_id"] = lid
             cb_item["assigned_list_name"] = base_name
             cb_item["assigned_by"] = u.get("name", "Manager")
+            cb_item["assigned_by_id"] = u.get("id", "")
+            cb_item["assigned_by_role"] = u.get("role", "")
             cb_item["assigned_note"] = body.get("note") or f"Vehicle arrived in stock ({arrival.get('stock_number', '')})"
             cb_item["list_due_date"] = due_date
             cb_item["list_overdue"] = False
@@ -1102,7 +1104,24 @@ def get_callbacks(
     if org_id:
         items = [i for i in items if i.get("org_id") == org_id]
     if source:
-        items = [i for i in items if i.get("assigned_list_id") == source]
+        if source == "inventory_manager":
+            items = [
+                i for i in items
+                if (i.get("assigned_by_role") or "").lower() == "inventory_manager"
+                or (i.get("reason") or "").lower().startswith("vehicle arrival")
+            ]
+        elif source == "sales_manager":
+            items = [
+                i for i in items
+                if ((i.get("assigned_by_role") or "").lower() in ("sales_manager", "owner", "manager"))
+                and not (i.get("reason") or "").lower().startswith("vehicle arrival")
+            ]
+        elif source == "missed":
+            items = [i for i in items if not i.get("assigned_by")]
+        elif source == "assigned":
+            items = [i for i in items if i.get("assigned_by")]
+        else:
+            items = [i for i in items if i.get("assigned_list_id") == source]
     return items
 
 
@@ -1131,6 +1150,8 @@ def post_callbacks_assign(body: dict[str, Any], request: Request) -> dict[str, A
             item["assigned_list_id"] = list_id
             item["assigned_list_name"] = list_name
             item["assigned_by"] = u.get("name", "Manager")
+            item["assigned_by_id"] = u.get("id", "")
+            item["assigned_by_role"] = u.get("role", "")
             item["assigned_note"] = body.get("note", "")
             item["list_due_date"] = target_list.get("due_date", "") if target_list else ""
             item["list_overdue"] = False

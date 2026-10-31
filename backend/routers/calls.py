@@ -118,7 +118,13 @@ def get_call_detail(call_id: str, request: Request) -> dict[str, Any]:
     org_id = u.get("org_id")
     full_calls = st.get("full_calls", {})
 
+    # Check primary calls list, or open callbacks (e.g. vehicle arrival callbacks)
     match = next((c for c in st.get("calls", []) if c.get("id") == call_id), None)
+    if not match:
+        match = next((c for c in st.get("callbacks_open", []) if c.get("id") == call_id), None)
+    if not match:
+        match = next((c for c in st.get("callbacks_resolved", []) if c.get("id") == call_id), None)
+
     if not match:
         raise HTTPException(status_code=404, detail="Call not found")
 
@@ -272,6 +278,8 @@ def post_call_delivery_check_ai(call_id: str) -> dict[str, Any]:
 def patch_call_callback(call_id: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
+
+    # 1. Check primary calls list
     for c in st.get("calls", []):
         if c.get("id") == call_id:
             c["callback_done"] = bool(body.get("done"))
@@ -284,6 +292,28 @@ def patch_call_callback(call_id: str, body: dict[str, Any], request: Request) ->
                     c["parts_sold"] = body["parts_sold"]
             store.save_state()
             return c
+
+    # 2. Check open callbacks (e.g. arrival callback items)
+    cb_open = st.get("callbacks_open", [])
+    for idx, c in enumerate(cb_open):
+        if c.get("id") == call_id:
+            c["callback_done"] = bool(body.get("done"))
+            c["callback_by"] = u.get("name", "Rep")
+            c["callback_at"] = store.now_iso()
+            if body.get("sold_price"):
+                c["outcome"] = "won"
+                c["order_value"] = float(body["sold_price"])
+                if "parts_sold" in body:
+                    c["parts_sold"] = body["parts_sold"]
+            
+            # If done or sold, move to callbacks_resolved
+            if body.get("done") or body.get("sold_price"):
+                resolved_item = cb_open.pop(idx)
+                st.setdefault("callbacks_resolved", []).insert(0, resolved_item)
+            
+            store.save_state()
+            return c
+
     raise HTTPException(status_code=404, detail="Call not found")
 
 

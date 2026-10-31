@@ -505,6 +505,8 @@ export interface CallbackItem extends CallSummary {
   assigned_list_id: string; // set when a manager put this call on a named list
   assigned_list_name: string;
   assigned_by: string; // manager who added it ("" = automatic missed call)
+  assigned_by_id?: string;
+  assigned_by_role?: string;
   assigned_note: string;
   list_due_date: string;
   list_overdue: boolean;

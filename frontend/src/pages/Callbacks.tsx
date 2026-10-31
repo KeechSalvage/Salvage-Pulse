@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "motion/react";
@@ -65,7 +65,25 @@ export default function Callbacks() {
     onSuccess: (r) => toast.success(`Sent ${r.emails} email${r.emails === 1 ? "" : "s"} and ${r.texts} text${r.texts === 1 ? "" : "s"} for ${r.lists} overdue list${r.lists === 1 ? "" : "s"}`),
     onError: (e) => toast.error(errorMessage(e)),
   });
-  const items = isError ? [] : (data ?? []);
+  const rawItems: CallbackItem[] = isError ? [] : (data ?? []);
+
+  const items = useMemo<CallbackItem[]>(() => {
+    if (source === "inventory_manager") {
+      return rawItems.filter((c) => {
+        const r = (c.assigned_by_role || "").toLowerCase();
+        const reason = (c.reason || "").toLowerCase();
+        return r === "inventory_manager" || reason.startsWith("vehicle arrival");
+      });
+    }
+    if (source === "sales_manager") {
+      return rawItems.filter((c) => {
+        const r = (c.assigned_by_role || "").toLowerCase();
+        const reason = (c.reason || "").toLowerCase();
+        return (r === "sales_manager" || r === "owner" || r === "manager") && !reason.startsWith("vehicle arrival");
+      });
+    }
+    return rawItems;
+  }, [rawItems, source]);
 
   const mark = useMutation({
     mutationFn: ({ id, ...b }: CallbackUpdate & { id: string }) => apiPatch<CallSummary>(`/calls/${id}/callback`, b satisfies CallbackUpdate),
@@ -103,7 +121,17 @@ export default function Callbacks() {
       </p>
 
       <div id="callbacks-sources-bar" className="mb-5 flex flex-wrap items-center gap-2 scroll-mt-6" data-testid="callbacks-sources">
-        {[{ id: "", label: "Everything" }, { id: "missed", label: "Missed calls" }, { id: "assigned", label: "Added by manager" }, ...(lists.data ?? []).map((l) => ({ id: l.id, label: `${l.name}${isManager ? ` · ${l.rep_name}` : ""} (${l.open})${l.due_date ? ` · ${l.overdue ? "overdue" : "due"} ${fmtDue(l.due_date)}` : ""}`, overdue: l.overdue }))].map((o) => (
+        {[
+          { id: "", label: "Everything" },
+          { id: "sales_manager", label: "Sales Manager Assigned" },
+          { id: "inventory_manager", label: "Inventory Manager Assigned" },
+          { id: "missed", label: "Missed calls" },
+          ...(lists.data ?? []).map((l) => ({
+            id: l.id,
+            label: `${l.name}${isManager ? ` · ${l.rep_name}` : ""} (${l.open})${l.due_date ? ` · ${l.overdue ? "overdue" : "due"} ${fmtDue(l.due_date)}` : ""}`,
+            overdue: l.overdue,
+          })),
+        ].map((o) => (
           <button key={o.id || "all"} type="button" data-testid={`callbacks-source-${o.id || "all"}`} onClick={() => setSource(o.id)}
             className={cn("rounded-full border px-3 py-1 text-xs transition-colors duration-150",
               source === o.id ? "border-amber-500 bg-amber-500/15 text-white" : "overdue" in o && o.overdue ? "border-red-500/60 text-red-300 hover:text-red-200" : "border-border text-slate-400 hover:text-white")}>
