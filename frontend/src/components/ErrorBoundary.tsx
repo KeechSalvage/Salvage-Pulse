@@ -44,12 +44,12 @@ export class ErrorBoundary extends Component<Props, State> {
               An unexpected render error occurred. You can restore your Master Admin session to get back to the console, or try reloading.
             </p>
             <div className="flex flex-col gap-3">
-              <a
-                href="/api/auth/recover"
+              <button
+                onClick={() => { window.location.href = "/"; }}
                 className="w-full py-2.5 px-4 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-sm transition-colors text-center shadow-sm"
               >
-                Return to Platform Console
-              </a>
+                Return to Dashboard
+              </button>
               <button
                 onClick={() => window.location.reload()}
                 className="w-full py-2.5 px-4 rounded-lg bg-white/10 hover:bg-white/15 text-white font-medium text-sm transition-colors"

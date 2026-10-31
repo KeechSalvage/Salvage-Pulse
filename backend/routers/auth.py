@@ -474,28 +474,18 @@ def auth_stop_impersonating_get(request: Request) -> RedirectResponse:
 
 
 @router.get("/api/auth/recover")
-def auth_recover() -> RedirectResponse:
-    st = store.get_state()
-    for user in st.get("users_by_id", {}).values():
-        user["impersonated_by"] = ""
-        user.pop("impersonator_id", None)
-    admin_user = _find_master_or_actor()
-    resp = RedirectResponse(url="/admin", status_code=303)
-    set_session_cookie(resp, admin_user["id"])
-    store.save_state()
-    return resp
+def auth_recover(request: Request) -> RedirectResponse:
+    try:
+        get_current_user(request)
+    except HTTPException:
+        return RedirectResponse(url="/login", status_code=303)
+    return RedirectResponse(url="/", status_code=303)
 
 
 @router.post("/api/auth/recover")
-def auth_recover_post(response: Response) -> dict[str, Any]:
-    st = store.get_state()
-    for user in st.get("users_by_id", {}).values():
-        user["impersonated_by"] = ""
-        user.pop("impersonator_id", None)
-    admin_user = _find_master_or_actor()
-    set_session_cookie(response, admin_user["id"])
-    store.save_state()
-    return admin_user
+def auth_recover_post(request: Request) -> dict[str, Any]:
+    u = get_current_user(request)
+    return u
 
 
 @router.post("/api/auth/not-me")

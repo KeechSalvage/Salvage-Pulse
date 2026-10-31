@@ -1317,9 +1317,9 @@ def get_reports_summary(
             "top_parts": [],
             "top_vehicles": [],
             "daily": [],
-            "arrivals": 0,
+            "arrivals": [],
             "avg_order_value": 0.0,
-            "parts_sold": 0,
+            "parts_sold": [],
             "price_missing": 0,
         }
 
@@ -1428,8 +1428,8 @@ def get_reports_summary(
         "top_parts": top_parts,
         "top_vehicles": top_vehicles,
         "daily": daily,
-        "arrivals": 0,
+        "arrivals": [],
         "avg_order_value": round(revenue / max(len(won), 1), 1) if won else 350.0,
-        "parts_sold": len(won),
+        "parts_sold": [],
         "price_missing": 0,
     }
