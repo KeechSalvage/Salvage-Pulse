@@ -70,10 +70,8 @@ const yardManagerNav = [
 
 const inventoryManagerNav = [
   { to: "/vehicles", label: "Vehicles & Stock", icon: Car, id: "vehicles" },
-  { to: "/tag-vehicles", label: "Tag Vehicles", icon: CarFront, id: "tag-vehicles" },
   { to: "/dashboard", label: "Yard Dashboard", icon: BarChart3, id: "dashboard" },
   { to: "/calls", label: "Call Library", icon: PhoneIncoming, id: "calls" },
-  { to: "/reports", label: "Reports", icon: FileBarChart, id: "reports" },
   { to: "/calendar", label: "Shift calendar", icon: CalendarDays, id: "calendar" },
   { to: "/settings", label: "Settings", icon: Settings, id: "settings" },
 ];

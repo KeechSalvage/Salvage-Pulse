@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Navigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -87,6 +88,11 @@ function CountList({ rows, testId, onPick, showWon = true }: { rows: ReportCount
 
 export default function Reports() {
   const { data: me } = useMe();
+
+  if (me?.role === "inventory_manager") {
+    return <Navigate to="/vehicles" replace />;
+  }
+
   const isManager = isManagerLike(me?.role);
   const drill = useDrill();
   const [preset, setPreset] = useState("this-month");

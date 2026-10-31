@@ -22,9 +22,11 @@ export default function Vehicles() {
   return (
     <>
       <PageHeader overline="Yard inventory" title={isManager ? "Vehicles & inventory" : "Vehicle arrivals"}>
-        <Link to="/tag-vehicles" data-testid="vehicles-tag-link" className="flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-slate-200 transition-colors duration-150 hover:border-amber-500/60 hover:text-white">
-          <CarFront className="size-4 text-amber-300" /> Tag calls with no vehicle
-        </Link>
+        {me?.role !== "inventory_manager" && (
+          <Link to="/tag-vehicles" data-testid="vehicles-tag-link" className="flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-slate-200 transition-colors duration-150 hover:border-amber-500/60 hover:text-white">
+            <CarFront className="size-4 text-amber-300" /> Tag calls with no vehicle
+          </Link>
+        )}
       </PageHeader>
       {isManager && <VehicleRankToggle value={rank} onChange={setRank} />}
       <TileGrid

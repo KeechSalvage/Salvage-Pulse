@@ -30,8 +30,9 @@ fi
 
 cd "$APP_DIR"
 
-echo -e "${YELLOW}--> Pulling latest git commits...${NC}"
-git pull origin main
+echo -e "${YELLOW}--> Syncing with latest git commits...${NC}"
+git fetch origin main
+git reset --hard origin/main
 
 echo -e "${YELLOW}--> Updating Python requirements...${NC}"
 "$APP_DIR/backend/.venv/bin/pip" install -U -r "$APP_DIR/backend/requirements.txt"

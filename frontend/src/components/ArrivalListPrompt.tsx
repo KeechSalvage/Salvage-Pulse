@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ListPlus } from "lucide-react";
 import { toast } from "sonner";
@@ -18,8 +18,20 @@ export default function ArrivalListPrompt({ arrival, onClose }: { arrival: Arriv
   const [rep, setRep] = useState("");
   const [name, setName] = useState("");
   const [due, setDue] = useState("");
-  const waiting = arrival?.callers.filter((c) => c.status === "to_call" && c.last_call_id).length ?? 0;
+  const waitingCallers = arrival?.callers.filter((c) => c.status === "to_call" && c.last_call_id) ?? [];
+  const waiting = waitingCallers.length;
   const vehicle = arrival ? `${arrival.vehicle_year} ${arrival.vehicle_make} ${arrival.vehicle_model}` : "";
+
+  // Count how many of these waiting callers originally spoke with each rep
+  const repCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const c of waitingCallers) {
+      if (c.rep_id) {
+        counts[c.rep_id] = (counts[c.rep_id] || 0) + 1;
+      }
+    }
+    return counts;
+  }, [waitingCallers]);
   const make = useMutation({
     mutationFn: () => apiPost<CallbackList>(`/arrivals/${arrival!.id}/callback-list`, { rep_id: rep, name, due_date: due || null } satisfies ArrivalListCreate),
     onSuccess: (l) => {
@@ -46,7 +58,16 @@ export default function ArrivalListPrompt({ arrival, onClose }: { arrival: Arriv
         </DialogHeader>
         <select data-testid="arrival-list-rep" value={rep} onChange={(e) => setRep(e.target.value)} className="h-9 w-full rounded-md border border-border bg-surface px-2 text-sm text-white">
           <option value="">Pick a rep…</option>
-          {(reps.data ?? []).map((r) => <option key={r.id} value={r.id} disabled={!!awayInfo(away.data, r.id)}>{r.name}{awayInfo(away.data, r.id)}</option>)}
+          {(reps.data ?? []).map((r) => {
+            const count = repCounts[r.id] || 0;
+            const countLabel = count === 1 ? "1 matching call" : `${count} matching calls`;
+            const awayStatus = awayInfo(away.data, r.id);
+            return (
+              <option key={r.id} value={r.id} disabled={!!awayStatus}>
+                {r.name} — {countLabel}{awayStatus ? ` ${awayStatus}` : ""}
+              </option>
+            );
+          })}
         </select>
         <Input data-testid="arrival-list-name" value={name} onChange={(e) => setName(e.target.value.slice(0, 60))} placeholder={`${vehicle} callers`} />
         <label className="flex items-center gap-2 text-sm text-slate-300">

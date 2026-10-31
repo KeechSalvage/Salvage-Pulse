@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Ban, CarFront, Check, Clock, Loader2, SkipForward, Sparkles, Trophy, Truck } from "lucide-react";
 import { toast } from "sonner";
@@ -23,7 +23,12 @@ const vehicleLabel = (v: { vehicle_year: number | null; vehicle_make: string; ve
 
 /** Quick vehicle tagging: one untagged call at a time — tap a make, tap a model, done. */
 export default function TagVehicles() {
+  const { data: me } = useMe();
   const qc = useQueryClient();
+
+  if (me?.role === "inventory_manager") {
+    return <Navigate to="/vehicles" replace />;
+  }
   const queue = useQuery({ queryKey: ["tagging"], queryFn: () => apiGet<TaggingQueue>("/tagging/queue") });
   const vopts = useQuery({ queryKey: ["vehicle-options", "catalog", "calls"], queryFn: () => apiGet<VehicleOptions>("/calls/vehicle-options?catalog=true&rank=calls") });
   const [later, setLater] = useState<string[]>([]);
