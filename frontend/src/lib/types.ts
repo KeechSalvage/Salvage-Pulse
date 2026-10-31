@@ -566,7 +566,8 @@ export interface ChampionCase {
 }
 
 export interface ArrivalListCreate {
-  rep_id: string;
+  rep_id?: string;
+  rep_ids?: string[];
   due_date: string | null;
   name: string; // blank → "2017 Ford F-150 callers"
 }

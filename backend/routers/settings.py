@@ -416,13 +416,18 @@ def get_layout_targets(page: str) -> list[dict[str, Any]]:
 # Reps & Sites
 # ==========================================
 @router.get("/api/users/reps")
-def get_users_reps(request: Request, include_disabled: bool = Query(False)) -> list[dict[str, Any]]:
+def get_users_reps(
+    request: Request,
+    include_disabled: bool = Query(False),
+    include_managers: bool = Query(False),
+) -> list[dict[str, Any]]:
     st = store.get_state()
     u = get_current_user(request)
     org_id = u.get("org_id")
+    allowed_roles = ("rep", "sales_rep", "sales_manager") if include_managers else ("rep", "sales_rep")
     out = []
     for usr in st["users_by_id"].values():
-        if usr.get("role") in ("rep", "sales_rep"):
+        if usr.get("role") in allowed_roles:
             if org_id and usr.get("org_id") != org_id:
                 continue
             if include_disabled or not usr.get("disabled"):

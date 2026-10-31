@@ -987,31 +987,41 @@ def post_arrival_callback_list(aid: str, body: dict[str, Any], request: Request)
     if not arrival:
         raise HTTPException(status_code=404, detail="Arrival not found")
 
-    lid = str(uuid.uuid4())
-    rep_id = body.get("rep_id") or u["id"]
-    rep = st["users_by_id"].get(rep_id, u)
+    rep_ids = body.get("rep_ids")
+    if not rep_ids and body.get("rep_id"):
+        rep_ids = [body["rep_id"]]
+    if not rep_ids:
+        rep_ids = [u["id"]]
 
-    name = body.get("name") or f"{arrival.get('vehicle_year')} {arrival.get('vehicle_make')} {arrival.get('vehicle_model')} callers"
-    new_list = {
-        "id": lid,
-        "name": name,
-        "rep_id": rep["id"],
-        "rep_name": rep["name"],
-        "created_by": u.get("name", "Manager"),
-        "created_at": store.now_iso(),
-        "open": len(arrival.get("callers", [])),
-        "total": len(arrival.get("callers", [])),
-        "done": 0,
-        "sold": 0,
-        "revenue": 0.0,
-        "arrival_id": aid,
-        "due_date": body.get("due_date") or "",
-        "overdue": False,
-    }
-    st.setdefault("callback_lists", []).insert(0, new_list)
-    arrival["callback_list_id"] = lid
+    created_lists = []
+    base_name = body.get("name") or f"{arrival.get('vehicle_year')} {arrival.get('vehicle_make')} {arrival.get('vehicle_model')} callers"
+
+    for rid in rep_ids:
+        lid = str(uuid.uuid4())
+        rep = st["users_by_id"].get(rid, u)
+        new_list = {
+            "id": lid,
+            "name": base_name,
+            "rep_id": rep["id"],
+            "rep_name": rep["name"],
+            "created_by": u.get("name", "Manager"),
+            "created_at": store.now_iso(),
+            "open": len(arrival.get("callers", [])),
+            "total": len(arrival.get("callers", [])),
+            "done": 0,
+            "sold": 0,
+            "revenue": 0.0,
+            "arrival_id": aid,
+            "due_date": body.get("due_date") or "",
+            "overdue": False,
+        }
+        st.setdefault("callback_lists", []).insert(0, new_list)
+        created_lists.append(new_list)
+
+    if created_lists:
+        arrival["callback_list_id"] = created_lists[0]["id"]
     store.save_state()
-    return new_list
+    return created_lists[0]
 
 
 @router.get("/api/arrivals/leaderboard")

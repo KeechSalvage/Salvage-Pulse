@@ -8,8 +8,8 @@ export const useMe = (): UseQueryResult<User> =>
 export const useMeta = (): UseQueryResult<Meta> =>
   useQuery({ queryKey: ["meta"], queryFn: () => apiGet<Meta>("/meta"), staleTime: Infinity });
 
-export const useReps = (enabled: boolean = true): UseQueryResult<User[]> =>
-  useQuery({ queryKey: ["reps"], queryFn: () => apiGet<User[]>("/users/reps"), enabled });
+export const useReps = (enabled: boolean = true, includeManagers: boolean = false): UseQueryResult<User[]> =>
+  useQuery({ queryKey: ["reps", { includeManagers }], queryFn: () => apiGet<User[]>(`/users/reps${includeManagers ? "?include_managers=true" : ""}`), enabled });
 
 /** Managers: every rep including those whose login is turned off (Reps page, call-library filter). */
 export const useAllReps = (enabled: boolean = true): UseQueryResult<User[]> =>
