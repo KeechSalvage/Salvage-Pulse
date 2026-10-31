@@ -329,7 +329,7 @@ export default function CallDetail() {
                 <div>
                   <Overline>RingCentral AI score</Overline>
                   <p className="mt-1 font-heading text-2xl font-bold" style={{ color: tier.color }}>{tier.label}</p>
-                  <p className="text-sm text-slate-400">{call.overall_score / 10}/10 from RingCentral ACE, scaled to 100</p>
+                  <p className="text-sm text-slate-400">{call.overall_score}/100 from RingCentral ACE</p>
                 </div>
               </div>
               {call.keyword_hits.length > 0 && (
