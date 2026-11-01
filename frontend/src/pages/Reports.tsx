@@ -45,17 +45,17 @@ function downloadCsv(r: Report) {
     [r.totals.calls, r.totals.inbound, r.totals.outbound, r.totals.voicemails, r.totals.avg_score, r.totals.avg_duration_sec, r.totals.sales_calls, r.totals.won, r.totals.close_rate, r.totals.revenue],
     [],
     ["Reps"], ["Rep", "Calls", "Avg score", "Sales calls", "Won", "Close rate %", "Sales $"],
-    ...r.by_rep.map((x) => [x.name, x.calls, x.avg_score, x.sales_calls, x.won, x.close_rate, x.revenue]),
+    ...(r.by_rep ?? []).map((x) => [x.name, x.calls, x.avg_score, x.sales_calls, x.won, x.close_rate, x.revenue]),
     [],
-    ["Call categories"], ["Category", "Calls"], ...r.by_category.map((x) => [x.label, x.calls]),
+    ["Call categories"], ["Category", "Calls"], ...(r.by_category ?? []).map((x) => [x.label, x.calls]),
     [],
-    ["Top parts"], ["Part", "Calls", "Won"], ...r.top_parts.map((x) => [x.label, x.calls, x.won]),
+    ["Top parts"], ["Part", "Calls", "Won"], ...(r.top_parts ?? []).map((x) => [x.label, x.calls, x.won]),
     [],
-    ["Top vehicles"], ["Vehicle", "Calls", "Won"], ...r.top_vehicles.map((x) => [x.label, x.calls, x.won]),
+    ["Top vehicles"], ["Vehicle", "Calls", "Won"], ...(r.top_vehicles ?? []).map((x) => [x.label, x.calls, x.won]),
     [],
-    ["Daily"], ["Date", "Calls", "Won"], ...r.daily.map((x) => [x.date, x.calls, x.won]),
-    ...(r.arrivals.length
-      ? [[], ["Vehicle arrivals"], ["Vehicle", "Logged", "Paid", "Brought in", "Profit", "Sold", "Orders"], ...r.arrivals.map((a) => [a.vehicle, a.logged.slice(0, 10), a.cost ?? "", a.revenue, a.profit, a.sold, a.orders])]
+    ["Daily"], ["Date", "Calls", "Won"], ...(r.daily ?? []).map((x) => [x.date, x.calls, x.won]),
+    ...((r.arrivals ?? []).length
+      ? [[], ["Vehicle arrivals"], ["Vehicle", "Logged", "Paid", "Brought in", "Profit", "Sold", "Orders"], ...(r.arrivals ?? []).map((a) => [a.vehicle, a.logged.slice(0, 10), a.cost ?? "", a.revenue, a.profit, a.sold, a.orders])]
       : []),
   ];
   const blob = new Blob([rows.map((row) => row.map(csvCell).join(",")).join("\n")], { type: "text/csv" });

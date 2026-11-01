@@ -185,12 +185,12 @@ export function StaffDevicesPanel({ isMaster }: { isMaster: boolean }) {
                 </Button>
               )}
             </div>
-            {u.devices.length === 0 ? (
+            {(u.devices ?? []).length === 0 ? (
               <p className="mt-2 text-xs text-slate-500">No remembered browsers yet.</p>
             ) : (
               <table className="mt-2 w-full text-sm">
                 <tbody className="divide-y divide-border">
-                  {u.devices.map((d) => (
+                  {(u.devices ?? []).map((d) => (
                     <tr key={d.id} data-testid={`staff-device-${d.id}`}>
                       <td className="py-2 pr-3 text-slate-200">
                         {d.nickname ? `${d.nickname} · ${d.browser}` : d.browser}

@@ -187,11 +187,11 @@ export default function UploadCall() {
                     <div><p className="text-2xl text-slate-300">{result.total_rows}</p><p className="text-xs text-slate-500">rows read</p></div>
                   </div>
                   {result.vehicles && <ImportVehicleSummary v={result.vehicles} total={result.total_rows} />}
-                  {result.rep_logins.length > 0 && (
+                  {(result.rep_logins ?? []).length > 0 && (
                     <div className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm" data-testid="import-new-logins">
                       <p className="text-amber-100">New staff logins — copy these temporary passwords now; they won't be shown again.</p>
                       <ul className="mt-2 space-y-1 font-mono text-xs text-slate-200">
-                        {result.rep_logins.map((l) => (
+                        {(result.rep_logins ?? []).map((l) => (
                           <li key={l.email} data-testid={`import-login-${l.email}`}>
                             {l.name} · {l.email} · <span className="text-amber-300">{l.temp_password}</span>
                           </li>
@@ -323,7 +323,7 @@ export default function UploadCall() {
                 <span className="text-xs text-slate-500">Transcription + scoring runs in the background (3 at a time)</span>
               </div>
               <ul className="mt-4 divide-y divide-border">
-                {bulk.items.map((it, i) => (
+                {(bulk.items ?? []).map((it, i) => (
                   <li key={`${it.filename}-${i}`} data-testid={`bulk-item-${i}`} className="flex flex-wrap items-center gap-3 py-2.5 text-sm">
                     <span className="min-w-0 flex-1 truncate font-mono text-xs text-slate-300">{it.filename}</span>
                     <span

@@ -23,8 +23,8 @@ export default function WinBackResultsPanel({ repId, testId = "winback-results-p
     queryKey: ["winback-results", repId ?? "default"],
     queryFn: () => apiGet<WinBackResults>(`/analytics/winback${repId ? `?rep_id=${repId}` : ""}`),
   });
-  const ordered = data?.months.reduce((s, m) => s + m.ordered, 0) ?? 0;
-  const value = data?.months.reduce((s, m) => s + m.confirmed_value, 0) ?? 0;
+  const ordered = (data?.months ?? []).reduce((s, m) => s + m.ordered, 0);
+  const value = (data?.months ?? []).reduce((s, m) => s + m.confirmed_value, 0);
   const stats = [
     { k: "marked", label: "Win-back calls", v: String(data?.total ?? 0) },
     { k: "ordered", label: "Marked ordered", v: String(ordered) },
@@ -61,11 +61,11 @@ export default function WinBackResultsPanel({ repId, testId = "winback-results-p
               <div className="h-[220px]" data-testid="winback-results-chart">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
-                    data={data.months}
+                    data={data.months ?? []}
                     margin={{ top: 8, right: 8, left: -20, bottom: 0 }}
                     className="cursor-pointer"
                     onClick={(e) => {
-                      const p = data.months[chartIndex(e) ?? -1];
+                      const p = (data.months ?? [])[chartIndex(e) ?? -1];
                       if (p) drill({ title: `Win-back calls: ${MONTH_LONG(p.month)}`, subtitle: `${p.reached} reached · ${p.ordered} ordered · ${p.no_interest} no interest`, query: { ...(repId ? { rep_id: repId } : {}), winback_month: p.month } });
                     }}
                   >
@@ -86,7 +86,7 @@ export default function WinBackResultsPanel({ repId, testId = "winback-results-p
                 </ResponsiveContainer>
               </div>
               <div className="max-h-[220px] divide-y divide-border overflow-y-auto pr-1" data-testid="winback-results-recent">
-                {data.recent.map((m, i) => (
+                {(data.recent ?? []).map((m, i) => (
                   <div key={m.id} data-testid={`winback-recent-${i}`} className="flex items-center gap-3 py-2 text-sm">
                     <span className={cn("w-24 shrink-0 rounded border px-1.5 py-0.5 text-center font-mono text-[10px] uppercase", OUTCOMES.find((o) => o.id === m.outcome)?.cls)}>
                       {LABEL[m.outcome]}

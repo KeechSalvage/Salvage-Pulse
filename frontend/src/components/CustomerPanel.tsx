@@ -185,7 +185,14 @@ function useCustomerLists(repId: string | undefined, team: boolean, tag: string,
   });
   const ci = isError ? undefined : data;
   const lists: Record<Tab, Contact[]> = ci
-    ? { suggested: ci.suggested, value: ci.top_value, calls: ci.most_calls, orders: ci.most_orders, winback: ci.win_back, all: ci.all_customers }
+    ? {
+        suggested: ci.suggested ?? [],
+        value: ci.top_value ?? [],
+        calls: ci.most_calls ?? [],
+        orders: ci.most_orders ?? [],
+        winback: ci.win_back ?? [],
+        all: ci.all_customers ?? [],
+      }
     : EMPTY_LISTS;
   return { ci, lists };
 }
@@ -196,7 +203,7 @@ export default function CustomerPanel({ repId, team = false }: { repId?: string;
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const { data: me } = useMe();
   const { ci, lists } = useCustomerLists(repId, team, tag, tab);
-  const list = lists[tab];
+  const list = lists[tab] ?? [];
   const pickTab = (t: Tab) => {
     setTab(t);
     setPicked(new Set());
@@ -225,7 +232,7 @@ export default function CustomerPanel({ repId, team = false }: { repId?: string;
       <TabHint tab={tab} />
       {canBulk && <BulkTagBar tab={tab} list={list} picked={picked} setPicked={setPicked} />}
       <div className={cn("divide-y divide-border", tab === "all" && "max-h-[640px] overflow-y-auto pr-1")} data-testid={`customer-list-${tab}`}>
-        {list.map((c, i) => (
+        {(list ?? []).map((c, i) => (
           <Row key={c.key} c={c} rank={i} tab={tab} team={team} selected={picked.has(c.key)} onToggle={canBulk ? () => toggle(c.key) : undefined} />
         ))}
         {ci && (list ?? []).length === 0 && (
@@ -306,7 +313,7 @@ function TypeFilters({ tag, onPick }: { tag: string; onPick: (t: string) => void
 function TypeBreakdown({ ci, onPick }: { ci: CustomerInsights; onPick: (t: string) => void }) {
   return (
     <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-5" data-testid="customer-type-breakdown">
-      {ci.type_breakdown.map((t) => (
+      {(ci.type_breakdown ?? []).map((t) => (
         <button
           key={t.tag}
           data-testid={`customer-type-card-${t.tag}`}

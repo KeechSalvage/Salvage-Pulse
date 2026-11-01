@@ -105,21 +105,21 @@ function RingCentralPanel({ call }: { call: Call }) {
           </div>
         ))}
       </dl>
-      {call.topics.length > 0 && (
+      {(call.topics ?? []).length > 0 && (
         <div className="mt-5">
           <Overline className="mb-2 text-slate-400">Topics</Overline>
           <div className="flex flex-wrap gap-1.5" data-testid="call-topics">
-            {call.topics.map((t) => (
+            {(call.topics ?? []).map((t) => (
               <span key={t} className="rounded border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-xs text-sky-200">{t}</span>
             ))}
           </div>
         </div>
       )}
-      {call.trackers.length > 0 && (
+      {(call.trackers ?? []).length > 0 && (
         <div className="mt-4">
           <Overline className="mb-2 text-slate-400">Trackers</Overline>
           <div className="flex flex-wrap gap-1.5" data-testid="call-trackers">
-            {call.trackers.map((t) => (
+            {(call.trackers ?? []).map((t) => (
               <span key={t} className="rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-300">{t}</span>
             ))}
           </div>
@@ -288,12 +288,12 @@ export default function CallDetail() {
             </Panel>
           )}
           {!call.transcript && !call.has_audio && !processing && <AttachPanel callId={call.id} />}
-          {(call.transcript || call.turns.length > 0 || processing) && (
+          {(call.transcript || (call.turns ?? []).length > 0 || processing) && (
           <Panel testId="call-transcript-panel">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-xl font-bold text-white">Transcript</h3>
               <div className="flex flex-wrap gap-1.5" data-testid="call-keyword-hits">
-                {call.keyword_hits.map((k) => (
+                {(call.keyword_hits ?? []).map((k) => (
                   <span key={k.keyword} className="rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-300">
                     {k.keyword} ×{k.count}
                   </span>
@@ -301,8 +301,8 @@ export default function CallDetail() {
               </div>
             </div>
             <div className="max-h-[640px] space-y-3 overflow-y-auto pr-1">
-              {call.turns.length > 0
-                ? call.turns.map((t, i) => {
+              {(call.turns ?? []).length > 0
+                ? (call.turns ?? []).map((t, i) => {
                     const isRep = /rep|agent|sales/i.test(t.speaker);
                     return (
                       <div key={`${i}-${t.speaker}`} data-testid={`transcript-turn-${i}`} className={cn("flex", isRep ? "justify-start" : "justify-end")}>
@@ -332,9 +332,9 @@ export default function CallDetail() {
                   <p className="text-sm text-slate-400">{call.overall_score}/100 from RingCentral ACE</p>
                 </div>
               </div>
-              {call.keyword_hits.length > 0 && (
+              {(call.keyword_hits ?? []).length > 0 && (
                 <div className="mt-5 flex flex-wrap gap-1.5" data-testid="call-keyword-hits">
-                  {call.keyword_hits.map((k) => (
+                  {(call.keyword_hits ?? []).map((k) => (
                     <span key={k.keyword} className="rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-300">
                       {k.keyword} ×{k.count}
                     </span>

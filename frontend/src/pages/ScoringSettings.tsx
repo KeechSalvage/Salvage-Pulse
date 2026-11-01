@@ -261,7 +261,7 @@ export default function ScoringSettings() {
 
           {/* Metric Cards List */}
           <div className="grid gap-4">
-            {data.metrics.map((m) => {
+            {(data?.metrics ?? []).map((m) => {
               const currentVal = weights[m.key] ?? m.weight;
               return (
                 <div

@@ -160,12 +160,12 @@ export default function SeasonalPartsPanel({ lot = "" }: { lot?: string }) {
               ) : (
                 <>
                   <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-slate-800">
-                    {focus.reasons.map((r) => (
+                    {(focus.reasons ?? []).map((r) => (
                       <div key={r.reason} style={{ width: `${(100 * r.calls) / unsold}%`, background: REASONS[r.reason]?.color ?? "#64748B" }} title={`${REASONS[r.reason]?.label ?? r.reason}: ${r.calls}`} />
                     ))}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2">
-                    {focus.reasons.map((r) => (
+                    {(focus.reasons ?? []).map((r) => (
                       <span key={r.reason} data-testid={`parts-reason-${r.reason}`} className="flex items-center gap-1.5 text-sm text-slate-300">
                         <span className="size-2.5 rounded-full" style={{ background: REASONS[r.reason]?.color ?? "#64748B" }} />
                         {REASONS[r.reason]?.label ?? r.reason}

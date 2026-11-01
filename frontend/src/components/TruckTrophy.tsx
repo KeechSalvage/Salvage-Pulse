@@ -28,7 +28,7 @@ export default function TruckTrophy({ className = "" }: { className?: string }) 
         <div className="min-w-0 flex-1">
           <p className="font-mono text-[11px] uppercase tracking-wider text-amber-300">Vehicle-sales champion · {MONTHS[Number(data.month.slice(5)) - 1]}</p>
           <p data-testid="truck-trophy-winner" className="font-heading text-xl font-bold text-white">
-            {data.winners.map((w) => w.rep_name).join(" & ")}
+            {(data?.winners ?? []).map((w) => w.rep_name).join(" & ")}
           </p>
           <p className="text-sm text-slate-400" data-testid="truck-trophy-detail">
             {n} sale{n === 1 ? "" : "s"} from vehicle-arrival lists

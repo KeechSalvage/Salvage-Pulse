@@ -80,7 +80,7 @@ export default function RepTrendsPanel({ testId = "rep-trends-panel", className 
                   formatter={(v, n) => [`${v}%`, name(String(n))]}
                 />
                 <Legend formatter={(v) => <span className="text-xs text-slate-400">{name(String(v))}</span>} />
-                {data.reps.map((r) => (
+                {(data.reps ?? []).map((r) => (
                   <Line
                     key={r.rep_id}
                     dataKey={r.rep_id}
@@ -109,7 +109,7 @@ export default function RepTrendsPanel({ testId = "rep-trends-panel", className 
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {data.reps.map((r, i) => (
+                {(data.reps ?? []).map((r, i) => (
                   <tr
                     key={r.rep_id}
                     data-testid={`${testId}-row-${i}`}
@@ -123,7 +123,7 @@ export default function RepTrendsPanel({ testId = "rep-trends-panel", className 
                         {r.rep_name}
                       </Link>
                     </td>
-                    {r.points.slice(-4).map((p) => (
+                    {(r.points ?? []).slice(-4).map((p) => (
                       <td key={p.month} className="py-2.5 text-right font-mono text-slate-200" title={`${p.won} won of ${p.sales_calls} sales calls`}>
                         {p.sales_calls ? `${p.close_rate}%` : <span className="text-slate-600">—</span>}
                       </td>

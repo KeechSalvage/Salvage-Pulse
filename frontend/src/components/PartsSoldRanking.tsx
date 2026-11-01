@@ -30,7 +30,7 @@ export default function PartsSoldRanking({ months }: { months: PartsSoldMonth[] 
             </div>
           )}
           <ol className="space-y-2" data-testid="report-parts-sold-list">
-            {m.parts.map((p, i) => (
+            {(m.parts ?? []).map((p, i) => (
               <li key={p.part}>
                 <button type="button" data-testid={`report-part-sold-${p.part.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
                   onClick={() => drill({ title: `${p.part} sales · ${MONTH_LONG(m.month)}`, subtitle: `${p.sales} sold · ${fmtMoney(p.revenue)}`, query: { month: m.month, part_sold: p.part, outcome: "won" } })}

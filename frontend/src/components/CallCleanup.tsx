@@ -46,7 +46,7 @@ export default function CallCleanup() {
             <section className="rounded-lg border border-emerald-500/30 bg-emerald-500/[0.04] p-3" data-testid="cleanup-trash">
               <h4 className="mb-1 text-sm font-semibold text-white">Recently deleted</h4>
               <ul className="divide-y divide-border">
-                {trash.data.map((t) => (
+                {(trash.data ?? []).map((t) => (
                   <li key={t.id} data-testid={`cleanup-trash-${t.id}`} className="flex items-center gap-3 py-2 text-sm">
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-white">{t.label}</p>

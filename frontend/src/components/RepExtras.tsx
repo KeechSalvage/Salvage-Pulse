@@ -109,7 +109,7 @@ export function DeliveryCoaching({ repId }: { repId?: string }) {
       </div>
       {data.checked > 0 && (
         <ul className="mt-4 space-y-2">
-          {data.steps.map((s) => (
+          {(data.steps ?? []).map((s) => (
             <li key={s.key} data-testid={`delivery-step-${s.key}`}>
               <div className="flex justify-between text-sm">
                 <span className={cn(s.key === data.weakest ? "text-amber-200" : "text-slate-300")}>{s.label}</span>

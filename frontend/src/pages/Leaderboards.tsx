@@ -117,7 +117,7 @@ function TrophyCase({ lot }: { lot: string }) {
                   </div>
                   <p className="mt-2 font-heading text-lg font-bold text-white">{c.names.join(" & ")}</p>
                   <p className="text-xs text-slate-400">{c.detail}</p>
-                  {c.site_ids.map((sid) => (
+                  {(c.site_ids ?? []).map((sid) => (
                     <a key={sid} href={`/poster/location/${sid}`} target="_blank" rel="noreferrer" data-testid={`location-poster-${sid}-${c.period}`} className="mt-2 inline-block font-mono text-[11px] text-sky-300 underline-offset-2 hover:underline">Break-room poster →</a>
                   ))}
                 </li>

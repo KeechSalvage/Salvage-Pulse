@@ -211,9 +211,9 @@ function TagCard({ item, options, onSaved, onLater, onSkipped }: {
           Open call <ArrowRight className="size-4" />
         </Link>
       </div>
-      {item.topics.length > 0 && (
+      {(item.topics ?? []).length > 0 && (
         <div className="mt-4 flex flex-wrap gap-1.5" data-testid="tagging-topics">
-          {item.topics.map((t) => (
+          {(item.topics ?? []).map((t) => (
             <span key={t} className="rounded-md bg-surface-2 px-2 py-0.5 text-xs text-slate-300">{t}</span>
           ))}
         </div>

@@ -26,7 +26,7 @@ export default function TeamQueuePanel({ lot = "" }: { lot?: string }) {
         )}
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-2">
-        {data.reps.map((r) => (
+        {(data.reps ?? []).map((r) => (
           <div key={r.rep_id} data-testid={`team-queue-rep-${r.rep_id}`} className={cn("rounded-lg border p-3", r.behind ? "border-red-500/40 bg-red-500/5" : "border-border bg-surface")}>
             <div className="flex items-center justify-between text-sm">
               <span className="font-medium text-white">{r.rep_name}</span>

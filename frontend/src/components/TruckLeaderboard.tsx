@@ -21,7 +21,7 @@ export default function TruckLeaderboard({ lot = "" }: { lot?: string }) {
       </div>
       <p className="mt-1 text-xs text-slate-500">Sales from arrival lists (marked Sold or an order confirmed by a call). Ties go to the fastest follow-up.</p>
       <ol className="mt-4 grid gap-2 md:grid-cols-2">
-        {data.leaders.map((l, i) => (
+        {(data?.leaders ?? []).map((l, i) => (
           <li key={l.rep_id} data-testid={`truck-leader-${i}`} className={cn("flex items-center gap-3 rounded-lg border px-3 py-2.5", i === 0 && l.sales > 0 ? "border-amber-500/50 bg-amber-500/10" : "border-border bg-surface")}>
             <span className={cn("grid size-7 place-items-center rounded-full font-mono text-xs font-bold", i === 0 && l.sales > 0 ? "bg-amber-500 text-black" : "bg-slate-800 text-slate-300")}>{i + 1}</span>
             <span className="flex-1 font-medium text-white">{l.rep_name}</span>

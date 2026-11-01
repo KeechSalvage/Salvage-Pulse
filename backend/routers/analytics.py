@@ -450,11 +450,23 @@ def get_analytics_customers(
     st = store.get_state()
     u = get_current_user(request)
     org_id = u.get("org_id")
-    if org_id == store.KEECH_ORG_ID:
+    if org_id == store.KEECH_ORG_ID or org_id == "org-dings-auto":
         if include_all:
             return st["seed"].get("/analytics/customers?include_all=true", st["seed"].get("/analytics/customers", {}))
         return st["seed"].get("/analytics/customers", {})
-    return {"customers": [], "total": 0, "categories": []}
+    return {
+        "total_customers": 0,
+        "repeat_customers": 0,
+        "avg_order_value": 0.0,
+        "avg_order_basis": "ai",
+        "most_calls": [],
+        "most_orders": [],
+        "top_value": [],
+        "win_back": [],
+        "suggested": [],
+        "type_breakdown": [],
+        "all_customers": [],
+    }
 
 
 @router.get("/api/customers/{key}")

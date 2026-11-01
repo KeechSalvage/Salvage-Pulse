@@ -38,12 +38,12 @@ function SettingsForm({ onDone }: { onDone: () => void }) {
 
 function Form({ data, onSaved }: { data: MonthlyReportSettingsOut; onSaved: (d: MonthlyReportSettingsOut) => void }) {
   const [enabled, setEnabled] = useState(data.enabled);
-  const [ids, setIds] = useState<Set<string>>(new Set(data.user_ids ?? data.people.map((p) => p.id)));
+  const [ids, setIds] = useState<Set<string>>(new Set(data.user_ids ?? (data.people ?? []).map((p) => p.id)));
   const [extras, setExtras] = useState<string[]>(data.extra_emails);
   const [draft, setDraft] = useState("");
   const save = useMutation({
     mutationFn: () => {
-      const all = data.people.every((p) => ids.has(p.id));
+      const all = (data.people ?? []).every((p) => ids.has(p.id));
       return apiPut<MonthlyReportSettingsOut>("/settings/monthly-report", { enabled, user_ids: all ? null : [...ids], extra_emails: extras } satisfies MonthlyReportSettings);
     },
     onSuccess: (d) => (toast.success("Monthly email recipients saved"), onSaved(d)),
@@ -67,12 +67,12 @@ function Form({ data, onSaved }: { data: MonthlyReportSettingsOut; onSaved: (d: 
         <div className="mb-2 flex items-center justify-between">
           <h4 className="text-sm font-semibold text-white">Team</h4>
           <div className="flex gap-3 text-xs">
-            <button type="button" data-testid="report-email-all" className="text-sky-400 hover:underline" onClick={() => setIds(new Set(data.people.map((p) => p.id)))}>Everyone</button>
+            <button type="button" data-testid="report-email-all" className="text-sky-400 hover:underline" onClick={() => setIds(new Set((data.people ?? []).map((p) => p.id)))}>Everyone</button>
             <button type="button" data-testid="report-email-none" className="text-slate-400 hover:underline" onClick={() => setIds(new Set())}>Nobody</button>
           </div>
         </div>
         <ul className="divide-y divide-border rounded-lg border border-border">
-          {data.people.map((p) => (
+          {(data.people ?? []).map((p) => (
             <li key={p.id}>
               <label className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm">
                 <input type="checkbox" data-testid={`report-email-person-${p.id}`} className="size-4 accent-sky-500" checked={ids.has(p.id)} onChange={() => toggle(p.id)} />

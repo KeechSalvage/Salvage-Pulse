@@ -59,7 +59,7 @@ export default function CustomerProfilePage() {
   const scored = calls.filter((c) => c.overall_score > 0);
   const avg = scored.length ? Math.round(scored.reduce((n, c) => n + c.overall_score, 0) / scored.length) : 0;
   const tel = stat.phone.replace(/\D/g, "").slice(-10);
-  const reps = stat.rep_names.map((n) => ({ name: n, calls: calls.filter((c) => c.rep_name === n).length }));
+  const reps = (stat.rep_names ?? []).map((n) => ({ name: n, calls: (calls ?? []).filter((c) => c.rep_name === n).length }));
 
   return (
     <>
@@ -148,11 +148,11 @@ export default function CustomerProfilePage() {
                 </li>
               ))}
             </ul>
-            {stat.top_topics.length > 0 && (
+            {(stat.top_topics ?? []).length > 0 && (
               <>
                 <Overline className="mb-2 mt-5">Topics</Overline>
                 <div className="flex flex-wrap gap-1.5" data-testid="customer-topics">
-                  {stat.top_topics.map((t) => (
+                  {(stat.top_topics ?? []).map((t) => (
                     <span key={t} className="rounded border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-xs text-sky-200">{t}</span>
                   ))}
                 </div>

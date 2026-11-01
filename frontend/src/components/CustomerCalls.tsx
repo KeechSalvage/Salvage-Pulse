@@ -16,14 +16,14 @@ export function CustomerCallsPanel({ call }: { call: CallSummary }) {
     queryFn: () => apiGet<CustomerCalls>(`/calls/${call.id}/customer-calls`),
   });
   if (!data) return null;
-  const others = data.calls.length - 1;
+  const others = (data.calls ?? []).length - 1;
   return (
     <Panel className="mb-6" testId="customer-calls-panel">
       <div className="flex flex-wrap items-center gap-2">
         <Users className="size-4 text-sky-300" />
         <Overline>All calls from this customer</Overline>
         <span className="font-mono text-xs text-slate-500" data-testid="customer-calls-count">
-          {data.calls.length} call{data.calls.length === 1 ? "" : "s"}{others > 0 ? ` · ${others} other` : ""}
+          {(data.calls ?? []).length} call{(data.calls ?? []).length === 1 ? "" : "s"}{others > 0 ? ` · ${others} other` : ""}
         </span>
         {data.key && (
           <Link to={`/customers/${encodeURIComponent(data.key)}`} data-testid="customer-calls-profile-link" className="ml-auto text-xs text-sky-400 hover:underline">
@@ -35,7 +35,7 @@ export function CustomerCallsPanel({ call }: { call: CallSummary }) {
         <p className="mt-3 text-sm text-slate-500">This is the only call from this customer so far.</p>
       ) : (
         <ul className="mt-3 max-h-80 space-y-1.5 overflow-y-auto">
-          {data.calls.map((c) => (
+          {(data.calls ?? []).map((c) => (
             <li key={c.id}>
               <Link
                 to={`/calls/${c.id}`}

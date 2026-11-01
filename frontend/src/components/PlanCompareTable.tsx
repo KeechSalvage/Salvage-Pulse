@@ -35,7 +35,7 @@ export default function PlanCompareTable({ current, selected, onPick, interval =
             <thead>
               <tr className="border-b border-border">
                 <th className="sticky left-0 z-10 w-[32%] bg-card p-4 text-left font-mono text-[11px] font-normal uppercase tracking-wider text-slate-500">What you get</th>
-                {data.plans.map((p, i) => (
+                {(data?.plans ?? []).map((p, i) => (
                   <th key={p.id} data-testid={`plan-compare-col-${p.id}`} className={cn("p-4 text-left align-bottom font-normal", col(p.id))}>
                     {p.id === current && <span className="mb-1 inline-block rounded-full bg-amber-500 px-2 py-0.5 font-mono text-[10px] font-semibold text-primary-foreground">Your plan</span>}
                     <p className="font-mono text-[11px] uppercase tracking-wider text-sky-300">{p.name}</p>
@@ -71,7 +71,7 @@ export default function PlanCompareTable({ current, selected, onPick, interval =
                   {(grouped.get(g) ?? []).map((r) => (
                       <tr key={r.label} data-testid={`plan-compare-row-${r.label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`} className="border-t border-border/60 transition-colors duration-150 hover:bg-surface/60">
                         <td className="sticky left-0 z-10 bg-card px-4 py-2.5 text-slate-300">{r.label}</td>
-                        {data.plans.map((p) => {
+                        {(data?.plans ?? []).map((p) => {
                           const v = r.values[p.id];
                           return (
                             <td key={p.id} className={cn("px-4 py-2.5", col(p.id))}>

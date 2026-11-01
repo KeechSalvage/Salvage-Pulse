@@ -16,9 +16,9 @@ export default function ImportVehicleSummary({ v, total }: { v: VehicleImportSum
         {v.newly_matched > 0 ? `${v.newly_matched} read from RingCentral topics on this upload. ` : ""}
         <span data-testid="import-parts-matched"><Wrench className="mr-1 inline size-3.5" />{v.with_part} name the part they need.</span>
       </p>
-      {v.top_makes.length > 0 && (
+      {(v.top_makes ?? []).length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2" data-testid="import-top-makes">
-          {v.top_makes.map((m) => (
+          {(v.top_makes ?? []).map((m) => (
             <span key={m.make} className="rounded-full bg-surface-2 px-3 py-1 font-mono text-xs text-slate-200">
               {m.make} · {m.calls}
             </span>

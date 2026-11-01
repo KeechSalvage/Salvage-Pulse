@@ -635,9 +635,9 @@ export default function TruckArrivals({ isManager, rank = "calls" }: { isManager
                       ))}
                     </div>
                   )}
-                  {sel.blasts.length > 0 && (
+                  {(sel.blasts ?? []).length > 0 && (
                     <p className="mt-1 font-mono text-[11px] text-amber-300/80" data-testid="arrival-blast-log">
-                      {sel.blasts.map((b) => (b.mode === "practice" ? `Practice text: ${b.count} logged` : `Texts: ${b.count} sent${b.failed ? `, ${b.failed} failed` : ""}`) + ` ${new Date(b.at).toLocaleString()} by ${b.by}`).join(" · ")}
+                      {(sel.blasts ?? []).map((b) => (b.mode === "practice" ? `Practice text: ${b.count} logged` : `Texts: ${b.count} sent${b.failed ? `, ${b.failed} failed` : ""}`) + ` ${new Date(b.at).toLocaleString()} by ${b.by}`).join(" · ")}
                     </p>
                   )}
                 </div>
@@ -675,7 +675,7 @@ export default function TruckArrivals({ isManager, rank = "calls" }: { isManager
                 </div>
               </div>
               <ul className="mt-3 divide-y divide-border">
-                {sel.callers.map((c) => (
+                {(sel.callers ?? []).map((c) => (
                   <li key={c.key} data-testid={`arrival-caller-${c.key}`} className={cn("flex flex-wrap items-center gap-3 py-2.5", c.status !== "to_call" && "opacity-60")}>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-white">
