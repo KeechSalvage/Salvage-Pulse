@@ -930,37 +930,57 @@ def post_cleanup_restore(tid: str) -> dict[str, Any]:
 
 # Tagging & Delivery
 @router.get("/api/tagging/queue")
-def get_tagging_queue() -> dict[str, Any]:
+def get_tagging_queue(request: Request) -> dict[str, Any]:
     st = store.get_state()
-    return st["seed"].get("/tagging/queue", {"total": 0, "items": []})
+    u = get_current_user(request)
+    org_id = u.get("org_id")
+    if org_id == store.KEECH_ORG_ID:
+        return st["seed"].get("/tagging/queue", {"total": 0, "items": []})
+    return {"total": 0, "items": []}
 
 
 @router.post("/api/tagging/{cid}/skip")
 @router.post("/api/tagging/{cid}/delivery")
-def post_tagging_action(cid: str) -> dict[str, Any]:
+def post_tagging_action(cid: str, request: Request) -> dict[str, Any]:
     st = store.get_state()
-    queue = st["seed"].get("/tagging/queue", {"total": 0, "items": []})
-    queue["items"] = [i for i in queue.get("items", []) if i.get("id") != cid]
-    queue["total"] = len(queue["items"])
-    return queue
+    u = get_current_user(request)
+    org_id = u.get("org_id")
+    if org_id == store.KEECH_ORG_ID:
+        queue = st["seed"].get("/tagging/queue", {"total": 0, "items": []})
+        queue["items"] = [i for i in queue.get("items", []) if i.get("id") != cid]
+        queue["total"] = len(queue["items"])
+        return queue
+    return {"total": 0, "items": []}
 
 
 @router.get("/api/tagging/leaderboard")
-def get_tagging_leaderboard() -> dict[str, Any]:
+def get_tagging_leaderboard(request: Request) -> dict[str, Any]:
     st = store.get_state()
-    return st["seed"].get("/tagging/leaderboard", {})
+    u = get_current_user(request)
+    org_id = u.get("org_id")
+    if org_id == store.KEECH_ORG_ID:
+        return st["seed"].get("/tagging/leaderboard", {})
+    return {"leaders": []}
 
 
 @router.get("/api/tagging/champion")
-def get_tagging_champion() -> dict[str, Any]:
+def get_tagging_champion(request: Request) -> dict[str, Any]:
     st = store.get_state()
-    return st["seed"].get("/tagging/champion", {})
+    u = get_current_user(request)
+    org_id = u.get("org_id")
+    if org_id == store.KEECH_ORG_ID:
+        return st["seed"].get("/tagging/champion", {})
+    return {"winners": []}
 
 
 @router.get("/api/tagging/parts")
-def get_tagging_parts() -> dict[str, Any]:
+def get_tagging_parts(request: Request) -> dict[str, Any]:
     st = store.get_state()
-    return st["seed"].get("/tagging/parts", {})
+    u = get_current_user(request)
+    org_id = u.get("org_id")
+    if org_id == store.KEECH_ORG_ID:
+        return st["seed"].get("/tagging/parts", {})
+    return {"parts": []}
 
 
 @router.get("/api/parts/catalog")
