@@ -326,7 +326,7 @@ export default function Calls() {
                   <TableCell>{c.status === "analyzed" || c.status === "imported" || c.status === "completed" ? <CategoryBadge category={c.category} /> : "—"}</TableCell>
                   {isManager && <TableCell className="text-slate-300">{c.rep_name}</TableCell>}
                   <TableCell className="hidden max-w-[260px] truncate text-slate-400 md:table-cell">
-                    {[c.vehicle, c.part_requested].filter(Boolean).join(" · ") || c.topics.slice(0, 3).join(", ") || "—"}
+                    {[c.vehicle, c.part_requested].filter(Boolean).join(" · ") || (c.topics ?? []).slice(0, 3).join(", ") || "—"}
                   </TableCell>
                   <TableCell className="font-mono text-xs text-slate-400">
                     <span className="flex items-center gap-1.5">

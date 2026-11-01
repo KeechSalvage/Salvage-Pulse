@@ -72,7 +72,7 @@ def get_calls(
             text = f"{c.get('customer_name', '')} {c.get('vehicle', '')} {c.get('part_requested', '')} {c.get('summary', '')}".lower()
             if term not in text:
                 continue
-        filtered.append(c)
+        filtered.append({**c, "parts_sold": c.get("parts_sold") or [], "topics": c.get("topics") or []})
 
     return filtered
 
@@ -132,12 +132,20 @@ def get_call_detail(call_id: str, request: Request) -> dict[str, Any]:
     if org_id and match.get("org_id") and match.get("org_id") != org_id:
         raise HTTPException(status_code=403, detail="Call not found")
 
-    if call_id in full_calls:
-        return full_calls[call_id]
+    full = full_calls.get(call_id)
+    if not full:
+        full = store.synthesize_call_details(match)
+        full_calls[call_id] = full
+        store.save_state()
 
-    full = store.synthesize_call_details(match)
-    full_calls[call_id] = full
-    store.save_state()
+    # Ensure required arrays are not None
+    full["parts_sold"] = full.get("parts_sold") or []
+    full["topics"] = full.get("topics") or []
+    full["trackers"] = full.get("trackers") or []
+    full["keyword_hits"] = full.get("keyword_hits") or []
+    full["strengths"] = full.get("strengths") or []
+    full["improvements"] = full.get("improvements") or []
+    full["insights"] = full.get("insights") or []
     return full
 
 
@@ -174,7 +182,7 @@ def get_customer_calls(call_id: str) -> dict[str, Any]:
     cust_name = match.get("customer_name")
     phone = match.get("customer_phone")
     related = [
-        c
+        {**c, "parts_sold": c.get("parts_sold") or [], "topics": c.get("topics") or []}
         for c in st.get("calls", [])
         if c.get("customer_name") == cust_name or (phone and c.get("customer_phone") == phone)
     ]

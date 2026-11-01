@@ -15,22 +15,23 @@ export function usePartCatalog() {
 export function PartsPicker({ value, onChange, testId }: { value: string[]; onChange: (v: string[]) => void; testId: string }) {
   const { data } = usePartCatalog();
   const [q, setQ] = useState("");
+  const safeVal = value ?? [];
   const shown = (data ?? []).filter((p) => p.toLowerCase().includes(q.trim().toLowerCase()));
-  const toggle = (p: string) => onChange(value.includes(p) ? value.filter((x) => x !== p) : [...value, p]);
+  const toggle = (p: string) => onChange(safeVal.includes(p) ? safeVal.filter((x) => x !== p) : [...safeVal, p]);
   return (
     <Popover>
       <PopoverTrigger
         data-testid={testId}
         className="flex h-9 min-w-44 max-w-full items-center gap-2 rounded-md border border-border bg-surface px-3 text-left text-sm text-white transition-colors duration-150 hover:border-slate-500"
       >
-        <span className={cn("min-w-0 flex-1 truncate", !value.length && "text-slate-500")}>{value.length ? value.join(", ") : "Part types sold"}</span>
+        <span className={cn("min-w-0 flex-1 truncate", !safeVal.length && "text-slate-500")}>{safeVal.length ? safeVal.join(", ") : "Part types sold"}</span>
         <ChevronDown className="size-3.5 shrink-0 text-slate-400" />
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 p-2">
         <Input autoFocus data-testid={`${testId}-search`} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search parts…" className="h-8" />
         <ul className="max-h-60 overflow-y-auto" data-testid={`${testId}-options`}>
           {shown.map((p) => {
-            const on = value.includes(p);
+            const on = safeVal.includes(p);
             return (
               <li key={p}>
                 <button
@@ -68,7 +69,7 @@ export function SaleForm({
   requirePrice?: boolean;
 }) {
   const [val, setVal] = useState(price ? String(price) : "");
-  const [picked, setPicked] = useState(parts);
+  const [picked, setPicked] = useState(parts ?? []);
   const num = val.trim() ? Number(val) : null;
   const bad = num !== null && (!Number.isFinite(num) || num < 0 || num > 100000);
   return (
