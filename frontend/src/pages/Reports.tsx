@@ -95,7 +95,10 @@ export default function Reports() {
 
   const isManager = isManagerLike(me?.role);
   const drill = useDrill();
-  const [preset, setPreset] = useState("this-month");
+  // On the first few days of the month (e.g. days 1-3), "this month" often has no data yet;
+  // default to last month so reps and managers aren't greeted with an empty 0-data screen.
+  const defaultPreset = new Date().getDate() <= 3 ? "last-month" : "this-month";
+  const [preset, setPreset] = useState(defaultPreset);
   const [siteId, setSiteId] = useState("");
   const [custom, setCustom] = useState<[string, string]>(PRESETS[0].range());
   const [from, to] = useMemo(() => (preset === "custom" ? custom : PRESETS.find((p) => p.id === preset)!.range()), [preset, custom]);
