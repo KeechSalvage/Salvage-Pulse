@@ -376,9 +376,9 @@ def get_parts_seasonal(request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
     org_id = u.get("org_id")
-    if org_id == store.KEECH_ORG_ID:
-        return st["seed"].get("/analytics/parts-seasonal", {})
-    return {"categories": []}
+    if org_id == store.KEECH_ORG_ID or org_id == "org-dings-auto":
+        return st["seed"].get("/analytics/parts-seasonal", {"months": [], "parts": [], "yard_close_rate": 0})
+    return {"months": [], "parts": [], "yard_close_rate": 0}
 
 
 @router.get("/api/analytics/vehicles")
@@ -390,7 +390,7 @@ def get_vehicles(
     st = store.get_state()
     u = get_current_user(request)
     org_id = u.get("org_id")
-    if org_id == store.KEECH_ORG_ID:
+    if org_id == store.KEECH_ORG_ID or org_id == "org-dings-auto":
         base = st["seed"].get("/analytics/vehicles?rank=calls", {})
         if not body or body == "all":
             return base
@@ -416,7 +416,7 @@ def get_lost_vehicles(
     st = store.get_state()
     u = get_current_user(request)
     org_id = u.get("org_id")
-    if org_id == store.KEECH_ORG_ID:
+    if org_id == store.KEECH_ORG_ID or org_id == "org-dings-auto":
         base_lost = st["seed"].get("/analytics/lost-vehicles?rank=calls", [])
         if not body or body == "all":
             return base_lost
@@ -429,7 +429,7 @@ def get_stock_alerts(request: Request, rank: str = Query("calls")) -> list[dict[
     st = store.get_state()
     u = get_current_user(request)
     org_id = u.get("org_id")
-    if org_id == store.KEECH_ORG_ID:
+    if org_id == store.KEECH_ORG_ID or org_id == "org-dings-auto":
         return st["seed"].get("/analytics/stock-alerts?rank=calls", [])
     return []
 
