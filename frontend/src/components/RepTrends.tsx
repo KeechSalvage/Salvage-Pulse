@@ -55,9 +55,9 @@ export default function RepTrendsPanel({ testId = "rep-trends-panel", className 
       <p className="mt-1 text-sm text-slate-400">Sorted by who improved most since their previous month. Hover a rep to highlight their line.</p>
 
       {isError && <p className="mt-4 text-sm text-slate-500">Rep comparison unavailable.</p>}
-      {data && data.reps.length === 0 && <p className="mt-4 text-sm text-slate-500">No sales calls yet.</p>}
+      {data && (data.reps ?? []).length === 0 && <p className="mt-4 text-sm text-slate-500">No sales calls yet.</p>}
 
-      {data && data.reps.length > 0 && (
+      {data && (data.reps ?? []).length > 0 && (
         <div className="mt-5 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_minmax(0,1.1fr)]">
           <div className="h-[260px]" data-testid={`${testId}-chart`}>
             <ResponsiveContainer width="100%" height="100%">

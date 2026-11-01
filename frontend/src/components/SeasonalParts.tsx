@@ -28,11 +28,11 @@ export default function SeasonalPartsPanel({ lot = "" }: { lot?: string }) {
   const [picked, setPicked] = useState<string | null>(null);
   const drill = useDrill();
   const { data, isError } = useQuery({ queryKey: ["parts-seasonal", lot], queryFn: () => apiGet<PartsSeasonal>(`/analytics/parts-seasonal${lotQS(lot)}`) });
-  const lowClose = useMemo(() => data?.parts.filter((p) => p.low_close) ?? [], [data]);
-  const months = data?.months.slice(-6) ?? [];
-  const offset = (data?.months.length ?? 0) - months.length;
+  const lowClose = useMemo(() => (data?.parts ?? []).filter((p) => p.low_close), [data]);
+  const months = (data?.months ?? []).slice(-6);
+  const offset = ((data?.months ?? []).length) - months.length;
   const cells = (p: PartsSeasonal["parts"][number]) => (mode === "asked" ? p.asked_by_month : p.sold_by_month).slice(offset);
-  const max = Math.max(1, ...(data?.parts.flatMap(cells) ?? [1]));
+  const max = Math.max(1, ...((data?.parts ?? []).flatMap(cells) ?? [1]));
   const focus = (data?.parts ?? []).find((p) => p.part === picked) ?? (data?.parts ?? []).find((p) => p.low_close) ?? data?.parts?.[0];
   const unsold = focus?.reasons.reduce((s, r) => s + r.calls, 0) ?? 0;
   const known = focus?.reasons.filter((r) => r.reason !== "unknown") ?? [];
@@ -64,7 +64,7 @@ export default function SeasonalPartsPanel({ lot = "" }: { lot?: string }) {
       </div>
 
       {isError && <p className="mt-4 text-sm text-slate-500">Parts data unavailable.</p>}
-      {data && data.parts.length === 0 && <p className="mt-4 text-sm text-slate-500">No parts found in call topics yet.</p>}
+      {data && (data.parts ?? []).length === 0 && <p className="mt-4 text-sm text-slate-500">No parts found in call topics yet.</p>}
       {data && lowClose.length > 0 && (
         <div data-testid="parts-low-close-callout" className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/[0.06] px-4 py-3 text-sm">
           <AlertTriangle className="size-4 text-red-400" />
@@ -77,7 +77,7 @@ export default function SeasonalPartsPanel({ lot = "" }: { lot?: string }) {
           <span className="text-xs text-slate-400">vs {data.yard_close_rate}% yard close rate — check pricing, stock or how reps quote these.</span>
         </div>
       )}
-      {data && data.parts.length > 0 && (
+      {data && (data.parts ?? []).length > 0 && (
         <div className="mt-5 overflow-x-auto">
           <table className="w-full text-sm" data-testid="parts-table">
             <thead>
@@ -94,7 +94,7 @@ export default function SeasonalPartsPanel({ lot = "" }: { lot?: string }) {
               </tr>
             </thead>
             <tbody>
-              {data.parts.map((p, i) => (
+              {(data.parts ?? []).map((p, i) => (
                 <tr
                   key={p.part}
                   data-testid={`parts-row-${i}`}
@@ -196,7 +196,7 @@ export default function SeasonalPartsPanel({ lot = "" }: { lot?: string }) {
               )}
             </div>
           )}
-          {data.months.length < 2 && (
+          {(data.months ?? []).length < 2 && (
             <p data-testid="parts-needs-history" className="mt-3 text-xs text-slate-500">
               Only one month loaded, so seasonal peaks aren't visible yet. <Link to="/upload" className="text-sky-400 hover:underline">Import older call history</Link> — a full year shows the busy seasons.
             </p>
