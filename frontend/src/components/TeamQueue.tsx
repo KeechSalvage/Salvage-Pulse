@@ -9,8 +9,8 @@ import type { TeamQueue } from "@/lib/types";
 /** Team Dashboard: how much of today's call queue each rep has cleared; flags reps behind by noon. */
 export default function TeamQueuePanel({ lot = "" }: { lot?: string }) {
   const { data } = useQuery({ queryKey: ["queue", "team", lot], queryFn: () => apiGet<TeamQueue>(`/queue/team${lotQS(lot)}`), refetchInterval: 120_000 });
-  if (!data?.reps.length) return null;
-  const behind = data.reps.filter((r) => r.behind).length;
+  if (!(data?.reps?.length)) return null;
+  const behind = (data.reps ?? []).filter((r) => r.behind).length;
   return (
     <Panel className="mb-6" testId="team-queue-panel">
       <div className="flex flex-wrap items-center gap-3">

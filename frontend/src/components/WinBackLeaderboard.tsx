@@ -16,13 +16,13 @@ export default function WinBackLeaderboardPanel({ testId = "winback-leaderboard-
   const { data: me } = useMe();
   const [month, setMonth] = useState<string | null>(null);
   const { data: all } = useQuery({ queryKey: ["winback-leaderboard", "", lot], queryFn: () => apiGet<WinBackLeaderboard>(`/analytics/winback/leaderboard${lotQS(lot)}`) });
-  const sel = month ?? all?.months[0] ?? "";
+  const sel = month ?? all?.months?.[0] ?? "";
   const { data, isError } = useQuery({
     queryKey: ["winback-leaderboard", sel, lot],
     queryFn: () => apiGet<WinBackLeaderboard>(`/analytics/winback/leaderboard${sel ? `?month=${sel}${lotQS(lot, "&")}` : lotQS(lot)}`),
     enabled: !!all,
   });
-  const top = data?.leaders[0]?.won_value || 1;
+  const top = (data?.leaders ?? [])[0]?.won_value || 1;
 
   return (
     <Panel className="xl:col-span-12" testId={testId}>
@@ -34,9 +34,9 @@ export default function WinBackLeaderboardPanel({ testId = "winback-leaderboard-
           </h3>
           <p className="mt-1 text-sm text-slate-400">Only orders confirmed by a won call within 30 days of the rep's follow-up count.</p>
         </div>
-        {all && all.months.length > 0 && (
+        {all && (all.months ?? []).length > 0 && (
           <div className="flex flex-wrap gap-1 rounded-lg bg-surface p-1">
-            {[...all.months.slice(0, 5), ""].map((m) => (
+            {[...(all.months ?? []).slice(0, 5), ""].map((m) => (
               <button
                 key={m || "all"}
                 data-testid={`winback-leaderboard-month-${m || "all"}`}
@@ -54,14 +54,14 @@ export default function WinBackLeaderboardPanel({ testId = "winback-leaderboard-
       </div>
 
       {isError && <p className="mt-4 text-sm text-slate-500">Leaderboard unavailable.</p>}
-      {all && all.months.length === 0 && (
+      {all && (all.months ?? []).length === 0 && (
         <p data-testid="winback-leaderboard-empty" className="mt-4 text-sm text-slate-500">
           No win-back calls marked yet. The first rep to win back a customer takes the top spot.
         </p>
       )}
-      {data && data.leaders.length > 0 && (
+      {data && (data.leaders ?? []).length > 0 && (
         <ol className="mt-5 space-y-2" data-testid="winback-leaderboard-list">
-          {data.leaders.map((l, i) => (
+          {(data.leaders ?? []).map((l, i) => (
             <li
               key={l.rep_id}
               data-testid={`winback-leader-${i}`}

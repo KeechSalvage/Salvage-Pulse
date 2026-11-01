@@ -12,7 +12,7 @@ const fmtSpeed = (h: number | null) => (h == null ? "—" : h < 1 ? `${Math.roun
 /** Reps ranked by sales from vehicle-arrival lists this month (ties: fastest from vehicle logged to sale). */
 export default function TruckLeaderboard({ lot = "" }: { lot?: string }) {
   const { data } = useQuery({ queryKey: ["arrivals", "leaderboard", lot], queryFn: () => apiGet<Board>(`/arrivals/leaderboard${lotQS(lot)}`) });
-  if (!data?.leaders.length) return null;
+  if (!(data?.leaders?.length)) return null;
   return (
     <Panel testId="truck-leaderboard-panel">
       <div className="flex items-center gap-2">

@@ -10,7 +10,7 @@ const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month
 /** Last week's top vehicle tagger (Mon–Sun, yard time). Hidden when nobody tagged. */
 export default function TagTrophy({ className = "" }: { className?: string }) {
   const { data } = useTagChampion();
-  if (!data?.winners.length) return null;
+  if (!(data?.winners?.length)) return null;
   const n = data.winners[0].tagged;
   const end = new Date(new Date(data.week_end).getTime() - 86_400_000).toISOString();
   return (

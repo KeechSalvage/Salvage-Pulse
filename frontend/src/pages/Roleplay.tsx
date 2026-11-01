@@ -53,7 +53,7 @@ export default function Roleplay() {
   // Re-runs only to follow new chat content; scrollRef is a stable ref so it isn't a dependency.
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [s?.messages.length, streamText, pendingRep]);
+  }, [s?.messages?.length, streamText, pendingRep]);
 
   const start = useMutation({
     mutationFn: (scenario_id: string) => apiPost<RoleplaySession>("/roleplay/sessions", { scenario_id }),

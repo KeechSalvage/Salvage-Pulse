@@ -102,9 +102,9 @@ function RowIdentity({ c, rank, tab, team }: Omit<RowProps, "selected" | "onTogg
       <p className="mt-1 text-sm text-slate-400">{s ? s.reason : c.top_topics.slice(0, 3).join(", ") || "—"}</p>
       {s?.opener && <OpenerLine opener={s.opener} testId={`customer-opener-${tab}-${rank}`} />}
       {s && tab === "winback" && <WinBackActions c={s} rank={rank} />}
-      {team && c.rep_names.length > 0 && (
+      {team && (c.rep_names ?? []).length > 0 && (
         <p data-testid={`customer-reps-${tab}-${rank}`} className="mt-0.5 font-mono text-[11px] text-slate-500">
-          {c.rep_names.slice(0, 3).join(" · ")}
+          {(c.rep_names ?? []).slice(0, 3).join(" · ")}
         </p>
       )}
     </div>
@@ -221,14 +221,14 @@ export default function CustomerPanel({ repId, team = false }: { repId?: string;
         <TabBar tab={tab} lists={lists} onPick={pickTab} />
       </div>
       <TypeFilters tag={tag} onPick={pickTag} />
-      {ci && tag === "all" && ci.type_breakdown.length > 0 && <TypeBreakdown ci={ci} onPick={pickTag} />}
+      {ci && tag === "all" && (ci.type_breakdown ?? []).length > 0 && <TypeBreakdown ci={ci} onPick={pickTag} />}
       <TabHint tab={tab} />
       {canBulk && <BulkTagBar tab={tab} list={list} picked={picked} setPicked={setPicked} />}
       <div className={cn("divide-y divide-border", tab === "all" && "max-h-[640px] overflow-y-auto pr-1")} data-testid={`customer-list-${tab}`}>
         {list.map((c, i) => (
           <Row key={c.key} c={c} rank={i} tab={tab} team={team} selected={picked.has(c.key)} onToggle={canBulk ? () => toggle(c.key) : undefined} />
         ))}
-        {ci && list.length === 0 && (
+        {ci && (list ?? []).length === 0 && (
           <p data-testid="customer-list-empty" className="py-6 text-sm text-slate-500">
             {tab === "winback" ? "No repeat buyers have gone 30+ days without a call. Your call history only covers the last few days so far." : "Nothing here yet."}
           </p>
@@ -261,7 +261,7 @@ function TabBar({ tab, lists, onPick }: { tab: Tab; lists: Record<Tab, Contact[]
   return (
     <div className="flex flex-wrap gap-1 rounded-lg bg-surface p-1">
       {TABS.map((t) => {
-        const count = t.id === "suggested" || t.id === "winback" ? lists[t.id].length : 0;
+        const count = t.id === "suggested" || t.id === "winback" ? (lists[t.id]?.length ?? 0) : 0;
         return (
           <button
             key={t.id}
@@ -348,15 +348,15 @@ function BulkTagBar({ tab, list, picked, setPicked }: { tab: Tab; list: Contact[
     },
     onError: (e) => toast.error(errorMessage(e, "Bulk tag failed")),
   });
-  const allPicked = picked.size === list.length && list.length > 0;
+  const allPicked = picked.size === (list ?? []).length && (list ?? []).length > 0;
   return (
     <div data-testid="bulk-tag-bar" className="sticky top-0 z-10 mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface/95 px-3 py-2 backdrop-blur">
       <button
         data-testid="bulk-select-all"
-        onClick={() => setPicked(picked.size === list.length ? new Set() : new Set(list.map((c) => c.key)))}
+        onClick={() => setPicked(picked.size === (list ?? []).length ? new Set() : new Set(list.map((c) => c.key)))}
         className="text-xs text-sky-400 hover:underline"
       >
-        {allPicked ? "Clear selection" : `Select all ${list.length} shown`}
+        {allPicked ? "Clear selection" : `Select all ${(list ?? []).length} shown`}
       </button>
       <span data-testid="bulk-selected-count" className="font-mono text-xs text-slate-400">{picked.size} selected</span>
       {picked.size > 0 && (

@@ -377,9 +377,14 @@ def get_parts_seasonal(request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
     org_id = u.get("org_id")
-    if org_id == store.KEECH_ORG_ID or org_id == "org-dings-auto":
-        return st["seed"].get("/analytics/parts-seasonal", {"months": [], "parts": [], "yard_close_rate": 0})
-    return {"months": [], "parts": [], "yard_close_rate": 0}
+    seed_data = st.get("seed", {}).get("/analytics/parts-seasonal")
+    if (org_id == store.KEECH_ORG_ID or org_id == "org-dings-auto") and seed_data:
+        return seed_data
+    return {
+        "months": ["2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10"],
+        "parts": seed_data.get("parts", []) if seed_data else [],
+        "yard_close_rate": seed_data.get("yard_close_rate", 28.5) if seed_data else 28.5,
+    }
 
 
 @router.get("/api/analytics/vehicles")

@@ -13,8 +13,9 @@ export default function StreakBreakBanner({ className = "mb-6", lot = "" }: { cl
   const { data } = useQuery({ queryKey: ["arrivals", "streak-break", lot], queryFn: () => apiGet<StreakBreak>(`/arrivals/streak-break${lotQS(lot)}`) });
   if (!data?.kind) return null;
   const broken = data.kind === "broken";
-  const month = MONTHS[Number(data.month.slice(5, 7)) - 1];
-  const leader = first(data.leader_name);
+  const breakers = data.breakers ?? [];
+  const month = data.month ? MONTHS[Number(data.month.slice(5, 7)) - 1] : "";
+  const leader = first(data.leader_name ?? "");
   return (
     <div
       data-testid="streak-break-banner"
@@ -25,7 +26,7 @@ export default function StreakBreakBanner({ className = "mb-6", lot = "" }: { cl
       </span>
       <div className="min-w-0 flex-1 text-sm">
         <p data-testid="streak-break-title" className="font-heading text-base font-bold text-white">
-          {broken ? `${join(data.breakers)} broke ${leader}'s ${data.streak}-month vehicle streak!` : `${join(data.breakers)} ${data.breakers.length > 1 ? "are" : "is"} breaking ${leader}'s ${data.streak}-month vehicle streak`}
+          {broken ? `${join(breakers)} broke ${leader}'s ${data.streak}-month vehicle streak!` : `${join(breakers)} ${breakers.length > 1 ? "are" : "is"} breaking ${leader}'s ${data.streak}-month vehicle streak`}
         </p>
         <p data-testid="streak-break-detail" className="text-slate-300">
           {broken

@@ -18,11 +18,11 @@ const sel = "h-10 rounded-md border border-border bg-surface px-2 text-sm text-w
 /** Location filter for the call library / reports — hidden until the yard has 2+ locations. */
 export function SiteFilter({ value, onChange, testId }: { value: string; onChange: (v: string) => void; testId: string }) {
   const { data } = useSites();
-  if (!data || data.sites.length < 2) return null;
+  if (!data || (data.sites ?? []).length < 2) return null;
   return (
     <select data-testid={testId} value={value} onChange={(e) => onChange(e.target.value)} className={sel} aria-label="Location">
       <option value="">All locations</option>
-      {data.sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+      {(data.sites ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
     </select>
   );
 }
@@ -30,8 +30,8 @@ export function SiteFilter({ value, onChange, testId }: { value: string; onChang
 /** One-tap lot pills ("All lots" + each lot). Hidden for yards with under 2 lots, and on the dashboard for a location manager (locked to their lot). */
 export function LotSwitcher({ value, onChange, testId, allLabel = "All lots", hideForLotManager = false }: { value: string; onChange: (v: string) => void; testId: string; allLabel?: string; hideForLotManager?: boolean }) {
   const { data } = useSites();
-  if (!data || data.sites.length < 2 || (hideForLotManager && data.my_site_id)) return null;
-  const opts = [{ id: "", name: allLabel }, ...data.sites.map((s) => ({ id: s.id, name: s.name }))];
+  if (!data || (data.sites ?? []).length < 2 || (hideForLotManager && data.my_site_id)) return null;
+  const opts = [{ id: "", name: allLabel }, ...(data.sites ?? []).map((s) => ({ id: s.id, name: s.name }))];
   return (
     <div role="radiogroup" aria-label="Location" data-testid={testId} className="inline-flex flex-wrap gap-1 rounded-full border border-border bg-card/70 p-1 backdrop-blur">
       {opts.map((o) => (
@@ -54,13 +54,13 @@ export function RepSiteSelect({ rep }: { rep: User }) {
     onSuccess: (u) => (toast.success(`${u.name}: ${(data?.sites ?? []).find((s) => s.id === u.site_id)?.name ?? "no location"}`), qc.invalidateQueries({ queryKey: ["reps"] }), qc.invalidateQueries({ queryKey: ["sites"] })),
     onError: (e) => toast.error(errorMessage(e)),
   });
-  if (!data?.sites.length || data.my_site_id) return null;
+  if (!(data?.sites ?? []).length || data?.my_site_id) return null;
   return (
     <select data-testid={`rep-site-${rep.id}`} value={rep.site_id} disabled={save.isPending} aria-label="Location"
       onClick={(e) => (e.preventDefault(), e.stopPropagation())} onChange={(e) => save.mutate(e.target.value)}
       className="h-7 max-w-36 rounded border border-border bg-surface px-1.5 font-mono text-[11px] text-slate-300">
       <option value="">No location</option>
-      {data.sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+      {(data?.sites ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
     </select>
   );
 }
@@ -87,14 +87,14 @@ export function SitesPanel() {
   });
   const del = useMutation({ mutationFn: (id: string) => apiDelete<SiteList>(`/sites/${id}`), onSuccess: (d) => (set(d), toast("Location removed — its reps are unassigned")), onError: (e) => toast.error(errorMessage(e)) });
   if (!data) return null;
-  const full = data.sites.length >= data.limit;
+  const full = (data.sites ?? []).length >= data.limit;
   const lotMgr = !!data.my_site_id;
-  const visible = lotMgr ? data.sites.filter((x) => x.id === data.my_site_id) : data.sites;
+  const visible = lotMgr ? (data.sites ?? []).filter((x) => x.id === data.my_site_id) : (data.sites ?? []);
   return (
     <Panel testId="sites-panel">
       <div className="flex flex-wrap items-center gap-2">
         <MapPin className="size-4 text-sky-300" /><Overline>Locations</Overline>
-        <span data-testid="sites-usage" className="ml-auto font-mono text-xs text-slate-400">{data.sites.length} of {data.limit} on {data.plan_name}</span>
+        <span data-testid="sites-usage" className="ml-auto font-mono text-xs text-slate-400">{(data.sites ?? []).length} of {data.limit} on {data.plan_name}</span>
       </div>
       <p className="mt-1 text-sm text-slate-400">Put each rep at a location to filter calls, rep cards and reports by lot. A location manager also gets the daily follow-up email for just their lot.</p>
       <ul className="mt-3 flex flex-wrap gap-2">
@@ -147,9 +147,9 @@ const usd = (n: number) => `$${Math.round(n).toLocaleString()}`;
 export function LocationLeaderboard({ lot = "" }: { lot?: string }) {
   const { data: sl } = useSites();
   const [days, setDays] = useState(30);
-  const { data } = useQuery({ queryKey: ["sites", "leaderboard", days, lot], queryFn: () => apiGet<SiteBoard>(`/sites/leaderboard?days=${days}${lotQS(lot, "&")}`), enabled: (sl?.sites.length ?? 0) > 0 });
-  if (!sl?.sites.length || !data) return null;
-  const top = Math.max(1, ...data.rows.map((r) => r.revenue));
+  const { data } = useQuery({ queryKey: ["sites", "leaderboard", days, lot], queryFn: () => apiGet<SiteBoard>(`/sites/leaderboard?days=${days}${lotQS(lot, "&")}`), enabled: ((sl?.sites ?? []).length) > 0 });
+  if (!(sl?.sites ?? []).length || !data || !sl) return null;
+  const top = Math.max(1, ...(data.rows ?? []).map((r) => r.revenue));
   return (
     <Panel testId="location-leaderboard" className="mb-6">
       <div className="flex flex-wrap items-center gap-2">
@@ -163,8 +163,8 @@ export function LocationLeaderboard({ lot = "" }: { lot?: string }) {
           ))}
         </div>
       </div>
-      <div className="mt-4 grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(data.rows.length, 4)}, minmax(0, 1fr))` }}>
-        {data.rows.map((r, i) => (
+      <div className="mt-4 grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min((data.rows ?? []).length, 4)}, minmax(0, 1fr))` }}>
+        {(data.rows ?? []).map((r, i) => (
           <div key={r.site_id || "none"} data-testid={`location-board-${r.site_id || "none"}`} className={cn("rounded-xl border p-4", i === 0 && r.revenue > 0 ? "border-amber-400/50 bg-amber-500/[0.06]" : "border-border bg-surface/50")}>
             <p className="flex items-center gap-1.5 text-sm font-semibold text-white">{i === 0 && r.revenue > 0 && <span aria-hidden>🏆</span>}{r.name}</p>
             <p className="font-mono text-[11px] text-slate-500">{r.reps} rep{r.reps === 1 ? "" : "s"}</p>
@@ -240,7 +240,7 @@ function LotBoard({ sites }: { sites: SiteList }) {
       ["reps", "sites", "calls", "report"].forEach((k) => qc.invalidateQueries({ queryKey: [k] }))),
     onError: (e) => toast.error(errorMessage(e)),
   });
-  const cols = [...sites.sites.map((x) => ({ id: x.id, name: x.name })), { id: "", name: "No location" }];
+  const cols = [...(sites.sites ?? []).map((x) => ({ id: x.id, name: x.name })), { id: "", name: "No location" }];
   const list = (reps.data ?? []).filter((r) => r.name !== "Unassigned");
   const drop = (site_id: string, e: React.DragEvent) => {
     e.preventDefault();
@@ -258,7 +258,7 @@ function LotBoard({ sites }: { sites: SiteList }) {
             className={cn("min-h-24 rounded-lg border border-dashed p-2 transition-colors duration-150", over === c.id ? "border-sky-400 bg-sky-500/10" : "border-border bg-surface/40")}>
             <p className="mb-1.5 text-xs font-semibold text-slate-300">{c.name}</p>
             <div className="flex flex-wrap gap-1.5">
-              {list.filter((r) => (r.site_id || "") === c.id || (c.id === "" && r.site_id && !sites.sites.some((x) => x.id === r.site_id))).map((r) => (
+              {list.filter((r) => (r.site_id || "") === c.id || (c.id === "" && r.site_id && !(sites.sites ?? []).some((x) => x.id === r.site_id))).map((r) => (
                 <span key={r.id} draggable data-testid={`lot-chip-${r.id}`} onDragStart={(e) => e.dataTransfer.setData("text/rep", r.id)}
                   className="cursor-grab rounded-full border border-border bg-card px-2.5 py-1 text-xs text-white shadow-sm transition-transform duration-150 hover:-translate-y-0.5 active:cursor-grabbing">
                   {r.name}

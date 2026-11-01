@@ -14,7 +14,7 @@ export const useTruckWinner = () => {
 /** Last month's vehicle-sales champion (most sales from vehicle-arrival lists). Hidden when nobody sold. */
 export default function TruckTrophy({ className = "" }: { className?: string }) {
   const { data } = useTruckWinner();
-  if (!data?.winners.length) return null;
+  if (!(data?.winners?.length)) return null;
   const n = data.winners[0].sales;
   return (
     <div

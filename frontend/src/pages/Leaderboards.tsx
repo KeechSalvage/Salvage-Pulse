@@ -84,9 +84,9 @@ function TrophyCase({ lot }: { lot: string }) {
             </Button>
           )}
         </div>
-        {!!data?.totals.length && (
+        {!!(data?.totals ?? []).length && (
           <div className="mb-5 flex flex-wrap gap-2" data-testid="trophy-totals">
-            {data.totals.map((t, i) => (
+            {(data?.totals ?? []).map((t, i) => (
               <span key={t.name} data-testid={`trophy-total-${i}`} className={cn("inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm", i === 0 ? "border-amber-400/60 bg-amber-500/10 text-amber-200" : "border-border text-slate-300")}>
                 <Trophy className="size-3.5" /> {t.name} <span className="font-mono text-xs">×{t.trophies}</span>
               </span>
@@ -178,11 +178,11 @@ function TeamPlayerBoardPanel({ lot }: { lot: string }) {
       <Overline>Team player · {data ? MONTH_LONG(data.month) : ""}</Overline>
       <h3 className="mt-1 text-xl font-bold text-white">Who had their teammates' backs</h3>
       <p className="mb-4 text-xs text-slate-500">One team player badge for every callback a rep finished while covering for someone on the Shift calendar.</p>
-      {!data?.reps.length ? (
+      {!((data?.reps ?? []).length) ? (
         <p className="text-sm text-slate-500" data-testid="team-player-empty">No covered callbacks yet — pick a cover rep when you add time off on the Shift calendar.</p>
       ) : (
         <ol className="space-y-2">
-          {data.reps.map((r, i) => (
+          {(data?.reps ?? []).map((r, i) => (
             <li key={r.rep_id} data-testid={`team-player-${r.rep_id}`} className={cn("flex items-center gap-3 rounded-lg border px-4 py-2.5", i === 0 && r.handled ? "border-rose-400/50 bg-rose-500/[0.06]" : "border-border bg-surface")}>
               <span className="w-6 font-mono text-sm text-slate-500">{i + 1}</span>
               <HeartHandshake className="size-4 text-rose-300" />
@@ -204,11 +204,11 @@ function DeliveryBoard({ lot }: { lot: string }) {
       <Overline>Delivery checklist · {data ? MONTH_LONG(data.month) : ""}</Overline>
       <h3 className="mt-1 text-xl font-bold text-white">Best delivery calls</h3>
       <p className="mb-4 text-xs text-slate-500">Average checklist score (date given, address confirmed, thanked) on this month's delivery calls. Winning the month takes 3+ checked calls.</p>
-      {!data?.reps.length ? (
+      {!((data?.reps ?? []).length) ? (
         <p className="text-sm text-slate-500" data-testid="delivery-leaderboard-empty">No delivery calls checked this month yet — tag a call as a delivery call and the checklist appears on it.</p>
       ) : (
         <ol className="space-y-2">
-          {data.reps.map((r, i) => (
+          {(data?.reps ?? []).map((r, i) => (
             <li key={r.rep_id} data-testid={`delivery-leader-${r.rep_id}`} className={cn("flex items-center gap-3 rounded-lg border px-4 py-2.5", i === 0 ? "border-sky-400/50 bg-sky-500/[0.06]" : "border-border bg-surface")}>
               <span className="w-6 font-mono text-sm text-slate-500">{i + 1}</span>
               {i === 0 && <Crown className="size-4 text-sky-300" />}
@@ -229,11 +229,11 @@ function TagBoard({ lot }: { lot: string }) {
     <Panel testId="tag-leaderboard-panel">
       <Overline>Tagging · this week</Overline>
       <h3 className="mb-4 mt-1 text-xl font-bold text-white">Most vehicles tagged</h3>
-      {!data?.leaders.length ? (
+      {!((data?.leaders ?? []).length) ? (
         <p className="text-sm text-slate-500">Nobody has tagged a vehicle this week yet.</p>
       ) : (
         <ol className="space-y-2">
-          {data.leaders.map((r, i) => (
+          {(data?.leaders ?? []).map((r, i) => (
             <li key={r.user_id} data-testid={`tag-leader-${r.user_id}`} className="flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-2.5">
               <span className="w-6 font-mono text-sm text-slate-500">{i + 1}</span>
               <span className="flex-1 text-white">{r.name}</span>

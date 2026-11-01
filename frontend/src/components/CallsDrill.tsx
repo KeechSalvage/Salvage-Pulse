@@ -35,7 +35,7 @@ export function DrillProvider({ children }: { children: ReactNode }) {
 function DrillDialog({ pick, onClose }: { pick: DrillPick | null; onClose: () => void }) {
   const q = pick ? qs(pick.query) : "";
   const res = useQuery({ queryKey: ["drill", q], queryFn: () => apiGet<DrillCalls>(`/drill/calls?${q}`), enabled: !!pick });
-  const shown = res.data?.calls.length ?? 0;
+  const shown = (res.data?.calls ?? []).length;
   return (
     <Dialog open={!!pick} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[80vh] overflow-y-auto overflow-x-hidden sm:max-w-2xl [&>*]:min-w-0" data-testid="drill-dialog">
