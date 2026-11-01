@@ -735,12 +735,12 @@ export default function TruckArrivals({ isManager, rank = "calls" }: { isManager
                         </button>
                       ))}
                     </div>
-                    {c.status === "sold" && c.parts_sold.length > 0 && selling !== c.key && (
-                      <p data-testid={`arrival-parts-sold-${c.key}`} className="w-full text-right font-mono text-[11px] text-emerald-300/80">sold: {c.parts_sold.join(", ")}</p>
+                    {c.status === "sold" && (c.parts_sold ?? []).length > 0 && selling !== c.key && (
+                      <p data-testid={`arrival-parts-sold-${c.key}`} className="w-full text-right font-mono text-[11px] text-emerald-300/80">sold: {(c.parts_sold ?? []).join(", ")}</p>
                     )}
                     {selling === c.key && (
                       <div className="flex w-full flex-wrap items-center gap-2 border-t border-border pt-2" data-testid={`arrival-sale-${c.key}`}>
-                        <SaleForm price={c.sold_price} parts={c.parts_sold} saving={mark.isPending} saveLabel={c.status === "sold" ? "Update sale" : "Mark sold"} testPrefix={`arrival-sale-${c.key}`}
+                        <SaleForm price={c.sold_price} parts={c.parts_sold ?? []} saving={mark.isPending} saveLabel={c.status === "sold" ? "Update sale" : "Mark sold"} testPrefix={`arrival-sale-${c.key}`}
                           onCancel={() => setSelling(null)} onSave={(p, parts) => mark.mutate({ a: sel.id, key: c.key, status: "sold", sold_price: p, parts_sold: parts })} />
                         {c.status === "sold" && (
                           <Button size="sm" variant="ghost" data-testid={`arrival-sale-unmark-${c.key}`} disabled={mark.isPending} onClick={() => mark.mutate({ a: sel.id, key: c.key, status: "to_call" })}>Not sold</Button>

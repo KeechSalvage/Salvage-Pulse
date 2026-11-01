@@ -895,7 +895,7 @@ def get_drill_calls(
         if month and c_date[:7] != month:
             continue
 
-        res.append(c)
+        res.append({**c, "parts_sold": c.get("parts_sold") or []})
 
     return {"total": len(res), "calls": res[:200]}
 

@@ -37,7 +37,7 @@ export function PriceMissingReminder({ repId }: { repId?: string }) {
               <span className="text-white">{c.customer_name}</span>
               <span className="ml-2 font-mono text-[11px] text-slate-500">
                 {new Date(c.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                {c.parts_sold.length ? ` · ${c.parts_sold.join(", ")}` : c.part_requested ? ` · ${c.part_requested}` : ""}
+                {(c.parts_sold ?? []).length ? ` · ${(c.parts_sold ?? []).join(", ")}` : c.part_requested ? ` · ${c.part_requested}` : ""}
               </span>
             </Link>
           </li>

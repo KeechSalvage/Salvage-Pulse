@@ -22,7 +22,9 @@ export default function CallQueue() {
   const { data } = useQuery({ queryKey: ["queue"], queryFn: () => apiGet<Queue>("/queue") });
   const [all, setAll] = useState(false);
   if (!data) return null;
-  const items = all ? data.items : data.items.slice(0, 8);
+  const rawItems = data.items ?? [];
+  const items = all ? rawItems : rawItems.slice(0, 8);
+  const counts = data.counts ?? { arrival: 0, missed: 0, roleplay: 0 };
   return (
     <Panel className="mb-6" testId="call-queue-panel">
       <div className="flex flex-wrap items-center gap-3">
@@ -32,9 +34,9 @@ export default function CallQueue() {
           <p className="text-xs text-slate-500">Work top to bottom — urgent items first.</p>
         </div>
         <div className="flex gap-3 font-mono text-xs text-slate-400" data-testid="call-queue-counts">
-          <span><b className="text-amber-300">{data.counts.arrival ?? 0}</b> vehicle callers</span>
-          <span><b className="text-red-300">{data.counts.missed ?? 0}</b> missed</span>
-          <span><b className="text-sky-300">{data.counts.roleplay ?? 0}</b> role-plays</span>
+          <span><b className="text-amber-300">{counts.arrival ?? 0}</b> vehicle callers</span>
+          <span><b className="text-red-300">{counts.missed ?? 0}</b> missed</span>
+          <span><b className="text-sky-300">{counts.roleplay ?? 0}</b> role-plays</span>
         </div>
       </div>
       {data.progress?.behind && (
@@ -55,7 +57,7 @@ export default function CallQueue() {
           </div>
         </div>
       )}
-      {data.items.length === 0 ? (
+      {rawItems.length === 0 ? (
         <p className="mt-4 text-sm text-slate-500" data-testid="call-queue-empty">All clear — nothing waiting for you.</p>
       ) : (
         <ul className="mt-4 divide-y divide-border">
@@ -84,9 +86,9 @@ export default function CallQueue() {
           })}
         </ul>
       )}
-      {data.items.length > 8 && (
+      {rawItems.length > 8 && (
         <button data-testid="call-queue-toggle" onClick={() => setAll(!all)} className="mt-2 text-xs text-amber-300 hover:underline">
-          {all ? "Show fewer" : `Show all ${data.items.length}`}
+          {all ? "Show fewer" : `Show all ${rawItems.length}`}
         </button>
       )}
     </Panel>

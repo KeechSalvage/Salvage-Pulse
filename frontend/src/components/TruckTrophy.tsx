@@ -32,7 +32,7 @@ export default function TruckTrophy({ className = "" }: { className?: string }) 
           </p>
           <p className="text-sm text-slate-400" data-testid="truck-trophy-detail">
             {n} sale{n === 1 ? "" : "s"} from vehicle-arrival lists
-            {data.winners.length === 1 && data.winners[0].avg_hours_to_sale != null && ` · avg ${Math.round(data.winners[0].avg_hours_to_sale)} hrs from vehicle logged to sale`}
+            {(data.winners ?? []).length === 1 && data.winners[0].avg_hours_to_sale != null && ` · avg ${Math.round(data.winners[0].avg_hours_to_sale)} hrs from vehicle logged to sale`}
           </p>
         </div>
       </div>

@@ -54,7 +54,7 @@ export function CustomerCallsPanel({ call }: { call: CallSummary }) {
                     {c.rep_name || "Unassigned"}
                     {c.vehicle ? ` · ${c.vehicle}` : ""}
                     {c.part_requested ? ` · ${c.part_requested}` : ""}
-                    {c.parts_sold.length ? ` · sold ${c.parts_sold.join(", ")}` : ""}
+                    {(c.parts_sold ?? []).length ? ` · sold ${(c.parts_sold ?? []).join(", ")}` : ""}
                   </p>
                 </div>
                 <CategoryBadge category={c.category} />
@@ -101,6 +101,7 @@ export function SaleBox({ call }: { call: CallSummary }) {
         </div>
       </Panel>
     );
+  const partsSold = call.parts_sold ?? [];
   return (
     <Panel className="mb-6" testId="call-sale-panel">
       <div className="flex flex-wrap items-center gap-2">
@@ -109,15 +110,15 @@ export function SaleBox({ call }: { call: CallSummary }) {
         {sold && (
           <span data-testid="call-sale-summary" className="font-mono text-xs text-emerald-300">
             {call.order_value > 0 ? fmtMoney(call.order_value) : <span className="text-amber-300">price missing — add it below</span>}
-            {call.parts_sold.length ? ` · ${call.parts_sold.join(", ")}` : ""}
+            {partsSold.length ? ` · ${partsSold.join(", ")}` : ""}
           </span>
         )}
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <SaleForm
-          key={`${call.order_value}-${call.parts_sold.join("|")}`}
+          key={`${call.order_value}-${partsSold.join("|")}`}
           price={call.order_value || null}
-          parts={call.parts_sold}
+          parts={partsSold}
           saving={save.isPending}
           saveLabel={sold ? "Update sale" : "Mark sold"}
           testPrefix="call-sale"

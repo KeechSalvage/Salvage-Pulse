@@ -131,7 +131,7 @@ export function SitesPanel() {
         ))}
       </ul>
       {lotMgr && <p data-testid="sites-lot-manager-note" className="mt-3 text-xs text-sky-300">You manage this location — you see and manage only its reps, calls, callbacks and reports.</p>}
-      {!lotMgr && data.sites.length > 0 && <LotBoard sites={data} />}
+      {!lotMgr && (data.sites ?? []).length > 0 && <LotBoard sites={data} />}
       {!lotMgr && <form className="mt-3 flex flex-wrap items-center gap-2" onSubmit={(e) => (e.preventDefault(), name.trim() && add.mutate())}>
         <Input data-testid="site-name-input" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} placeholder={full ? "Location limit reached" : "e.g. North lot"} disabled={full} className="h-9 w-56" />
         <Button size="sm" type="submit" data-testid="site-add" disabled={full || !name.trim() || add.isPending}><Plus className="size-3.5" /> Add location</Button>
