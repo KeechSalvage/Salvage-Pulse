@@ -55,9 +55,7 @@ Run this command directly in your **Proxmox VE Node Shell**:
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/KeechSalvage/Salvage-Pulse/main/proxmox/create-lxc.sh)"
 ```
 
-This provisions an ultra-lightweight (~100MB RAM) Debian 12 LXC container with automatic startup, systemd management (`salvage-pulse.service`), and one-command updates via `salvage-pulse-update`. See [`proxmox/README.md`](proxmox/README.md) for full options.
-
-The Proxmox service runs as the unprivileged `salvage-pulse` user. Put it behind an HTTPS reverse proxy before exposing it outside your LAN.
+This creates an unprivileged Debian 12 LXC container (defaults: 4 GB RAM, 2 vCPU, 16 GB disk), installs the app as the unprivileged `salvage-pulse` user, hardens the systemd unit, disables demo data, and starts `salvage-pulse.service`. The installer prints the container URL and a one-time master password (or uses `INITIAL_MASTER_PASSWORD`). Updates run with `salvage-pulse-update`. See [`proxmox/README.md`](proxmox/README.md) for all options, HTTPS setup, and troubleshooting.
 
 ---
 

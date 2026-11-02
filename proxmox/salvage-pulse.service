@@ -1,17 +1,27 @@
+# Reference unit for a default install under /opt/salvage-pulse.
+# proxmox/build-lxc.sh generates a customized copy with the real paths,
+# user, port and bind address. Do not edit the generated unit by hand:
+# edit /opt/salvage-pulse/.env and restart the service instead.
+
 [Unit]
 Description=Salvage Pulse AI - Auto Recycler Call Intelligence & CRM
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=salvage-pulse
 Group=salvage-pulse
 WorkingDirectory=/opt/salvage-pulse/backend
+Environment=PORT=8000
+Environment=APP_BIND_HOST=0.0.0.0
 EnvironmentFile=-/opt/salvage-pulse/.env
 Environment=PYTHONDONTWRITEBYTECODE=1
-ExecStart=/opt/salvage-pulse/backend/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/salvage-pulse/backend/.venv/bin/uvicorn main:app --host ${APP_BIND_HOST} --port ${PORT}
 Restart=always
 RestartSec=5s
+UMask=0077
 LimitNOFILE=65536
 
 # Sandboxing & security hardening
@@ -25,7 +35,7 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 CapabilityBoundingSet=
-ReadWritePaths=/opt/salvage-pulse/backend/data /opt/salvage-pulse/backend/uploads
+ReadWritePaths=/opt/salvage-pulse/backend/data
 
 [Install]
 WantedBy=multi-user.target

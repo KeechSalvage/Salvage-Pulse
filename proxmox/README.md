@@ -1,112 +1,395 @@
 # Proxmox VE Deployment Guide for Salvage Pulse AI
 
-This directory contains turnkey scripts and configuration to deploy **Salvage Pulse AI** on **Proxmox Virtual Environment (PVE)**.
+This directory contains the turnkey scripts for running **Salvage Pulse AI** as an
+unprivileged **Proxmox VE LXC container**.
+
+The installer is designed for a real production install:
+
+- Debian 12 LXC (Debian 13 via `CT_TEMPLATE_PATTERN`), unprivileged, with
+  `nesting=1,keyctl=1`
+- Node.js 22 + Python 3 virtual environment
+- The service runs as the unprivileged `salvage-pulse` user, not root
+- `.env` is `0600`, data is `0700`, and the service has systemd sandboxing
+- Demo data and one-click demo logins are **off** by default
+- The initial master password is generated once and written to
+  `backend/data/initial_admin_password.txt` (mode `0600`) unless you set one
 
 ---
 
-## ⚡ Option 1: 1-Click Automated LXC Creation (Recommended)
+## Requirements
 
-Run this single command directly in your **Proxmox VE Node Shell** (via PVE Web GUI -> Select Node -> **Shell**, or via SSH to the PVE host):
+- Proxmox VE 8.x or newer
+- Root shell on the PVE node
+- A storage pool that supports `rootdir` and another (or the same) pool that
+  supports `vztmpl`
+- At least **2 vCPU / 4 GB RAM / 16 GB disk** for a comfortable build. The
+  frontend build is the memory peak; 2 GB may work but is tight.
+- Network access from the container to Debian, NodeSource, PyPI, and npm
+
+---
+
+## Option 1: One-command LXC creation (recommended)
+
+Run this in the **PVE node shell** (GUI: select the node → **Shell**, or SSH to
+the host):
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/KeechSalvage/Salvage-Pulse/main/proxmox/create-lxc.sh)"
 ```
 
-### What this script does automatically:
-1. Detects your storage pools and queries the next available Container ID (e.g., `110`).
-2. Prompts for resource allocation (defaults: **2 vCPUs**, **2048 MB RAM**, **10 GB Disk**, **DHCP**).
-3. Downloads the official Debian 12 standard LXC template.
-4. Creates and boots an unprivileged, nested LXC container (`nesting=1,keyctl=1`).
-5. Installs Node.js 20 LTS, Python 3 virtual environment, and system dependencies.
-6. Builds the production React 19 frontend bundle and configures the FastAPI backend.
-7. Registers and starts the native systemd daemon (`salvage-pulse.service`).
-8. Prints your container IP address and instant login link.
+The script prompts for:
 
----
+| Setting | Default |
+|---|---|
+| Container ID | next free ID |
+| Hostname | `salvage-pulse` |
+| RAM | `4096` MB |
+| vCPU cores | `2` |
+| Disk | `16` GB |
+| Rootfs storage | first `rootdir` storage |
+| Bridge | `vmbr0` |
+| Network | `dhcp` |
+| Initial master email | `brettk@salvagepulsepro.com` |
+| Public URL | blank (LAN-only HTTP) |
+| Gemini API key | blank (heuristic fallback) |
+| Initial master password | blank (auto-generate) |
 
-## 🛠️ Option 2: Install Inside an Existing Debian / Ubuntu LXC
+It then:
 
-If you already created a blank Debian 12 or Ubuntu 22.04/24.04 container:
+1. Downloads the Debian 12 (or 13) standard LXC template if needed.
+2. Creates an unprivileged container with `nesting=1,keyctl=1` and starts it.
+3. Pushes the in-guest installer and a temporary config file into the container.
+4. Installs system packages, Node.js 22, Python venv, and Python requirements.
+5. Builds the React frontend and publishes it to `backend/static`.
+6. Creates the `salvage-pulse` service user and hardened systemd unit.
+7. Starts the service and waits for `/api/health`.
+8. Prints the container IP, master login, initial password, and next steps.
 
-1. Open the console or SSH into your container:
-   ```bash
-   pct enter <CTID>
-   ```
-2. Run the in-guest installation script:
-   ```bash
-   bash -c "$(curl -fsSL https://raw.githubusercontent.com/KeechSalvage/Salvage-Pulse/main/proxmox/build-lxc.sh)"
-   ```
+The temporary config file is deleted from the container after installation.
 
----
+### Non-interactive install
 
-## 🔑 Default Credentials & Access
-
-- **URL:** `http://<CONTAINER_IP>:8000` (put behind HTTPS before exposing publicly)
-- **Master Admin Email:** `brettk@salvagepulsepro.com` (or `brettk`)
-- **Initial Password:** set `INITIAL_MASTER_PASSWORD` in `/opt/salvage-pulse/.env` before first start. If blank, a random password is written to `/opt/salvage-pulse/backend/data/initial_admin_password.txt`.
-- **Platform Console:** `http://<CONTAINER_IP>:8000/admin`
-
----
-
-## ⚙️ Configuration & Environment (`.env`)
-
-The application configuration file is located at:
-```text
-/opt/salvage-pulse/.env
-```
-
-### Adding Google Gemini 2.5 Flash for Real AI Scoring:
-To enable real AI call transcript evaluation, caller sentiment analysis, and roleplay grading:
-1. Get a free API key at [Google AI Studio](https://aistudio.google.com/).
-2. Edit `/opt/salvage-pulse/.env`:
-   ```bash
-   nano /opt/salvage-pulse/.env
-   ```
-3. Add your key:
-   ```dotenv
-   GEMINI_API_KEY=AIzaSy...
-   GEMINI_MODEL=gemini-2.5-flash
-   ```
-4. Restart the service:
-   ```bash
-   systemctl restart salvage-pulse
-   ```
-
-*(Note: If no Gemini key is provided, Salvage Pulse seamlessly falls back to its built-in rule-based scoring engine.)*
-
----
-
-## 🔄 Updating Salvage Pulse
-
-Whenever you push new updates to the repository, you can update your LXC in one step:
+Every prompt can be supplied as an environment variable or flag:
 
 ```bash
-# Inside the container:
-salvage-pulse-update
+CT_ID=120 \
+CT_HOSTNAME=salvage-pulse \
+CT_RAM=4096 CT_CORES=2 CT_DISK=16 \
+CT_STORAGE=local-lvm CT_BRIDGE=vmbr0 CT_NET=dhcp \
+INITIAL_MASTER_EMAIL=you@example.com \
+APP_URL=https://pulse.example.com \
+GEMINI_API_KEY='your-key' \
+bash proxmox/create-lxc.sh --yes
+```
 
-# Or from the Proxmox host shell:
+Useful extra variables: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
+`SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_FROM_NAME`, `GOOGLE_CLIENT_ID`,
+`ALLOWED_HOSTS`, `APP_BIND_HOST`, `SEED_DEMO_DATA`, `DEMO_LOGIN_ENABLED`,
+`COOKIE_SECURE`, `TRUST_PROXY_HEADERS`, `NODE_MAJOR`.
+
+If you run the script from a local checkout, it uses the adjacent
+`proxmox/build-lxc.sh` instead of downloading it. That is useful for testing
+unreleased changes:
+
+```bash
+sudo bash proxmox/create-lxc.sh
+```
+
+---
+
+## Option 2: Install inside an existing Debian/Ubuntu LXC
+
+If you already have a blank Debian 12/13 or Ubuntu 22.04/24.04 container:
+
+```bash
+pct enter <CTID>
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/KeechSalvage/Salvage-Pulse/main/proxmox/build-lxc.sh)"
+```
+
+Or from the PVE host:
+
+```bash
+pct exec <CTID> -- bash -c "$(curl -fsSL https://raw.githubusercontent.com/KeechSalvage/Salvage-Pulse/main/proxmox/build-lxc.sh)"
+```
+
+The installer is idempotent. Re-running it keeps an existing `.env` and data,
+rebuilds the frontend, refreshes the systemd unit, and restarts the service.
+
+---
+
+## First login
+
+- **URL:** `http://<CONTAINER_IP>:8000`
+- **Master email:** the address you supplied (`brettk@salvagepulsepro.com` by default)
+- **Password:** the value you supplied as `INITIAL_MASTER_PASSWORD`, or read:
+
+```bash
+pct exec <CTID> -- cat /opt/salvage-pulse/backend/data/initial_admin_password.txt
+```
+
+The generated password forces a change on first login. After saving it, delete
+the credential file:
+
+```bash
+pct exec <CTID> -- rm -f /opt/salvage-pulse/backend/data/initial_admin_password.txt
+```
+
+Platform console: `http://<CONTAINER_IP>:8000/admin`
+
+---
+
+## Configuration (`.env`)
+
+The live configuration is `/opt/salvage-pulse/.env` (mode `0600`, root-owned).
+The service reads it through systemd's `EnvironmentFile`, so the app itself does
+not need read access to the file.
+
+```bash
+pct exec <CTID> -- nano /opt/salvage-pulse/.env
+pct exec <CTID> -- systemctl restart salvage-pulse
+```
+
+Important settings:
+
+```dotenv
+ENVIRONMENT=production
+PORT=8000
+APP_BIND_HOST=0.0.0.0
+DATA_DIR=/opt/salvage-pulse/backend/data
+APP_URL=https://pulse.example.com
+COOKIE_SECURE=1
+TRUST_PROXY_HEADERS=1
+ALLOWED_HOSTS=pulse.example.com
+
+SEED_DEMO_DATA=0
+DEMO_LOGIN_ENABLED=0
+
+INITIAL_MASTER_EMAIL=brettk@salvagepulsepro.com
+INITIAL_MASTER_PASSWORD=
+```
+
+`INITIAL_MASTER_PASSWORD` is only used when the master account has no password
+hash (first boot). Changing it later does not change an existing password.
+
+### Gemini AI scoring
+
+1. Get a key at [Google AI Studio](https://aistudio.google.com/).
+2. Add it to `.env`:
+
+```dotenv
+GEMINI_API_KEY=AIzaSy...
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+3. Restart: `systemctl restart salvage-pulse`.
+
+Without a key the app falls back to rule-based scoring.
+
+### Google sign-in and email
+
+```dotenv
+GOOGLE_CLIENT_ID=...apps.googleusercontent.com
+
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=you@gmail.com
+SMTP_PASSWORD=your-app-password
+SMTP_FROM=you@gmail.com
+SMTP_FROM_NAME=Salvage Pulse
+SUPPORT_EMAIL=support@salvagepulsepro.com
+```
+
+Google sign-in stays disabled when `GOOGLE_CLIENT_ID` is blank. For Gmail, use
+an **App Password**, not your normal account password.
+
+---
+
+## HTTPS with Caddy (recommended before exposing publicly)
+
+Point a DNS `A`/`AAAA` record at the container, forward ports 80 and 443, then
+inside the container:
+
+```bash
+apt-get update
+apt-get install -y caddy
+
+cat >/etc/caddy/Caddyfile <<'EOF'
+pulse.example.com {
+    reverse_proxy 127.0.0.1:8000
+    encode zstd gzip
+}
+EOF
+
+systemctl enable --now caddy
+systemctl reload caddy
+```
+
+Edit `/opt/salvage-pulse/.env`:
+
+```dotenv
+APP_URL=https://pulse.example.com
+COOKIE_SECURE=1
+TRUST_PROXY_HEADERS=1
+ALLOWED_HOSTS=pulse.example.com
+APP_BIND_HOST=127.0.0.1
+```
+
+Then restart the app:
+
+```bash
+systemctl restart salvage-pulse
+```
+
+Caddy obtains and renews the certificate automatically. Because the app now
+binds only to `127.0.0.1`, port 8000 is no longer reachable from the LAN; use
+the HTTPS URL. Restrict ports 80/443 at the Proxmox firewall as appropriate.
+
+For a LAN-only self-signed certificate, use `tls internal` in the Caddy site
+block instead of a public domain. Browsers will warn unless the CA is trusted.
+
+> `TRUST_PROXY_HEADERS=1` is only safe when a reverse proxy **overwrites**
+> `X-Forwarded-For` / `X-Forwarded-Proto`. Caddy does. Do not enable it when
+> clients can reach uvicorn directly.
+
+---
+
+## Updating
+
+Inside the container:
+
+```bash
+salvage-pulse-update
+```
+
+From the PVE host:
+
+```bash
 pct exec <CTID> -- salvage-pulse-update
 ```
 
-This automatically pulls the latest git commits, updates Python packages, rebuilds the frontend distribution, and restarts the service.
+The updater fetches `origin/main` (or the configured ref), rebuilds the
+frontend, refreshes the unit, and restarts the service. It **refuses to run** if
+there are local tracked changes in `/opt/salvage-pulse`; commit/stash them, or
+force the update with:
+
+```bash
+SP_FORCE=1 salvage-pulse-update
+```
+
+The installer does not overwrite `.env`, `backend/data`, or uploads.
 
 ---
 
-## 📋 Service Management Commands
+## Service management
 
 Inside the container:
-- **Check Status:** `systemctl status salvage-pulse`
-- **Restart Service:** `systemctl restart salvage-pulse`
-- **View Live Logs:** `journalctl -u salvage-pulse -f`
-- **Stop Service:** `systemctl stop salvage-pulse`
+
+```bash
+systemctl status salvage-pulse
+systemctl restart salvage-pulse
+journalctl -u salvage-pulse -f
+systemctl stop salvage-pulse
+```
+
+Useful paths:
+
+| Path | Purpose |
+|---|---|
+| `/opt/salvage-pulse` | Application checkout |
+| `/opt/salvage-pulse/.env` | Secrets and runtime config (`0600`) |
+| `/opt/salvage-pulse/backend/data` | State, SQLite DB, uploads, bootstrap password (`0700`) |
+| `/etc/salvage-pulse.conf` | Installer settings (`0600`, no secrets) |
+| `/etc/systemd/system/salvage-pulse.service` | Generated unit |
 
 ---
 
-## 💾 Backups & Data Persistence
+## Backups and data persistence
 
-- Application data (calls, scenarios, custom passwords, uploaded audio) is persisted in:
-  ```text
-  /opt/salvage-pulse/backend/data
-  /opt/salvage-pulse/backend/uploads
-  ```
-- **Proxmox Backups:** Use Proxmox VE's built-in **Backup** feature (**Datacenter > Backup**) with Mode: **Snapshot**. Because this is an LXC container, snapshots are instantaneous and zero-downtime.
+Back up the whole data directory:
+
+```text
+/opt/salvage-pulse/backend/data
+```
+
+It contains:
+
+- `preview_state.json` — users, sessions, calls, CRM state
+- `salvage_pulse.db` (plus WAL/SHM files) — SQLite database
+- `uploads/` — uploaded audio
+- `initial_admin_password.txt` — first-run credential (delete after use)
+
+Also back up `/opt/salvage-pulse/.env` separately and securely, because it
+contains API keys and SMTP credentials.
+
+For Proxmox-level backups, use **Datacenter → Backup** with mode **Snapshot**.
+LXC snapshots are fast and can be restored without rebuilding the app.
+
+---
+
+## Security notes
+
+- The service runs as `salvage-pulse`, not root, with `NoNewPrivileges`,
+  `ProtectSystem=full`, `ProtectHome`, an empty capability set, and a
+  `0077` umask.
+- `.env` is `0600` root-owned; `backend/data` is `0700` owned by the service
+  user.
+- Demo seeding and demo logins are off by default. Do not enable them on a
+  production instance.
+- Set `APP_URL`, `COOKIE_SECURE=1`, `TRUST_PROXY_HEADERS=1`, and
+  `ALLOWED_HOSTS` once HTTPS is in place.
+- Restrict inbound ports with the Proxmox firewall. Only expose 80/443 when
+  using a reverse proxy.
+- Delete `initial_admin_password.txt` after the first login.
+- Rotate `GEMINI_API_KEY` and `SMTP_PASSWORD` if they were ever committed,
+  pasted into a chat, or included in an image.
+
+---
+
+## Troubleshooting
+
+**The frontend build is killed / OOM**
+
+Give the container more RAM (4 GB recommended) and rerun:
+
+```bash
+pct set <CTID> --memory 4096
+pct exec <CTID> -- bash /opt/salvage-pulse/proxmox/build-lxc.sh
+```
+
+**The service is not healthy**
+
+```bash
+pct exec <CTID> -- journalctl -u salvage-pulse -n 100 --no-pager
+pct exec <CTID> -- systemctl status salvage-pulse
+```
+
+**I cannot log in as master**
+
+Check whether a bootstrap password was generated:
+
+```bash
+pct exec <CTID> -- ls -l /opt/salvage-pulse/backend/data/initial_admin_password.txt
+pct exec <CTID> -- cat /opt/salvage-pulse/backend/data/initial_admin_password.txt
+```
+
+If the state already had a master password, the bootstrap file is not created.
+Reset it explicitly as the service user (do not run this as root, or the state
+file will become root-owned):
+
+```bash
+pct exec <CTID> -- su -s /bin/bash salvage-pulse -c \
+  'cd /opt/salvage-pulse/backend && DATA_DIR=/opt/salvage-pulse/backend/data .venv/bin/python set_password.py brettk@salvagepulsepro.com'
+```
+
+**HTTPS certificate is not issued**
+
+- Confirm DNS points at the container.
+- Confirm ports 80 and 443 reach the container.
+- Check `journalctl -u caddy -n 100 --no-pager`.
+- Caddy needs a public domain for automatic ACME certificates; use
+  `tls internal` for LAN-only.
+
+**The app is reachable on port 8000 after adding Caddy**
+
+Set `APP_BIND_HOST=127.0.0.1` in `.env` and restart, then block port 8000 at the
+firewall.
