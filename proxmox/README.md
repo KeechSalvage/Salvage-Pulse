@@ -41,9 +41,9 @@ If you already created a blank Debian 12 or Ubuntu 22.04/24.04 container:
 
 ## 🔑 Default Credentials & Access
 
-- **URL:** `http://<CONTAINER_IP>:8000`
+- **URL:** `http://<CONTAINER_IP>:8000` (put behind HTTPS before exposing publicly)
 - **Master Admin Email:** `brettk@salvagepulsepro.com` (or `brettk`)
-- **Initial Password:** Any password on first startup (can be updated in `/settings`)
+- **Initial Password:** set `INITIAL_MASTER_PASSWORD` in `/opt/salvage-pulse/.env` before first start. If blank, a random password is written to `/opt/salvage-pulse/backend/data/initial_admin_password.txt`.
 - **Platform Console:** `http://<CONTAINER_IP>:8000/admin`
 
 ---

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -64,52 +64,6 @@ function takePendingSignup(): PendingSignup | null {
   } catch {
     return null;
   }
-}
-
-/** Legacy hash callback handler rendered by App while the URL holds #session_id=... */
-async function exchange(sessionId: string): Promise<{ user: User; message: string }> {
-  const pending = takePendingSignup();
-  if (!pending) {
-    const user = await apiPost<User>("/auth/google", { session_id: sessionId } satisfies GoogleSessionRequest);
-    return { user, message: `Welcome back, ${user.name.split(" ")[0]}` };
-  }
-  const r = await apiPost<GoogleSignupResult>("/auth/google/signup", {
-    session_id: sessionId,
-    ...pending,
-  } satisfies GoogleSignupRequest);
-  return {
-    user: r.user,
-    message: r.created ? "Your free day has started — no card needed" : "You already had an account, so we signed you in",
-  };
-}
-
-export function GoogleCallback({ hash }: { hash: string }) {
-  const nav = useNavigate();
-  const done = useRef(false);
-  useEffect(() => {
-    if (done.current) return;
-    done.current = true;
-    const sessionId = new URLSearchParams(hash.replace(/^#/, "")).get("session_id") ?? "";
-    const failTo = sessionStorage.getItem(PENDING_SIGNUP) ? "/signup" : "/login";
-    exchange(sessionId)
-      .then(({ user, message }) => {
-        beginSession();
-        queryClient.setQueryData(["me"], user);
-        toast.success(message);
-        nav(homeFor(user.role), { replace: true });
-      })
-      .catch((e) => {
-        toast.error(errorMessage(e, "Google sign-in failed"), { duration: 8000 });
-        nav(failTo, { replace: true });
-      });
-  }, [hash, nav]);
-  return (
-    <div data-testid="google-callback" className="flex h-screen items-center justify-center bg-background">
-      <div className="relative h-1 w-48 overflow-hidden rounded bg-slate-800">
-        <div className="scan-bar absolute inset-y-0 w-1/3 bg-amber-500" />
-      </div>
-    </div>
-  );
 }
 
 const GoogleIcon = () => (

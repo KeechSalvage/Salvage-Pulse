@@ -52,6 +52,10 @@ if [ -f "$APP_DIR/proxmox/salvage-pulse.service" ]; then
   cp -f "$APP_DIR/proxmox/salvage-pulse.service" /etc/systemd/system/salvage-pulse.service
   systemctl daemon-reload
 fi
+if id salvage-pulse >/dev/null 2>&1; then
+  chown -R salvage-pulse:salvage-pulse "$APP_DIR/backend/data" "$APP_DIR/backend/uploads"
+fi
+chmod 600 "$APP_DIR/.env" 2>/dev/null || true
 systemctl restart salvage-pulse.service
 
 echo -e "${GREEN}======================================================${NC}"

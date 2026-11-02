@@ -3,13 +3,16 @@
 CLI utility to manually set or reset any user's password in Salvage Pulse.
 
 Usage:
-    python backend/set_password.py <email> <new_password>
+    python backend/set_password.py <email> [new_password]
+
+Omit the password to be prompted without echoing it (recommended).
 
 Inside Docker:
-    docker exec -it salvage-pulse-app python set_password.py brettk@salvagepulsepro.com "MySecret123"
+    docker exec -it salvage-pulse-app python set_password.py brettk@salvagepulsepro.com
 """
 from __future__ import annotations
 
+import getpass
 import sys
 import os
 
@@ -17,11 +20,12 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import store
+from auth_utils import invalidate_user_sessions
 
 
 def set_user_password(email: str, new_password: str) -> bool:
-    if len(new_password) < 6:
-        print("Error: Password must be at least 6 characters long.")
+    if len(new_password) < 8:
+        print("Error: Password must be at least 8 characters long.")
         return False
 
     st = store.get_state()
@@ -46,18 +50,19 @@ def set_user_password(email: str, new_password: str) -> bool:
 
     target_user["password_hash"] = store.hash_password(new_password)
     target_user["must_change_password"] = False
+    invalidate_user_sessions(st, target_user["id"])
     store.save_state()
     print(f"Success! Password for '{target_user.get('name')}' <{target_user.get('email')}> has been updated.")
     return True
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("Usage: python set_password.py <user_email> <new_password>")
-        print("Example: python set_password.py brettk@salvagepulsepro.com 'MySecurePassword123'")
+    if len(sys.argv) < 2:
+        print("Usage: python set_password.py <user_email> [new_password]")
+        print("Omit the password to be prompted securely.")
         sys.exit(1)
 
     email_arg = sys.argv[1]
-    password_arg = sys.argv[2]
+    password_arg = sys.argv[2] if len(sys.argv) > 2 else getpass.getpass("New password: ")
     success = set_user_password(email_arg, password_arg)
     sys.exit(0 if success else 1)

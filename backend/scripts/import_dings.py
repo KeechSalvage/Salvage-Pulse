@@ -44,6 +44,7 @@ DINGS_USERS = {
         "avatar_url": "",
         "disabled": False,
         "password_hash": store.hash_password("owner"),
+        "must_change_password": True,
         "created_at": "2026-10-01T00:00:00Z",
     },
     "user-dings-sales-mgr": {
@@ -56,6 +57,7 @@ DINGS_USERS = {
         "avatar_url": "",
         "disabled": False,
         "password_hash": store.hash_password("manager"),
+        "must_change_password": True,
         "created_at": "2026-10-01T00:00:00Z",
     },
     "user-dings-rep-ericka": {
@@ -68,6 +70,7 @@ DINGS_USERS = {
         "avatar_url": "",
         "disabled": False,
         "password_hash": store.hash_password("rep1"),
+        "must_change_password": True,
         "created_at": "2026-10-01T00:00:00Z",
     },
     "user-dings-rep-rich": {
@@ -80,6 +83,7 @@ DINGS_USERS = {
         "avatar_url": "",
         "disabled": False,
         "password_hash": store.hash_password("rep2"),
+        "must_change_password": True,
         "created_at": "2026-10-01T00:00:00Z",
     },
     "user-dings-rep-joel": {
@@ -92,6 +96,7 @@ DINGS_USERS = {
         "avatar_url": "",
         "disabled": False,
         "password_hash": store.hash_password("rep3"),
+        "must_change_password": True,
         "created_at": "2026-10-01T00:00:00Z",
     },
     "user-dings-rep-cam": {
@@ -104,6 +109,7 @@ DINGS_USERS = {
         "avatar_url": "",
         "disabled": False,
         "password_hash": store.hash_password("rep4"),
+        "must_change_password": True,
         "created_at": "2026-10-01T00:00:00Z",
     },
 }
@@ -141,6 +147,7 @@ def run_import():
         "plan": "enterprise",
         "status": "active",
         "trial_ends_at": None,
+        "must_change_password": True,
         "created_at": "2026-10-01T00:00:00Z",
         "users": len(DINGS_USERS),
         "calls": total_raw,

@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -8,7 +9,13 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "salvage_pulse.db")
+import passwords
+
+logger = logging.getLogger(__name__)
+
+_DATA_DIR = os.environ.get("DATA_DIR") or os.path.join(os.path.dirname(__file__), "data")
+os.makedirs(_DATA_DIR, exist_ok=True)
+DB_PATH = os.path.join(_DATA_DIR, "salvage_pulse.db")
 
 CATEGORIES = [
     "Part Inquiry/Quote",
@@ -315,7 +322,11 @@ COMMON_PARTS = [
 
 
 def hash_password(password: str) -> str:
-    return hashlib.sha256(f"sp_salt::{password}".encode("utf-8")).hexdigest()
+    return passwords.hash_password(password)
+
+
+def verify_password(password: str, stored: Optional[str]) -> bool:
+    return passwords.verify_password(password, stored)
 
 
 def normalize_phone(phone: Optional[str]) -> str:
@@ -461,6 +472,21 @@ def get_db():
         raise
     finally:
         conn.close()
+
+
+def _lock_down_data_files() -> None:
+    """Keep the SQLite database and its WAL files private to the service user."""
+    try:
+        os.chmod(_DATA_DIR, 0o700)
+    except OSError:
+        pass
+    for suffix in ("", "-wal", "-shm"):
+        path = DB_PATH + suffix
+        if os.path.exists(path):
+            try:
+                os.chmod(path, 0o600)
+            except OSError:
+                pass
 
 
 def init_schema():
@@ -787,3 +813,4 @@ def init_schema():
                 conn.execute("ALTER TABLE arrivals ADD COLUMN crush_deadline TEXT")
         except Exception as e:
             logger.warning(f"Schema migration warning: {e}")
+    _lock_down_data_files()

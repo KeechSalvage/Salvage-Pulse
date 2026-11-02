@@ -1,49 +1,117 @@
 from __future__ import annotations
 
+import logging
 import os
+import threading
 import uuid
-import httpx
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
+
+import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
+
+import email_service
 import store
-from auth_utils import get_current_user, set_session_cookie
+from auth_utils import (
+    clear_session_cookie,
+    client_ip,
+    consume_security_token,
+    current_session_key,
+    get_current_user,
+    invalidate_user_sessions,
+    issue_security_token,
+    revoke_request_session,
+    set_session_cookie,
+)
+from security import (
+    AUTH_LIMITER,
+    SIGNUP_LIMITER,
+    app_public_url,
+    enforce_rate_limit,
+    validate_email,
+    validate_password,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["auth"])
 
+DEMO_LOGIN_ENABLED = os.environ.get("DEMO_LOGIN_ENABLED", "0").lower() in ("1", "true", "yes")
+ALLOWED_PLANS = {"starter", "pro", "enterprise", "trial"}
 
-def _find_master_or_actor(impersonator_id: str | None = None) -> dict[str, Any]:
-    st = store.get_state()
-    users = st.get("users_by_id", {})
-    if impersonator_id and impersonator_id in users and not users[impersonator_id].get("disabled"):
-        return users[impersonator_id]
-    masters = [u for u in users.values() if u.get("role") == "master" and not u.get("disabled")]
-    if masters:
-        return masters[0]
-    admins = [u for u in users.values() if u.get("role") == "admin" and not u.get("disabled")]
-    if admins:
-        return admins[0]
-    if users:
-        return list(users.values())[0]
-    return {
-        "id": "master-brettk",
-        "email": "brettk@salvagepulsepro.com",
-        "name": "Brett K",
-        "role": "master",
+
+def _public_user(user: dict[str, Any]) -> dict[str, Any]:
+    """Strip credential material before a user object leaves the server."""
+    safe = dict(user)
+    safe.pop("password_hash", None)
+    safe.pop("password", None)
+    return safe
+
+
+def _app_url(request: Request) -> str:
+    return app_public_url(request)
+
+
+def _find_user_by_email(st: dict[str, Any], email: str) -> dict[str, Any] | None:
+    return next(
+        (u for u in st.get("users_by_id", {}).values() if (u.get("email") or "").strip().lower() == email),
+        None,
+    )
+
+
+def _create_yard(st: dict[str, Any], *, yard_name: str, plan: str) -> dict[str, Any]:
+    org_id = str(uuid.uuid4())
+    plan = plan if plan in ALLOWED_PLANS else "enterprise"
+    org = {
+        "id": org_id,
+        "name": yard_name,
+        "yard_name": yard_name,
+        "plan": plan,
+        "status": "trialing",
+        "trial_ends_at": (datetime.now(timezone.utc) + timedelta(days=14)).isoformat(),
+        "created_at": store.now_iso(),
+        "users": 1,
+        "calls": 0,
+        "ringcentral_connected": False,
+        "card_on_file": False,
+        "blocked": False,
+        "cancel_reason": "",
+        "discount": None,
+        "sites": 0,
+        "max_sites": 2,
+        "extra_sites": 0,
     }
+    st.setdefault("admin_orgs", []).insert(0, org)
+    st.setdefault("branding_by_org", {})[org_id] = {
+        "yard_name": yard_name,
+        "accent": "",
+        "default_mode": "dark",
+        "logo_url": "",
+        "user_mode": "dark",
+        "mode": "dark",
+    }
+    return org
+
+
+def _yard_disabled(st: dict[str, Any], org_id: str | None) -> bool:
+    if not org_id:
+        return False
+    yard = next((o for o in st.get("admin_orgs", []) if o.get("id") == org_id), None)
+    return bool(yard and (yard.get("blocked") or yard.get("status") == "canceled"))
 
 
 @router.get("/api/auth/me")
 def auth_me(request: Request) -> dict[str, Any]:
-    return get_current_user(request)
+    return _public_user(get_current_user(request))
 
 
 @router.get("/api/auth/demo-login")
 def auth_demo_login_status() -> dict[str, Any]:
     st = store.get_state()
-    return st.get("demo_login_switch", {"enabled": False})
+    sw = st.get("demo_login_switch", {})
+    return {"enabled": bool(DEMO_LOGIN_ENABLED and store.SEED_DEMO_DATA and sw.get("enabled", False))}
 
 
 class DemoLoginReq(BaseModel):
@@ -58,46 +126,24 @@ DEMO_ROLE_MAP = {
     "inventory": "user-keech-inv-mgr",
     "rep": "user-keech-rep",
     "sales_rep": "user-keech-rep",
-    "master": "master-brettk",
-    "admin": "master-brettk",
 }
 
 
 @router.post("/api/auth/demo-login")
-def auth_demo_login(response: Response, req: Optional[DemoLoginReq] = None) -> dict[str, Any]:
+def auth_demo_login(response: Response, request: Request, req: Optional[DemoLoginReq] = None) -> dict[str, Any]:
     st = store.get_state()
     sw = st.get("demo_login_switch", {})
-    if not sw.get("enabled", False):
-        raise HTTPException(status_code=403, detail="Demo login is disabled in production")
+    if not (DEMO_LOGIN_ENABLED and store.SEED_DEMO_DATA and sw.get("enabled", False)):
+        raise HTTPException(status_code=403, detail="Demo login is disabled")
+
     target_role = (req.role if req else "manager").lower().strip()
-
-    user = None
     target_id = DEMO_ROLE_MAP.get(target_role)
-    if target_id and target_id in st.get("users_by_id", {}):
-        user = st["users_by_id"][target_id]
+    user = st.get("users_by_id", {}).get(target_id) if target_id else None
+    if not user or user.get("disabled"):
+        raise HTTPException(status_code=404, detail="That demo role is not available")
 
-    if not user:
-        if target_role == "master":
-            masters = [u for u in st["users_by_id"].values() if u.get("role") == "master" and not u.get("disabled")]
-            user = masters[0] if masters else None
-        elif target_role == "owner":
-            owners = [u for u in st["users_by_id"].values() if u.get("role") == "owner" and not u.get("disabled")]
-            user = owners[0] if owners else None
-        elif target_role in ("sales_manager", "sales"):
-            sms = [u for u in st["users_by_id"].values() if u.get("role") in ("sales_manager", "manager") and not u.get("disabled")]
-            user = sms[0] if sms else None
-        elif target_role in ("inventory_manager", "inventory"):
-            ims = [u for u in st["users_by_id"].values() if u.get("role") == "inventory_manager" and not u.get("disabled")]
-            user = ims[0] if ims else None
-        elif target_role in ("rep", "sales_rep"):
-            reps = [u for u in st["users_by_id"].values() if u.get("role") in ("rep", "sales_rep") and not u.get("disabled")]
-            user = reps[0] if reps else None
-
-    if not user:
-        user = st.get("users_by_id", {}).get("master-brettk") or list(st["users_by_id"].values())[0]
-
-    set_session_cookie(response, user["id"])
-    return user
+    set_session_cookie(response, user["id"], request)
+    return _public_user(user)
 
 
 class LoginReq(BaseModel):
@@ -108,52 +154,40 @@ class LoginReq(BaseModel):
 @router.post("/api/auth/login")
 def auth_login(req: LoginReq, response: Response, request: Request) -> dict[str, Any]:
     st = store.get_state()
-    email_clean = req.email.strip().lower()
+    email_clean = (req.email or "").strip().lower()
+    enforce_rate_limit(AUTH_LIMITER, f"login:{client_ip(request)}:{email_clean}")
 
     if not email_clean:
         raise HTTPException(status_code=400, detail="Email is required")
 
-    match = None
-    for u in st.get("users_by_id", {}).values():
-        if u.get("email", "").strip().lower() == email_clean:
-            match = u
-            break
+    match = _find_user_by_email(st, email_clean)
+    stored_hash = (match.get("password_hash") or match.get("password")) if match else None
 
-    if not match:
+    # Always run a hash comparison so response timing does not reveal whether
+    # the address exists.  A dummy PBKDF2 hash is used for unknown accounts.
+    valid = store.verify_password(
+        req.password or "",
+        stored_hash or "pbkdf2_sha256$260000$00000000000000000000000000000000$" + "0" * 64,
+    )
+    if not match or not valid or match.get("disabled") or match.get("locked"):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    if match and match.get("disabled"):
-        raise HTTPException(status_code=403, detail="Account is disabled. Please contact your administrator.")
+    if _yard_disabled(st, match.get("org_id")):
+        raise HTTPException(status_code=403, detail="Yard is disabled. Please contact platform support.")
 
-    stored_hash = match.get("password_hash") or match.get("password")
-
-    if not stored_hash or not store.verify_password(req.password or "", stored_hash):
-        raise HTTPException(status_code=401, detail="Incorrect password. Please verify your credentials.")
-
-    if req.password and not stored_hash:
-        match["password_hash"] = store.hash_password(req.password)
+    if store.needs_rehash(stored_hash):
+        match["password_hash"] = store.hash_password(req.password or "")
+        match.pop("password", None)
         store.save_state()
 
-    u_org_id = match.get("org_id") if match else None
-    if u_org_id:
-        yard = next((o for o in st.get("admin_orgs", []) if o.get("id") == u_org_id), None)
-        if yard and (yard.get("blocked") or yard.get("status") == "canceled"):
-            raise HTTPException(status_code=403, detail="Yard is disabled. Please contact platform support.")
-
     set_session_cookie(response, match["id"], request)
-    return match
+    return _public_user(match)
 
 
 @router.post("/api/auth/logout")
 def auth_logout(response: Response, request: Request) -> dict[str, Any]:
-    st = store.get_state()
-    cookie_token = request.cookies.get("sp_session")
-    if cookie_token:
-        st.get("sessions", {}).pop(cookie_token, None)
-        st.get("session_meta", {}).pop(cookie_token, None)
-    st["current_user_id"] = None
-    response.delete_cookie(key="sp_session", path="/")
-    store.save_state()
+    revoke_request_session(request)
+    clear_session_cookie(response)
     return {"ok": True}
 
 
@@ -166,72 +200,53 @@ class SignupReq(BaseModel):
 
 
 @router.post("/api/auth/signup")
-def auth_signup(req: SignupReq, response: Response) -> dict[str, Any]:
+def auth_signup(req: SignupReq, response: Response, request: Request) -> dict[str, Any]:
     st = store.get_state()
-    new_id = str(uuid.uuid4())
-    org_id = str(uuid.uuid4())
+    enforce_rate_limit(SIGNUP_LIMITER, f"signup:{client_ip(request)}")
 
+    email_clean = validate_email(req.email)
+    password = validate_password(req.password)
+    name = (req.name or "").strip()
+    yard_name = (req.yard_name or "").strip()
+    if not name or len(name) > 120:
+        raise HTTPException(status_code=400, detail="Enter your name")
+    if not yard_name or len(yard_name) > 160:
+        raise HTTPException(status_code=400, detail="Enter your yard name")
+    if _find_user_by_email(st, email_clean):
+        raise HTTPException(status_code=400, detail="An account with that email already exists")
+
+    org = _create_yard(st, yard_name=yard_name, plan=req.plan)
+    new_id = str(uuid.uuid4())
     new_user = {
         "id": new_id,
-        "email": req.email.strip().lower(),
-        "name": req.name,
+        "email": email_clean,
+        "name": name,
         "role": "owner",
         "title": "Yard Owner",
         "avatar_url": "",
-        "org_id": org_id,
-        "impersonated_by": "",
+        "org_id": org["id"],
         "disabled": False,
         "site_id": "",
         "must_change_password": False,
-        "password_hash": store.hash_password(req.password) if req.password else "",
+        "password_hash": store.hash_password(password),
     }
     st.setdefault("users_by_id", {})[new_id] = new_user
-
-    new_org = {
-        "id": org_id,
-        "name": req.yard_name,
-        "yard_name": req.yard_name,
-        "plan": req.plan or "enterprise",
-        "status": "trialing",
-        "trial_ends_at": (datetime.now(timezone.utc) + timedelta(days=14)).isoformat(),
-        "created_at": store.now_iso(),
-        "users": 1,
-        "calls": 0,
-        "ringcentral_connected": False,
-        "card_on_file": False,
-        "blocked": False,
-        "cancel_reason": "",
-        "discount": None,
-        "sites": 0,
-        "max_sites": 2,
-        "extra_sites": 0,
-    }
-    st.setdefault("admin_orgs", []).insert(0, new_org)
-    st.setdefault("branding_by_org", {})[org_id] = {
-        "yard_name": req.yard_name,
-        "accent": "",
-        "default_mode": "dark",
-        "logo_url": "",
-        "user_mode": "dark",
-        "mode": "dark",
-    }
     st.setdefault("admin_audit", []).insert(0, {
         "at": store.now_iso(),
-        "actor": req.name,
-        "action": f"signed up yard with plan {req.plan}",
-        "target": req.yard_name,
+        "actor": name,
+        "action": f"signed up yard with plan {org['plan']}",
+        "target": yard_name,
     })
 
-    set_session_cookie(response, new_id)
+    set_session_cookie(response, new_id, request)
     store.save_state()
-    return new_user
+    return _public_user(new_user)
 
 
 class GoogleAuthReq(BaseModel):
     access_token: Optional[str] = None
     id_token: Optional[str] = None
     session_id: Optional[str] = None
-    user_id: Optional[str] = None
 
 
 class GoogleSignupReq(BaseModel):
@@ -243,87 +258,87 @@ class GoogleSignupReq(BaseModel):
 
 
 async def _fetch_google_user(access_token: Optional[str], id_token: Optional[str]) -> Optional[dict[str, Any]]:
+    """Verify a Google token and return only verified profiles.
+
+    The token must have been issued for this application.  Without an audience
+    check, a token minted for any other Google OAuth client could be replayed
+    here to sign in as its owner.
+    """
     if not access_token and not id_token:
+        return None
+    expected_aud = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+    if not expected_aud:
+        logger.warning("Google sign-in rejected because GOOGLE_CLIENT_ID is not configured")
         return None
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
-            if access_token:
-                resp = await client.get(
-                    "https://www.googleapis.com/oauth2/v3/userinfo",
-                    headers={"Authorization": f"Bearer {access_token}"},
-                )
-                if resp.status_code == 200:
-                    return resp.json()
+            profile: dict[str, Any] | None = None
             if id_token:
+                resp = await client.get("https://oauth2.googleapis.com/tokeninfo", params={"id_token": id_token})
+                if resp.status_code == 200:
+                    profile = resp.json()
+            elif access_token:
                 resp = await client.get(
-                    f"https://oauth2.googleapis.com/tokeninfo?id_token={id_token}"
+                    "https://oauth2.googleapis.com/tokeninfo",
+                    params={"access_token": access_token},
                 )
                 if resp.status_code == 200:
-                    return resp.json()
-    except Exception:
-        pass
-    return None
+                    profile = resp.json()
+
+            if not profile:
+                return None
+            if str(profile.get("aud") or "") != expected_aud:
+                logger.warning("Rejected Google token with unexpected audience")
+                return None
+            verified = profile.get("email_verified")
+            if verified is None:
+                verified = profile.get("verified_email")
+            if verified is not True and str(verified).lower() != "true":
+                return None
+            if not profile.get("email"):
+                return None
+            return profile
+    except Exception as exc:
+        logger.warning("Google token verification failed: %s", exc)
+        return None
 
 
 @router.get("/api/auth/google/config")
 def auth_google_config() -> dict[str, Any]:
+    """Public OAuth client configuration.  Never enumerate account emails."""
     client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
-    st = store.get_state()
-    seen_emails: set[str] = set()
-    users = []
-    raw_users = list(st.get("users_by_id", {}).values())
-    raw_users.sort(key=lambda u: (0 if "keechauto.com" in u.get("email", "") or u.get("id") == "master-brettk" else 1))
-
-    for u in raw_users:
-        email = u.get("email", "").strip().lower()
-        if not email or email in seen_emails or u.get("disabled"):
-            continue
-        if u.get("role") not in ("owner", "sales_manager", "inventory_manager", "rep", "master"):
-            continue
-        seen_emails.add(email)
-        users.append({
-            "id": u["id"],
-            "name": u.get("name", ""),
-            "email": u.get("email", ""),
-            "role": u.get("role", ""),
-            "title": u.get("title", ""),
-            "avatar_url": u.get("avatar_url", ""),
-        })
-
-    order = {"owner": 1, "sales_manager": 2, "inventory_manager": 3, "rep": 4, "master": 5}
-    users.sort(key=lambda x: (order.get(x["role"], 99), x["name"]))
-    return {
-        "configured": bool(client_id),
-        "client_id": client_id,
-        "accounts": users,
-    }
+    return {"configured": bool(client_id), "client_id": client_id, "accounts": []}
 
 
 @router.post("/api/auth/google/signup")
 async def auth_google_signup(req: GoogleSignupReq, response: Response, request: Request) -> dict[str, Any]:
     st = store.get_state()
+    enforce_rate_limit(SIGNUP_LIMITER, f"google-signup:{client_ip(request)}")
+
     google_profile = await _fetch_google_user(req.access_token, req.id_token)
     if not google_profile:
-        raise HTTPException(
-            status_code=400,
-            detail="Google authorization could not be verified. Please try again.",
-        )
+        raise HTTPException(status_code=400, detail="Google authorization could not be verified. Please try again.")
 
-    email = google_profile.get("email", "").strip().lower()
-    name = google_profile.get("name") or email.split("@")[0]
+    email = validate_email(str(google_profile.get("email", "")))
+    name = (google_profile.get("name") or email.split("@")[0]).strip()[:120]
     picture = google_profile.get("picture", "")
+    yard_name = (req.yard_name or "").strip()
+    if not yard_name or len(yard_name) > 160:
+        raise HTTPException(status_code=400, detail="Enter your yard name")
 
-    match = next((u for u in st.get("users_by_id", {}).values() if u.get("email", "").strip().lower() == email), None)
+    match = _find_user_by_email(st, email)
     if match:
+        if match.get("disabled") or match.get("locked") or _yard_disabled(st, match.get("org_id")):
+            raise HTTPException(status_code=403, detail="This account is unavailable. Please contact support.")
+        # Linking Google proves ownership of the email, but it must not silently
+        # clear a forced rotation on a still-weak local password.
         match["google_linked"] = True
-        match["must_change_password"] = False
         set_session_cookie(response, match["id"], request)
         store.save_state()
-        return {"user": match, "created": False}
+        return {"user": _public_user(match), "created": False}
 
+    org = _create_yard(st, yard_name=yard_name, plan=req.plan)
     new_id = f"user-{uuid.uuid4().hex[:12]}"
-    org_id = f"org-{uuid.uuid4().hex[:12]}"
-
     new_user = {
         "id": new_id,
         "email": email,
@@ -331,92 +346,52 @@ async def auth_google_signup(req: GoogleSignupReq, response: Response, request: 
         "role": "owner",
         "title": "Yard Owner",
         "avatar_url": picture,
-        "org_id": org_id,
-        "impersonated_by": "",
+        "org_id": org["id"],
         "disabled": False,
         "site_id": "",
         "must_change_password": False,
         "google_linked": True,
     }
     st.setdefault("users_by_id", {})[new_id] = new_user
-
-    new_org = {
-        "id": org_id,
-        "name": req.yard_name,
-        "yard_name": req.yard_name,
-        "plan": req.plan or "enterprise",
-        "status": "trialing",
-        "trial_ends_at": (datetime.now(timezone.utc) + timedelta(days=14)).isoformat(),
-        "created_at": store.now_iso(),
-        "users": 1,
-        "calls": 0,
-        "ringcentral_connected": False,
-        "card_on_file": False,
-        "blocked": False,
-        "cancel_reason": "",
-        "discount": None,
-        "sites": 0,
-        "max_sites": 2,
-        "extra_sites": 0,
-    }
-    st.setdefault("admin_orgs", []).insert(0, new_org)
-    st.setdefault("branding_by_org", {})[org_id] = {
-        "yard_name": req.yard_name,
-        "accent": "",
-        "default_mode": "dark",
-        "logo_url": "",
-        "user_mode": "dark",
-        "mode": "dark",
-    }
-    set_session_cookie(response, new_id)
+    set_session_cookie(response, new_id, request)
     store.save_state()
-    return {"user": new_user, "created": True}
+    return {"user": _public_user(new_user), "created": True}
 
 
 @router.post("/api/auth/google")
 async def auth_google(req: GoogleAuthReq, response: Response, request: Request) -> dict[str, Any]:
     st = store.get_state()
+    enforce_rate_limit(AUTH_LIMITER, f"google:{client_ip(request)}")
 
-    # 1. Direct user_id selection (e.g. from the account chooser when Google OAuth is not configured)
-    if req.user_id and req.user_id in st.get("users_by_id", {}):
-        target = st["users_by_id"][req.user_id]
-        set_session_cookie(response, target["id"], request)
-        return target
-
-    # 2. Real Google OAuth Token verification
-    google_profile = await _fetch_google_user(req.access_token, req.id_token)
-    if google_profile:
-        email = google_profile.get("email", "").strip().lower()
-        picture = google_profile.get("picture", "")
-
-        match = next((u for u in st.get("users_by_id", {}).values() if u.get("email", "").strip().lower() == email), None)
-        if match:
-            match["google_linked"] = True
-            match["must_change_password"] = False  # Google proves identity; no starting password needed
-            if picture and not match.get("avatar_url"):
-                match["avatar_url"] = picture
-            set_session_cookie(response, match["id"], request)
-            store.save_state()
-            return match
-
-        if email == store.INITIAL_MASTER_EMAIL:
-            masters = [u for u in st.get("users_by_id", {}).values() if u.get("role") == "master" and not u.get("disabled")]
-            if masters:
-                m = masters[0]
-                m["google_linked"] = True
-                set_session_cookie(response, m["id"], request)
-                store.save_state()
-                return m
-
+    if req.session_id:
         raise HTTPException(
-            status_code=404,
-            detail=f"No account found with email '{email}'. Please ask your yard owner for an invite or sign up for a new yard.",
+            status_code=400,
+            detail="This Google sign-in flow is no longer supported. Please use the sign-in button again.",
         )
 
-    raise HTTPException(
-        status_code=400,
-        detail="Google OAuth is not configured. Please add GOOGLE_CLIENT_ID to .env or choose an account.",
-    )
+    google_profile = await _fetch_google_user(req.access_token, req.id_token)
+    if not google_profile:
+        raise HTTPException(status_code=400, detail="Google authorization could not be verified. Please try again.")
+
+    email = validate_email(str(google_profile.get("email", "")))
+    picture = google_profile.get("picture", "")
+    match = _find_user_by_email(st, email)
+    if not match:
+        raise HTTPException(
+            status_code=404,
+            detail="No account found for that Google email. Ask your yard owner for an invite or sign up for a new yard.",
+        )
+    if match.get("disabled") or match.get("locked") or _yard_disabled(st, match.get("org_id")):
+        raise HTTPException(status_code=403, detail="This account is unavailable. Please contact support.")
+
+    # Do not clear must_change_password here: a weak local password stays valid
+    # until the user actually sets a new one.
+    match["google_linked"] = True
+    if picture and not match.get("avatar_url"):
+        match["avatar_url"] = picture
+    set_session_cookie(response, match["id"], request)
+    store.save_state()
+    return _public_user(match)
 
 
 class ChangePasswordReq(BaseModel):
@@ -427,49 +402,133 @@ class ChangePasswordReq(BaseModel):
 @router.post("/api/auth/change-password")
 def auth_change_password(req: ChangePasswordReq, request: Request) -> dict[str, Any]:
     u = get_current_user(request)
+    if u.get("impersonator_id"):
+        raise HTTPException(status_code=403, detail="Stop impersonating before changing a password.")
     stored_hash = u.get("password_hash") or u.get("password")
-    if stored_hash and req.current_password:
-        if not store.verify_password(req.current_password, stored_hash):
+    new_password = validate_password(req.new_password)
+
+    if stored_hash:
+        if not req.current_password or not store.verify_password(req.current_password, stored_hash):
             raise HTTPException(status_code=400, detail="Current password is incorrect")
-    if len(req.new_password) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
-    u["password_hash"] = store.hash_password(req.new_password)
+
+    u["password_hash"] = store.hash_password(new_password)
+    u.pop("password", None)
     u["must_change_password"] = False
+    u["locked"] = False
+    # Changing a password signs out every other session.
+    st = store.get_state()
+    invalidate_user_sessions(st, u["id"], keep=current_session_key(request))
     store.save_state()
     return {"ok": True, "message": "Password updated successfully"}
 
 
+class ForgotPasswordReq(BaseModel):
+    email: str
+
+
+RESET_MESSAGE = "If that email matches an account, a reset link is on its way. It works once, for 1 hour."
+
+
 @router.post("/api/auth/forgot-password")
+def auth_forgot_password(req: ForgotPasswordReq, request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    email_clean = (req.email or "").strip().lower()
+    enforce_rate_limit(AUTH_LIMITER, f"forgot:{client_ip(request)}:{email_clean}")
+
+    if email_clean:
+        user = _find_user_by_email(st, email_clean)
+        if user and not user.get("disabled") and not _yard_disabled(st, user.get("org_id")):
+            token = issue_security_token(st, "reset", user["id"])
+            store.save_state()
+            if email_service.is_smtp_configured():
+                # Send off-thread so response timing does not reveal whether the
+                # address exists (SMTP can take seconds).
+                threading.Thread(
+                    target=email_service.send_password_reset_link_email,
+                    kwargs=dict(
+                        to_email=user.get("email", ""),
+                        name=user.get("name", ""),
+                        token=token,
+                        app_url=_app_url(request),
+                    ),
+                    daemon=True,
+                ).start()
+            else:
+                # Local development without SMTP: never return the token in an
+                # API response, but leave it where the operator can read it.
+                logger.warning("SMTP not configured; password reset token for %s was generated but not emailed", email_clean)
+                if os.environ.get("ENVIRONMENT", "").lower() not in ("production", "prod"):
+                    try:
+                        path = os.path.join(store.DATA_DIR, "last_reset_link.txt")
+                        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                            fh.write(f"{_app_url(request)}/reset-password?token={token}\n")
+                    except OSError:
+                        pass
+
+    return {"ok": True, "message": RESET_MESSAGE}
+
+
+class PasswordResetReq(BaseModel):
+    token: str
+    password: str
+
+
 @router.post("/api/auth/reset-password")
-def auth_reset_password() -> dict[str, Any]:
-    return {"ok": True, "message": "Instructions sent to your email"}
+def auth_reset_password(req: PasswordResetReq, request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    enforce_rate_limit(AUTH_LIMITER, f"reset:{client_ip(request)}")
+    password = validate_password(req.password)
+    record = consume_security_token(st, req.token, "reset")
+    user = st.get("users_by_id", {}).get(record.get("user_id"))
+    if not user:
+        raise HTTPException(status_code=400, detail="This link is invalid or has expired.")
+    if user.get("disabled") or _yard_disabled(st, user.get("org_id")):
+        raise HTTPException(status_code=403, detail="This account is unavailable. Please contact support.")
+
+    user["password_hash"] = store.hash_password(password)
+    user.pop("password", None)
+    user["must_change_password"] = False
+    user["locked"] = False
+    invalidate_user_sessions(st, user["id"])
+    store.save_state()
+    return {"ok": True, "message": "Password updated. You can sign in now."}
 
 
 @router.post("/api/auth/resend-verification")
-def auth_resend_verification() -> dict[str, Any]:
-    return {"ok": True, "sent": True}
+def auth_resend_verification(request: Request) -> dict[str, Any]:
+    get_current_user(request)
+    # This deployment does not gate access on email verification, but the
+    # endpoint remains available for the UI without leaking account details.
+    return {"ok": True, "sent": email_service.is_smtp_configured()}
+
+
+def _stop_impersonating(request: Request, response: Response) -> dict[str, Any]:
+    u = get_current_user(request)
+    session_key = current_session_key(request)
+    st = store.get_state()
+    meta = st.get("session_meta", {}).get(session_key or "", {})
+    impersonator_id = meta.get("impersonator_id") or u.get("impersonator_id")
+    if not impersonator_id:
+        raise HTTPException(status_code=400, detail="You are not impersonating anyone")
+    actor = st.get("users_by_id", {}).get(impersonator_id)
+    if not actor or actor.get("role") not in ("master", "admin") or actor.get("disabled"):
+        raise HTTPException(status_code=403, detail="The original administrator account is unavailable")
+    revoke_request_session(request)
+    set_session_cookie(response, actor["id"], request)
+    store.save_state()
+    return _public_user(actor)
 
 
 @router.post("/api/auth/stop-impersonating")
 def auth_stop_impersonating(request: Request, response: Response) -> dict[str, Any]:
-    u = get_current_user(request)
-    impersonator_id = u.pop("impersonator_id", None)
-    u["impersonated_by"] = ""
-    admin_user = _find_master_or_actor(impersonator_id)
-    set_session_cookie(response, admin_user["id"])
-    store.save_state()
-    return admin_user
+    return _stop_impersonating(request, response)
 
 
 @router.get("/api/auth/stop-impersonating")
 def auth_stop_impersonating_get(request: Request) -> RedirectResponse:
-    u = get_current_user(request)
-    impersonator_id = u.pop("impersonator_id", None)
-    u["impersonated_by"] = ""
-    admin_user = _find_master_or_actor(impersonator_id)
     resp = RedirectResponse(url="/admin", status_code=303)
-    set_session_cookie(resp, admin_user["id"])
-    store.save_state()
+    _stop_impersonating(request, resp)
     return resp
 
 
@@ -484,72 +543,156 @@ def auth_recover(request: Request) -> RedirectResponse:
 
 @router.post("/api/auth/recover")
 def auth_recover_post(request: Request) -> dict[str, Any]:
-    u = get_current_user(request)
-    return u
+    return _public_user(get_current_user(request))
+
+
+class SecurityTokenReq(BaseModel):
+    token: str
 
 
 @router.post("/api/auth/not-me")
-def auth_not_me() -> dict[str, Any]:
+def auth_not_me(req: SecurityTokenReq, request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    enforce_rate_limit(AUTH_LIMITER, f"not-me:{client_ip(request)}")
+    record = consume_security_token(st, req.token, "not_me")
+    user = st.get("users_by_id", {}).get(record.get("user_id"))
+    if not user:
+        raise HTTPException(status_code=400, detail="This link is invalid or has expired.")
+
+    session_key = record.get("session_key") or ""
+    meta = st.get("session_meta", {}).get(session_key, {})
+    if session_key:
+        st.get("sessions", {}).pop(session_key, None)
+        st.get("session_meta", {}).pop(session_key, None)
+
+    browser = meta.get("browser", "Unknown device")
+    reset_token = issue_security_token(st, "reset", user["id"])
+    store.save_state()
     return {
         "ok": True,
-        "message": "Device unlinked and password reset initiated",
-        "browser": "Chrome on macOS",
-        "reset_token": "token_" + uuid.uuid4().hex,
+        "message": "That device has been signed out. Choose a new password to finish securing the account.",
+        "browser": browser,
+        "reset_token": reset_token,
     }
 
 
 @router.post("/api/auth/lock-account")
-def auth_lock_account() -> dict[str, Any]:
+def auth_lock_account(req: SecurityTokenReq, request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    enforce_rate_limit(AUTH_LIMITER, f"lock:{client_ip(request)}")
+    record = consume_security_token(st, req.token, "lock_account")
+    user = st.get("users_by_id", {}).get(record.get("user_id"))
+    if not user:
+        raise HTTPException(status_code=400, detail="This link is invalid or has expired.")
+
+    user["locked"] = True
+    invalidate_user_sessions(st, user["id"])
+    reset_token = issue_security_token(st, "reset", user["id"])
+    store.save_state()
     return {
         "ok": True,
-        "message": "Account secured and sessions invalidated",
-        "reset_token": "token_" + uuid.uuid4().hex,
+        "message": "Account locked and every device signed out. Choose a new password to unlock it.",
+        "reset_token": reset_token,
     }
 
 
+def _user_devices(st: dict[str, Any], uid: str, current_key: str | None) -> list[dict[str, Any]]:
+    sessions = st.get("sessions", {})
+    meta = st.get("session_meta", {})
+    nicknames = st.get("device_nicknames", {}).get(uid, {})
+    devices: dict[str, dict[str, Any]] = {}
+    for key, m in meta.items():
+        if m.get("user_id") != uid or key not in sessions:
+            continue
+        did = m.get("device_id") or key
+        d = devices.setdefault(did, {
+            "id": did,
+            "browser": m.get("browser", "Browser"),
+            "ip": m.get("ip", ""),
+            "first_seen": m.get("first_seen"),
+            "last_seen": m.get("last_seen"),
+            "this_browser": False,
+            "nickname": nicknames.get(did, ""),
+        })
+        if m.get("first_seen"):
+            d["first_seen"] = min(filter(None, [d.get("first_seen"), m["first_seen"]]), default=m["first_seen"])
+        if m.get("last_seen"):
+            d["last_seen"] = max(filter(None, [d.get("last_seen"), m["last_seen"]]), default=m["last_seen"])
+        if current_key and key == current_key:
+            d["this_browser"] = True
+    return sorted(devices.values(), key=lambda d: d.get("last_seen") or "", reverse=True)
+
+
 @router.get("/api/auth/devices")
-def auth_devices() -> list[dict[str, Any]]:
+def auth_devices(request: Request) -> list[dict[str, Any]]:
+    u = get_current_user(request)
     st = store.get_state()
-    return st.get("devices", [])
+    return _user_devices(st, u["id"], current_session_key(request))
 
 
 @router.patch("/api/auth/devices/{dev_id}")
-def auth_device_patch(dev_id: str, body: dict[str, Any]) -> list[dict[str, Any]]:
+def auth_device_patch(dev_id: str, body: dict[str, Any], request: Request) -> list[dict[str, Any]]:
+    u = get_current_user(request)
     st = store.get_state()
-    for d in st.get("devices", []):
-        if d.get("id") == dev_id:
-            d["nickname"] = body.get("nickname", d.get("nickname", ""))
+    nickname = str(body.get("nickname") or "")[:40]
+    st.setdefault("device_nicknames", {}).setdefault(u["id"], {})[dev_id] = nickname
     store.save_state()
-    return st.get("devices", [])
+    return _user_devices(st, u["id"], current_session_key(request))
 
 
 @router.delete("/api/auth/devices/{dev_id}")
-def auth_device_delete(dev_id: str) -> dict[str, Any]:
+def auth_device_delete(dev_id: str, request: Request) -> dict[str, Any]:
+    u = get_current_user(request)
     st = store.get_state()
-    st["devices"] = [d for d in st.get("devices", []) if d.get("id") != dev_id]
+    current_key = current_session_key(request)
+    doomed = [
+        key for key, m in st.get("session_meta", {}).items()
+        if m.get("user_id") == u["id"] and m.get("device_id") == dev_id
+    ]
+    you = current_key in doomed
+    for key in doomed:
+        st.get("sessions", {}).pop(key, None)
+        st.get("session_meta", {}).pop(key, None)
+    st.get("device_nicknames", {}).get(u["id"], {}).pop(dev_id, None)
     store.save_state()
-    return {"devices": st["devices"], "you": False}
+    return {"devices": _user_devices(st, u["id"], current_key), "you": you}
 
 
 @router.get("/api/me/mobile")
-def me_mobile() -> dict[str, Any]:
+def me_mobile(request: Request) -> dict[str, Any]:
+    u = get_current_user(request)
     st = store.get_state()
-    return st.get("me_mobile", {})
+    return st.setdefault("me_mobile_by_user", {}).setdefault(u["id"], {
+        "mobile": "",
+        "days_off": [],
+        "vacation_start": None,
+        "vacation_end": None,
+        "shift_start": "",
+        "shift_end": "",
+        "held": 0,
+    })
 
 
 @router.put("/api/me/mobile")
-def me_mobile_put(body: dict[str, Any]) -> dict[str, Any]:
+def me_mobile_put(body: dict[str, Any], request: Request) -> dict[str, Any]:
+    u = get_current_user(request)
     st = store.get_state()
-    st["me_mobile"] = {**st.get("me_mobile", {}), **body}
+    cur = st.setdefault("me_mobile_by_user", {}).setdefault(u["id"], {})
+    cur.update({k: v for k, v in body.items() if k in {
+        "mobile", "days_off", "vacation_start", "vacation_end", "shift_start", "shift_end", "held"
+    }})
     store.save_state()
-    return st["me_mobile"]
+    return cur
 
 
 @router.put("/api/me/theme")
-def me_theme_put(body: dict[str, Any]) -> dict[str, Any]:
+def me_theme_put(body: dict[str, Any], request: Request) -> dict[str, Any]:
+    u = get_current_user(request)
     st = store.get_state()
-    mode = body.get("mode") or "dark"
-    st["branding"]["user_mode"] = mode
-    st["branding"]["mode"] = mode
+    mode = "light" if str(body.get("mode", "")).lower() == "light" else "dark"
+    st.setdefault("theme_by_user", {})[u["id"]] = mode
     store.save_state()
-    return st["branding"]
+    branding = dict(st.get("branding", {}))
+    branding["user_mode"] = mode
+    branding["mode"] = mode
+    return branding

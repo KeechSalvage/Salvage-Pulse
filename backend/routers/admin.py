@@ -2,15 +2,34 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import secrets
 import uuid
 from typing import Any, Optional
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
-from auth_utils import get_current_user, set_session_cookie
+from auth_utils import current_session_key, get_current_user, invalidate_user_sessions, set_session_cookie
 import store
 import email_service
+from security import app_public_url, can_manage_user, public_user, require_staff, validate_email, validate_password
 
-router = APIRouter(tags=["admin"])
+router = APIRouter(tags=["admin"], dependencies=[Depends(require_staff)])
+
+YARD_ROLES = frozenset({"owner", "sales_manager", "inventory_manager", "rep", "sales_rep"})
+STAFF_ROLES = frozenset({"master", "admin"})
+ORG_PLANS = frozenset({"starter", "pro", "enterprise", "trial", "demo"})
+ORG_STATUSES = frozenset({"trialing", "active", "demo", "past_due", "canceled", "incomplete"})
+
+
+def _require_master(user: dict[str, Any]) -> None:
+    if user.get("role") != "master":
+        raise HTTPException(status_code=403, detail="Master admin only")
+
+
+def _clean_org_id(st: dict[str, Any], org_id: str) -> str:
+    if org_id and not any(o.get("id") == org_id for o in st.get("admin_orgs", [])):
+        raise HTTPException(status_code=404, detail="Yard organization not found")
+    return org_id
+
 
 
 # ==========================================
@@ -61,15 +80,31 @@ def admin_get_orgs() -> list[dict[str, Any]]:
 def admin_post_org(body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
     actor = get_current_user(request)
+    yard_name = str(body.get("yard_name") or "").strip()[:120]
+    if not yard_name:
+        raise HTTPException(status_code=400, detail="Enter the yard name")
+    plan = str(body.get("plan") or "pro")
+    if plan not in ORG_PLANS:
+        raise HTTPException(status_code=400, detail="Invalid plan")
+    status = str(body.get("status") or "trialing")
+    if status not in ORG_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    role = str(body.get("role") or "owner")
+    if role not in YARD_ROLES:
+        raise HTTPException(status_code=400, detail="Invalid yard role")
+    email = validate_email(body.get("email")) if body.get("email") else ""
+    if email and any((u.get("email") or "").strip().lower() == email for u in st.get("users_by_id", {}).values()):
+        raise HTTPException(status_code=409, detail="A user with that email already exists")
+
     oid = str(uuid.uuid4())
     org = {
         "id": oid,
-        "name": body["yard_name"],
-        "plan": body.get("plan", "pro"),
-        "status": body.get("status", "trialing"),
+        "name": yard_name,
+        "plan": plan,
+        "status": status,
         "trial_ends_at": (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=14)).isoformat(),
         "created_at": store.now_iso(),
-        "users": 1 if body.get("email") else 0,
+        "users": 1 if email else 0,
         "calls": 0,
         "ringcentral_connected": False,
         "card_on_file": False,
@@ -80,24 +115,34 @@ def admin_post_org(body: dict[str, Any], request: Request) -> dict[str, Any]:
         "max_sites": 2,
         "extra_sites": 0,
     }
-    if body.get("email"):
+    if email:
         uid = f"user-{uuid.uuid4().hex[:8]}"
+        temp_pw = secrets.token_urlsafe(12)
         st.setdefault("users_by_id", {})[uid] = {
             "id": uid,
-            "email": body["email"].strip().lower(),
-            "name": body.get("manager_name") or "Owner",
-            "role": body.get("role") or "owner",
-            "title": body.get("title") or "Yard Owner",
+            "email": email,
+            "name": str(body.get("manager_name") or "Owner")[:120],
+            "role": role,
+            "title": str(body.get("title") or "Yard Owner")[:120],
             "avatar_url": "",
             "org_id": oid,
-            "impersonated_by": "",
-            "disabled": False,
+                "disabled": False,
             "site_id": "",
             "must_change_password": True,
+            "password_hash": store.hash_password(temp_pw),
         }
+        email_service.send_staff_welcome_email(
+            to_email=email,
+            name=st["users_by_id"][uid]["name"],
+            temp_password=temp_pw,
+            role=st["users_by_id"][uid]["title"],
+            app_url=_get_app_url(request),
+        )
+    else:
+        temp_pw = ""
     st.setdefault("admin_orgs", []).insert(0, org)
     st.setdefault("branding_by_org", {})[oid] = {
-        "yard_name": body["yard_name"],
+        "yard_name": yard_name,
         "accent": "",
         "default_mode": "dark",
         "logo_url": "",
@@ -111,7 +156,10 @@ def admin_post_org(body: dict[str, Any], request: Request) -> dict[str, Any]:
         "target": org["name"],
     })
     store.save_state()
-    return {"org": org, "payment_link": f"/checkout/{oid}"}
+    result = {"org": org, "payment_link": f"/checkout/{oid}"}
+    if temp_pw:
+        result["temporary_password"] = temp_pw
+    return result
 
 
 @router.patch("/api/admin/orgs/{oid}")
@@ -124,8 +172,27 @@ def admin_patch_org(oid: str, body: dict[str, Any], request: Request) -> dict[st
             was_canceled = o.get("status") == "canceled"
             was_disabled = was_blocked or was_canceled
 
+            updates = {
+                k: v for k, v in body.items()
+                if k in {
+                    "name", "yard_name", "plan", "status", "blocked", "cancel_reason",
+                    "billing_contact_name", "billing_email", "phone", "discount",
+                    "max_sites", "extra_sites", "card_on_file", "notes",
+                }
+            }
+            if "plan" in updates and updates["plan"] not in ORG_PLANS:
+                raise HTTPException(status_code=400, detail="Invalid plan")
+            if "status" in updates and updates["status"] not in ORG_STATUSES:
+                raise HTTPException(status_code=400, detail="Invalid status")
+            if "name" in updates:
+                updates["name"] = str(updates["name"] or "").strip()[:120]
+                if not updates["name"]:
+                    raise HTTPException(status_code=400, detail="Yard name cannot be empty")
+            if "billing_email" in updates and updates["billing_email"]:
+                updates["billing_email"] = validate_email(updates["billing_email"])
+
             was_status = o.get("status")
-            o.update(body)
+            o.update(updates)
 
             new_status = o.get("status")
             # If status becomes past_due, record when it went past due if not already recorded
@@ -303,41 +370,51 @@ class AdminCreateUserReq(BaseModel):
 def admin_create_user(req: AdminCreateUserReq, request: Request) -> dict[str, Any]:
     st = store.get_state()
     actor = get_current_user(request)
-    if actor.get("role") not in ("master", "admin"):
-        raise HTTPException(status_code=403, detail="Platform staff only")
+
+    if req.role not in YARD_ROLES:
+        raise HTTPException(status_code=400, detail="Invalid yard role")
 
     org = next((o for o in st.get("admin_orgs", []) if o.get("id") == req.org_id), None)
     if not org:
         raise HTTPException(status_code=404, detail="Yard organization not found")
 
-    email_clean = req.email.strip().lower()
-    existing = next((u for u in st.get("users_by_id", {}).values() if u.get("email", "").strip().lower() == email_clean), None)
+    email_clean = validate_email(req.email)
+    existing = next((u for u in st.get("users_by_id", {}).values() if (u.get("email") or "").strip().lower() == email_clean), None)
     if existing:
-        raise HTTPException(status_code=400, detail=f"User with email '{email_clean}' already exists")
+        raise HTTPException(status_code=409, detail=f"User with email '{email_clean}' already exists")
+
+    name = str(req.name or "").strip()[:120]
+    if not name:
+        raise HTTPException(status_code=400, detail="Enter the user's name")
 
     uid = f"user-{uuid.uuid4().hex[:12]}"
-    temp_pw = req.password.strip() if req.password and len(req.password.strip()) >= 6 else f"sp-{uuid.uuid4().hex[:8]}"
+    if req.password and req.password.strip():
+        temp_pw = validate_password(req.password.strip())
+        must_change = False
+    else:
+        temp_pw = secrets.token_urlsafe(12)
+        must_change = True
 
     role_title_map = {
         "owner": "Yard Owner",
         "sales_manager": "Sales Manager",
         "inventory_manager": "Inventory Manager",
         "rep": "Sales Representative",
+        "sales_rep": "Sales Representative",
     }
-    user_title = req.title.strip() if req.title and req.title.strip() else role_title_map.get(req.role, "Sales Representative")
+    user_title = str(req.title or "").strip()[:120] or role_title_map.get(req.role, "Sales Representative")
 
     new_user = {
         "id": uid,
         "email": email_clean,
-        "name": req.name.strip(),
+        "name": name,
         "role": req.role,
         "title": user_title,
         "avatar_url": "",
         "org_id": req.org_id,
-        "impersonated_by": "",
         "disabled": False,
         "site_id": "",
-        "must_change_password": True if not req.password else False,
+        "must_change_password": must_change,
         "password_hash": store.hash_password(temp_pw),
     }
 
@@ -421,18 +498,16 @@ class AdminPasswordReq(BaseModel):
 def admin_set_user_password(uid: str, req: AdminPasswordReq, request: Request) -> dict[str, Any]:
     st = store.get_state()
     actor = get_current_user(request)
-    if actor.get("role") not in ("master", "admin"):
-        raise HTTPException(status_code=403, detail="Platform staff only")
-
     u = st["users_by_id"].get(uid)
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
+    if not can_manage_user(actor, u):
+        raise HTTPException(status_code=403, detail="You cannot manage that account")
 
-    if len(req.password) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
-
-    u["password_hash"] = store.hash_password(req.password)
+    password = validate_password(req.password)
+    u["password_hash"] = store.hash_password(password)
     u["must_change_password"] = req.must_change_password
+    invalidate_user_sessions(st, uid, keep=current_session_key(request) if uid == actor.get("id") else None)
     st.setdefault("admin_audit", []).insert(0, {
         "at": store.now_iso(),
         "actor": actor.get("name", "Admin"),
@@ -450,13 +525,15 @@ def admin_patch_user(uid: str, body: dict[str, Any], request: Request) -> dict[s
     u = st["users_by_id"].get(uid)
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
+    if not can_manage_user(actor, u):
+        raise HTTPException(status_code=403, detail="You cannot manage that account")
 
+    changed_sensitive = False
     if "password" in body and body["password"]:
-        pw = str(body.pop("password"))
-        if len(pw) < 6:
-            raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+        pw = validate_password(str(body.pop("password")))
         u["password_hash"] = store.hash_password(pw)
         u["must_change_password"] = False
+        changed_sensitive = True
         st.setdefault("admin_audit", []).insert(0, {
             "at": store.now_iso(),
             "actor": actor.get("name", "Admin"),
@@ -464,7 +541,52 @@ def admin_patch_user(uid: str, body: dict[str, Any], request: Request) -> dict[s
             "target": u.get("name", uid),
         })
 
-    u.update(body)
+    allowed = {"name", "email", "role", "title", "org_id", "disabled", "site_id"}
+    updates = {k: v for k, v in body.items() if k in allowed}
+    if "email" in updates:
+        email = validate_email(updates["email"])
+        if any(
+            other.get("id") != uid and (other.get("email") or "").strip().lower() == email
+            for other in st["users_by_id"].values()
+        ):
+            raise HTTPException(status_code=409, detail="A user with that email already exists")
+        updates["email"] = email
+    if "role" in updates:
+        new_role = str(updates["role"])
+        if new_role not in YARD_ROLES | STAFF_ROLES:
+            raise HTTPException(status_code=400, detail="Invalid role")
+        if new_role in STAFF_ROLES and actor.get("role") != "master":
+            raise HTTPException(status_code=403, detail="Only a master admin can grant staff roles")
+        if u.get("role") == "master" and new_role != "master":
+            remaining = [
+                other for other in st["users_by_id"].values()
+                if other.get("role") == "master" and not other.get("disabled") and other.get("id") != uid
+            ]
+            if not remaining:
+                raise HTTPException(status_code=400, detail="Can't demote the last master account")
+        if new_role != u.get("role"):
+            changed_sensitive = True
+    if "org_id" in updates:
+        updates["org_id"] = _clean_org_id(st, str(updates["org_id"] or ""))
+    if "name" in updates:
+        updates["name"] = str(updates["name"] or "").strip()[:120]
+        if not updates["name"]:
+            raise HTTPException(status_code=400, detail="Name cannot be empty")
+    if "disabled" in updates and bool(updates["disabled"]):
+        if uid == actor.get("id"):
+            raise HTTPException(status_code=400, detail="You cannot disable your own account")
+        if u.get("role") == "master":
+            remaining = [
+                other for other in st["users_by_id"].values()
+                if other.get("role") == "master" and not other.get("disabled") and other.get("id") != uid
+            ]
+            if not remaining:
+                raise HTTPException(status_code=400, detail="Can't disable the last master account")
+        changed_sensitive = True
+
+    u.update(updates)
+    if changed_sensitive:
+        invalidate_user_sessions(st, uid, keep=current_session_key(request) if uid == actor.get("id") else None)
     store.save_state()
     org_map = {o["id"]: o.get("name", "Yard") for o in st.get("admin_orgs", [])}
     return {
@@ -519,7 +641,7 @@ def admin_delete_user(uid: str, request: Request) -> dict[str, Any]:
         "deleted_by": actor.get("name", "Admin"),
     }
     del st["users_by_id"][uid]
-    st["sessions"] = {t: u for t, u in st.get("sessions", {}).items() if u != uid}
+    invalidate_user_sessions(st, uid)
     st["admin_staff"] = [s for s in st.get("admin_staff", []) if s.get("id") != uid]
     if st.get("current_user_id") == uid:
         st["current_user_id"] = None
@@ -549,10 +671,17 @@ def admin_impersonate(uid: str, response: Response, request: Request) -> dict[st
     if target_user.get("disabled"):
         raise HTTPException(status_code=400, detail="Cannot impersonate a disabled user")
     actor = get_current_user(request)
-    target_user["impersonated_by"] = actor.get("name", "Admin")
-    target_user["impersonator_id"] = actor.get("id", "")
-    set_session_cookie(response, uid)
-    return target_user
+    if not can_manage_user(actor, target_user):
+        raise HTTPException(status_code=403, detail="You cannot impersonate that account")
+    actor_name = actor.get("name", "Admin")
+    set_session_cookie(
+        response,
+        uid,
+        request,
+        impersonator_id=actor.get("id", ""),
+        impersonated_by=actor_name,
+    )
+    return {**public_user(target_user), "impersonated_by": actor_name, "impersonator_id": actor.get("id", "")}
 
 
 @router.get("/api/admin/audit")
@@ -571,6 +700,7 @@ def admin_get_demo_login() -> dict[str, Any]:
 def admin_put_demo_login(body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
+    _require_master(u)
     sw = {
         "enabled": bool(body.get("enabled", True)),
         "changed_by": u.get("name", "Admin"),
@@ -682,6 +812,8 @@ def admin_get_staff(request: Request) -> list[dict[str, Any]]:
     # Onboarding status lives on the login record; mirror it so the list is always current.
     for s in st.get("admin_staff", []):
         item = dict(s)
+        item.pop("password_hash", None)
+        item.pop("password", None)
         u = st.get("users_by_id", {}).get(item.get("id"))
         if u:
             item["google_linked"] = bool(u.get("google_linked") or item.get("google_linked"))
@@ -692,27 +824,28 @@ def admin_get_staff(request: Request) -> list[dict[str, Any]]:
 
 
 def _get_app_url(request: Request) -> str:
-    env_url = os.environ.get("APP_URL", "").strip().rstrip("/")
-    if env_url:
-        return env_url
-    proto = request.headers.get("x-forwarded-proto") or request.url.scheme or "https"
-    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
-    if host:
-        # If accessing directly by private IP, still send users to the official public domain
-        if host.startswith("10.") or host.startswith("192.168.") or host.startswith("172."):
-            return "https://app.salvagepulsepro.com"
-        return f"{proto}://{host}"
-    return "https://app.salvagepulsepro.com"
+    return app_public_url(request)
 
 
 @router.post("/api/admin/staff")
 def admin_post_staff(body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
+    actor = get_current_user(request)
+    role = str(body.get("role") or "admin")
+    if role not in STAFF_ROLES:
+        raise HTTPException(status_code=400, detail="Invalid staff role")
+    if actor.get("role") != "master":
+        raise HTTPException(status_code=403, detail="Only a master admin can add staff")
+
+    email = validate_email(body.get("email") or "")
+    if any((u.get("email") or "").strip().lower() == email for u in st.get("users_by_id", {}).values()):
+        raise HTTPException(status_code=409, detail="A user with that email already exists")
+    name = str(body.get("name") or "Staff Member").strip()[:120]
+    if not name:
+        raise HTTPException(status_code=400, detail="Enter the staff member's name")
+
     sid = str(uuid.uuid4())
-    temp_pw = f"sp-{uuid.uuid4().hex[:8]}"
-    email = body.get("email", "").strip().lower()
-    name = body.get("name", "Staff Member").strip()
-    role = body.get("role", "admin")
+    temp_pw = secrets.token_urlsafe(12)
 
     account = {
         "id": sid,
@@ -736,7 +869,6 @@ def admin_post_staff(body: dict[str, Any], request: Request) -> dict[str, Any]:
         "title": "Platform Staff",
         "avatar_url": "",
         "org_id": "",
-        "impersonated_by": "",
         "disabled": False,
         "site_id": "",
         "must_change_password": True,
@@ -755,19 +887,52 @@ def admin_post_staff(body: dict[str, Any], request: Request) -> dict[str, Any]:
 
 
 @router.patch("/api/admin/staff/{sid}")
-def admin_patch_staff(sid: str, body: dict[str, Any]) -> list[dict[str, Any]]:
+def admin_patch_staff(sid: str, body: dict[str, Any], request: Request) -> list[dict[str, Any]]:
     st = store.get_state()
+    actor = get_current_user(request)
+    target = st.get("users_by_id", {}).get(sid)
+    if not target:
+        raise HTTPException(status_code=404, detail="Staff member not found")
+    if not can_manage_user(actor, target):
+        raise HTTPException(status_code=403, detail="Only a master admin can manage staff")
+
+    updates = {k: v for k, v in body.items() if k in {"name", "role", "disabled"}}
+    if "role" in updates:
+        role = str(updates["role"])
+        if role not in STAFF_ROLES:
+            raise HTTPException(status_code=400, detail="Invalid staff role")
+        # A platform admin must never be able to promote themselves (or anyone
+        # else) to master; only an existing master may change staff roles.
+        if actor.get("role") != "master":
+            raise HTTPException(status_code=403, detail="Only a master admin can change staff roles")
+        if target.get("role") == "master" and role != "master":
+            remaining = [
+                other for other in st["users_by_id"].values()
+                if other.get("role") == "master" and not other.get("disabled") and other.get("id") != sid
+            ]
+            if not remaining:
+                raise HTTPException(status_code=400, detail="Can't demote the last master account")
+    if "name" in updates:
+        updates["name"] = str(updates["name"] or "").strip()[:120]
+        if not updates["name"]:
+            raise HTTPException(status_code=400, detail="Name cannot be empty")
+    if updates.get("disabled"):
+        if sid == actor.get("id"):
+            raise HTTPException(status_code=400, detail="You cannot disable your own account")
+        if target.get("role") == "master":
+            remaining = [
+                other for other in st["users_by_id"].values()
+                if other.get("role") == "master" and not other.get("disabled") and other.get("id") != sid
+            ]
+            if not remaining:
+                raise HTTPException(status_code=400, detail="Can't disable the last master account")
+
     for s in st.get("admin_staff", []):
         if s.get("id") == sid:
-            s.update(body)
-    if sid in st.get("users_by_id", {}):
-        u = st["users_by_id"][sid]
-        if "name" in body:
-            u["name"] = body["name"]
-        if "role" in body:
-            u["role"] = body["role"]
-        if "disabled" in body:
-            u["disabled"] = bool(body["disabled"])
+            s.update(updates)
+    target.update(updates)
+    if {"role", "disabled"} & set(updates):
+        invalidate_user_sessions(st, sid, keep=current_session_key(request) if sid == actor.get("id") else None)
     store.save_state()
     return st.get("admin_staff", [])
 
@@ -775,11 +940,17 @@ def admin_patch_staff(sid: str, body: dict[str, Any]) -> list[dict[str, Any]]:
 @router.post("/api/admin/staff/{sid}/reset-password")
 def admin_post_staff_reset_password(sid: str, request: Request) -> dict[str, Any]:
     st = store.get_state()
+    actor = get_current_user(request)
     s = next((x for x in st.get("admin_staff", []) if x.get("id") == sid), {})
-    temp_pw = f"sp-{uuid.uuid4().hex[:8]}"
-    if sid in st.get("users_by_id", {}):
-        st["users_by_id"][sid]["password_hash"] = store.hash_password(temp_pw)
-        st["users_by_id"][sid]["must_change_password"] = True
+    target = st.get("users_by_id", {}).get(sid)
+    if not target:
+        raise HTTPException(status_code=404, detail="Staff member not found")
+    if not can_manage_user(actor, target):
+        raise HTTPException(status_code=403, detail="Only a master admin can reset staff passwords")
+    temp_pw = secrets.token_urlsafe(12)
+    target["password_hash"] = store.hash_password(temp_pw)
+    target["must_change_password"] = True
+    invalidate_user_sessions(st, sid, keep=current_session_key(request) if sid == actor.get("id") else None)
     store.save_state()
     app_url = _get_app_url(request)
     emailed = False
@@ -802,17 +973,22 @@ def _drop_sessions(st: dict[str, Any], tokens: list[str]) -> None:
 @router.post("/api/admin/staff/{user}/sign-out-everywhere")
 def admin_post_staff_sign_out(user: str, request: Request) -> dict[str, Any]:
     st = store.get_state()
-    mine = request.cookies.get("sp_session")
-    tokens = [t for t, uid in st.get("sessions", {}).items() if uid == user]
-    _drop_sessions(st, tokens)
+    actor = get_current_user(request)
+    target = st.get("users_by_id", {}).get(user)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not can_manage_user(actor, target):
+        raise HTTPException(status_code=403, detail="You cannot manage that account")
+    mine = current_session_key(request)
+    ended = invalidate_user_sessions(st, user, keep=mine if user == actor.get("id") else None)
     store.save_state()
-    return {"ended": len(tokens), "you": bool(mine and mine in tokens)}
+    return {"ended": ended, "you": bool(mine and user == actor.get("id"))}
 
 
 @router.get("/api/admin/staff-devices")
 def admin_get_staff_devices(request: Request) -> list[dict[str, Any]]:
     st = store.get_state()
-    mine = request.cookies.get("sp_session")
+    mine = current_session_key(request)
     sessions = st.get("sessions", {})
     meta = st.get("session_meta", {})
     out = []
@@ -852,6 +1028,12 @@ def admin_get_staff_devices(request: Request) -> list[dict[str, Any]]:
 @router.delete("/api/admin/staff-devices/{user}/{device}")
 def admin_delete_staff_device(user: str, device: str, request: Request) -> list[dict[str, Any]]:
     st = store.get_state()
+    actor = get_current_user(request)
+    target = st.get("users_by_id", {}).get(user)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not can_manage_user(actor, target):
+        raise HTTPException(status_code=403, detail="You cannot manage that account")
     tokens = [
         t for t, m in st.get("session_meta", {}).items()
         if m.get("user_id") == user and m.get("device_id") == device
@@ -878,8 +1060,10 @@ def admin_get_staff_lockdown(request: Request) -> dict[str, Any]:
 
 
 @router.put("/api/admin/staff-lockdown")
-def admin_put_staff_lockdown(body: dict[str, Any]) -> dict[str, Any]:
+def admin_put_staff_lockdown(body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
+    u = get_current_user(request)
+    _require_master(u)
     cur = st.get("staff_lockdown", {})
     cur["enabled"] = bool(body.get("enabled", False))
     st["staff_lockdown"] = cur

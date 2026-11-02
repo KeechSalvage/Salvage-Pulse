@@ -138,8 +138,8 @@ function SetPasswordDialog({ user, onClose }: { user: AdminUser | null; onClose:
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (newPassword.length < 6) {
-              toast.error("Password must be at least 6 characters");
+            if (newPassword.length < 8) {
+              toast.error("Password must be at least 8 characters");
               return;
             }
             setPw.mutate({ password: newPassword });
@@ -154,7 +154,8 @@ function SetPasswordDialog({ user, onClose }: { user: AdminUser | null; onClose:
               <Input
                 id="admin-new-pw"
                 type={showPassword ? "text" : "password"}
-                placeholder="Enter new password (min. 6 characters)"
+                placeholder="Enter new password (min. 8 characters)"
+                minLength={8}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 className="bg-surface pr-16"
@@ -178,7 +179,7 @@ function SetPasswordDialog({ user, onClose }: { user: AdminUser | null; onClose:
             <Button type="button" variant="ghost" onClick={onClose} disabled={setPw.isPending}>
               Cancel
             </Button>
-            <Button type="submit" disabled={newPassword.length < 6 || setPw.isPending}>
+            <Button type="submit" disabled={newPassword.length < 8 || setPw.isPending}>
               {setPw.isPending ? "Saving..." : "Save Password"}
             </Button>
           </DialogFooter>

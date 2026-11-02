@@ -5,12 +5,53 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from auth_utils import get_current_user
 import database
 import store
+from security import (
+    assert_same_org,
+    effective_org,
+    is_manager,
+    is_staff,
+    require_authenticated,
+    resolve_write_org,
+)
 
-router = APIRouter(tags=["analytics"])
+router = APIRouter(tags=["analytics"], dependencies=[Depends(require_authenticated)])
+
+
+def _customer_visible(st: dict[str, Any], key: str, user: dict[str, Any]) -> bool:
+    """Whether ``key`` (a customer name or phone) belongs to the caller's yard.
+
+    Platform staff with no org filter may see every customer.  Everyone else is
+    restricted to customers that have a call in their own yard; full-customer
+    records carrying an explicit ``org_id`` must match as well.
+    """
+    org_id = effective_org(user)
+    if org_id is None:
+        return True
+
+    full = (st.get("full_customers") or {}).get(key)
+    if isinstance(full, dict):
+        record_org = (full.get("stat") or {}).get("org_id") or full.get("org_id")
+        if record_org:
+            return record_org == org_id
+
+    for call in st.get("calls", []):
+        if call.get("customer_name") == key or call.get("customer_phone") == key:
+            if call.get("org_id") == org_id:
+                return True
+    return False
+
+
+def _customer_store_key(key: str, user: dict[str, Any]) -> str:
+    """Namespace manual tags/notes per yard while keeping Keech's legacy keys."""
+    org_id = effective_org(user)
+    if org_id and org_id != store.KEECH_ORG_ID:
+        return f"{org_id}:{key}"
+    return key
+
 
 DEFAULT_OVERVIEW: dict[str, Any] = {
     "total_calls": 0,
@@ -106,7 +147,7 @@ def get_analytics_overview(
 ) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
 
     org_calls = [c for c in st.get("calls", []) if not org_id or c.get("org_id") == org_id]
     
@@ -226,7 +267,7 @@ def get_analytics_overview(
     base["keyword_stats"] = computed_kw_stats
 
     base["roleplay_sessions"] = len([x for x in st.get("roleplay_sessions", []) if not org_id or st.get("users_by_id", {}).get(x.get("user_id"), {}).get("org_id") == org_id])
-    base["open_callbacks"] = len([c for c in st.get("callbacks_open", []) if c.get("org_id") == org_id])
+    base["open_callbacks"] = len([c for c in st.get("callbacks_open", []) if not org_id or c.get("org_id") == org_id])
     base["lot_name"] = ""
     if effective_rep_id:
         u_rep = st.get("users_by_id", {}).get(effective_rep_id)
@@ -239,7 +280,7 @@ def get_analytics_overview(
 def get_team_benchmark(request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     calls = [c for c in st.get("calls", []) if not org_id or c.get("org_id") == org_id]
     reps = {x["id"] for x in st.get("users_by_id", {}).values() if x.get("role") in ("rep", "sales_rep")}
     calls = [c for c in calls if c.get("rep_id") in reps]
@@ -268,7 +309,7 @@ def get_team_benchmark(request: Request) -> dict[str, Any]:
 def get_analytics_monthly(request: Request, rep_id: Optional[str] = Query(None)) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     calls = [c for c in st.get("calls", []) if not org_id or c.get("org_id") == org_id]
     if rep_id:
         calls = [c for c in calls if c.get("rep_id") == rep_id]
@@ -369,12 +410,12 @@ def _build_monthly_reps(st: dict[str, Any], org_id: Optional[str]) -> dict[str, 
 def get_analytics_monthly_reps(request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     return _build_monthly_reps(st, org_id)
 
 
-def _build_parts_seasonal(st: dict[str, Any], org_id: str) -> dict[str, Any]:
-    calls = [c for c in st.get("calls", []) if c.get("org_id") == org_id]
+def _build_parts_seasonal(st: dict[str, Any], org_id: Optional[str]) -> dict[str, Any]:
+    calls = [c for c in st.get("calls", []) if not org_id or c.get("org_id") == org_id]
     if not calls:
         return {"months": ["2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10"], "parts": [], "yard_close_rate": 28.5}
 
@@ -440,9 +481,9 @@ def _build_parts_seasonal(st: dict[str, Any], org_id: str) -> dict[str, Any]:
     }
 
 
-def _build_customer_insights(st: dict[str, Any], org_id: str) -> dict[str, Any]:
+def _build_customer_insights(st: dict[str, Any], org_id: Optional[str]) -> dict[str, Any]:
     from collections import defaultdict, Counter
-    calls = [c for c in st.get("calls", []) if c.get("org_id") == org_id]
+    calls = [c for c in st.get("calls", []) if not org_id or c.get("org_id") == org_id]
     if not calls:
         return {
             "total_customers": 0, "repeat_customers": 0, "avg_order_value": 0.0, "avg_order_basis": "ai",
@@ -537,7 +578,7 @@ def _build_customer_insights(st: dict[str, Any], org_id: str) -> dict[str, Any]:
 def get_parts_seasonal(request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     if org_id == store.KEECH_ORG_ID:
         return st["seed"].get("/analytics/parts-seasonal", {"months": [], "parts": [], "yard_close_rate": 0})
     return _build_parts_seasonal(st, org_id)
@@ -551,7 +592,7 @@ def get_vehicles(
 ) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     if org_id == store.KEECH_ORG_ID or org_id == "org-dings-auto":
         base = st["seed"].get("/analytics/vehicles?rank=calls", {})
         if not body or body == "all":
@@ -577,7 +618,7 @@ def get_lost_vehicles(
 ) -> list[dict[str, Any]]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     if org_id == store.KEECH_ORG_ID or org_id == "org-dings-auto":
         base_lost = st["seed"].get("/analytics/lost-vehicles?rank=calls", [])
         if not body or body == "all":
@@ -590,7 +631,7 @@ def get_lost_vehicles(
 def get_stock_alerts(request: Request, rank: str = Query("calls")) -> list[dict[str, Any]]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     if org_id == store.KEECH_ORG_ID or org_id == "org-dings-auto":
         return st["seed"].get("/analytics/stock-alerts?rank=calls", [])
     return []
@@ -605,7 +646,7 @@ def get_analytics_customers(
 ) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     if org_id == store.KEECH_ORG_ID:
         if include_all:
             return st["seed"].get("/analytics/customers?include_all=true", st["seed"].get("/analytics/customers", {}))
@@ -617,10 +658,16 @@ def get_analytics_customers(
 def get_customer_profile(key: str, request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    if not _customer_visible(st, key, u):
+        raise HTTPException(status_code=404, detail="Customer not found")
+    org_id = effective_org(u)
+    store_key = _customer_store_key(key, u)
     full_custs = st.get("full_customers", {})
-    if key in full_custs:
-        return full_custs[key]
+    full = full_custs.get(key)
+    if isinstance(full, dict):
+        record_org = (full.get("stat") or {}).get("org_id") or full.get("org_id")
+        if org_id in (None, store.KEECH_ORG_ID) or record_org == org_id:
+            return full
 
     calls = [c for c in st.get("calls", []) if (not org_id or c.get("org_id") == org_id) and (c.get("customer_name") == key or c.get("customer_phone") == key)]
     stat = {
@@ -635,21 +682,27 @@ def get_customer_profile(key: str, request: Request) -> dict[str, Any]:
         "last_category": calls[0].get("category", "Part Inquiry/Quote") if calls else "Part Inquiry/Quote",
         "top_topics": ["Part Inquiry"],
         "rep_names": list({c.get("rep_name") for c in calls if c.get("rep_name")}),
-        "tag": st.get("customer_tags", {}).get(key, ""),
-        "tag_source": "manual" if key in st.get("customer_tags", {}) else "",
+        "tag": st.get("customer_tags", {}).get(store_key, ""),
+        "tag_source": "manual" if store_key in st.get("customer_tags", {}) else "",
         "est_value": sum(float(c.get("order_value", 0)) for c in calls) or 350.0,
         "value_basis": "ai",
     }
-    notes = st.get("customer_notes", {}).get(key, [])
+    notes = st.get("customer_notes", {}).get(store_key, [])
     return {"stat": stat, "calls": calls[:20], "notes": notes}
 
 
 @router.put("/api/customers/{key}/tag")
-def put_customer_tag(key: str, body: dict[str, Any]) -> dict[str, Any]:
+def put_customer_tag(key: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
+    u = get_current_user(request)
+    if not _customer_visible(st, key, u):
+        raise HTTPException(status_code=404, detail="Customer not found")
     tag = body.get("tag") or ""
-    st.setdefault("customer_tags", {})[key] = tag
-    prof = get_customer_profile(key)
+    if not isinstance(tag, str) or len(tag) > 64:
+        raise HTTPException(status_code=400, detail="tag must be a string of 64 characters or fewer")
+    store_key = _customer_store_key(key, u)
+    st.setdefault("customer_tags", {})[store_key] = tag
+    prof = get_customer_profile(key, request)
     prof["stat"]["tag"] = tag
     prof["stat"]["tag_source"] = "manual"
     store.save_state()
@@ -657,12 +710,22 @@ def put_customer_tag(key: str, body: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.post("/api/customers/bulk-tag")
-def post_customers_bulk_tag(body: dict[str, Any]) -> dict[str, Any]:
+def post_customers_bulk_tag(body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
+    u = get_current_user(request)
     keys = body.get("keys", [])
+    if not isinstance(keys, list):
+        raise HTTPException(status_code=400, detail="keys must be a list")
+    if len(keys) > 500:
+        raise HTTPException(status_code=400, detail="Too many customers in one request (max 500)")
+    blocked = [k for k in keys if not isinstance(k, str) or not _customer_visible(st, k, u)]
+    if blocked:
+        raise HTTPException(status_code=403, detail="You cannot tag another yard's customers")
     tag = body.get("tag") or ""
+    if not isinstance(tag, str) or len(tag) > 64:
+        raise HTTPException(status_code=400, detail="tag must be a string of 64 characters or fewer")
     for k in keys:
-        st.setdefault("customer_tags", {})[k] = tag
+        st.setdefault("customer_tags", {})[_customer_store_key(k, u)] = tag
     store.save_state()
     return {"updated": len(keys)}
 
@@ -671,21 +734,35 @@ def post_customers_bulk_tag(body: dict[str, Any]) -> dict[str, Any]:
 def post_customer_note(key: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
+    if not _customer_visible(st, key, u):
+        raise HTTPException(status_code=404, detail="Customer not found")
+    text = body.get("text", "")
+    if not isinstance(text, str):
+        raise HTTPException(status_code=400, detail="text must be a string")
+    text = text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Note text is required")
+    if len(text) > 4000:
+        raise HTTPException(status_code=400, detail="Note text is too long (max 4000 characters)")
     note = {
         "id": str(uuid.uuid4()),
         "customer_key": key,
-        "text": body.get("text", ""),
+        "text": text,
         "author": u.get("name", "Rep"),
         "created_at": store.now_iso(),
     }
-    st.setdefault("customer_notes", {}).setdefault(key, []).insert(0, note)
+    store_key = _customer_store_key(key, u)
+    st.setdefault("customer_notes", {}).setdefault(store_key, []).insert(0, note)
     store.save_state()
     return note
 
 
 @router.post("/api/customers/{key}/winback")
 def post_customer_winback(key: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
+    st = store.get_state()
     u = get_current_user(request)
+    if not _customer_visible(st, key, u):
+        raise HTTPException(status_code=404, detail="Customer not found")
     return {
         "id": str(uuid.uuid4()),
         "customer_key": key,
@@ -702,16 +779,19 @@ def post_customer_winback(key: str, body: dict[str, Any], request: Request) -> d
 
 # Winback
 @router.get("/api/analytics/winback")
-def get_analytics_winback() -> dict[str, Any]:
+def get_analytics_winback(request: Request) -> dict[str, Any]:
     st = store.get_state()
-    return st["seed"].get("/analytics/winback", {})
+    org_id = effective_org(get_current_user(request))
+    if org_id is None or org_id == store.KEECH_ORG_ID:
+        return st["seed"].get("/analytics/winback", {})
+    return {"months": [], "recent": [], "total": 0, "confirmed": 0}
 
 
 @router.get("/api/analytics/winback/leaderboard")
 def get_winback_leaderboard(request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     if org_id == store.KEECH_ORG_ID:
         return {
             "months": ["2026-10"],
@@ -754,7 +834,7 @@ def get_winback_leaderboard(request: Request) -> dict[str, Any]:
 def get_winback_trophies(request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     if org_id == store.KEECH_ORG_ID:
         return {
             "months": [
@@ -865,7 +945,7 @@ def get_winback_trophies(request: Request) -> dict[str, Any]:
 def get_winback_winners(request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     if org_id == store.KEECH_ORG_ID:
         return {
             "month": "2026-10",
@@ -899,7 +979,7 @@ def get_winback_winners(request: Request) -> dict[str, Any]:
 def get_watchlist(request: Request) -> list[dict[str, Any]]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     items = st.get("watchlist", [])
     if org_id:
         return [w for w in items if w.get("org_id") == org_id]
@@ -910,7 +990,7 @@ def get_watchlist(request: Request) -> list[dict[str, Any]]:
 def post_watchlist(body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     item = {
         "id": str(uuid.uuid4()),
         "org_id": org_id,
@@ -933,22 +1013,42 @@ def post_watchlist(body: dict[str, Any], request: Request) -> dict[str, Any]:
 
 
 @router.delete("/api/watchlist/{wid}")
-def delete_watchlist(wid: str) -> dict[str, Any]:
+def delete_watchlist(wid: str, request: Request) -> dict[str, Any]:
     st = store.get_state()
+    u = get_current_user(request)
+    target = next((w for w in st.get("watchlist", []) if w.get("id") == wid), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Watchlist item not found")
+    assert_same_org(u, target.get("org_id"))
     st["watchlist"] = [w for w in st.get("watchlist", []) if w.get("id") != wid]
     store.save_state()
     return {"ok": True}
 
 
 @router.get("/api/watchlist/email")
-def get_watchlist_email() -> dict[str, Any]:
+def get_watchlist_email(request: Request) -> dict[str, Any]:
+    u = get_current_user(request)
     st = store.get_state()
+    org_id = effective_org(u)
+    if org_id:
+        return st.setdefault("watchlist_email_by_org", {}).get(
+            org_id, {"enabled": False, "recipient_email": "", "last_sent_at": None}
+        )
     return st.get("watchlist_email", {})
 
 
 @router.put("/api/watchlist/email")
-def put_watchlist_email(body: dict[str, Any]) -> dict[str, Any]:
+def put_watchlist_email(body: dict[str, Any], request: Request) -> dict[str, Any]:
+    u = get_current_user(request)
+    if not is_manager(u):
+        raise HTTPException(status_code=403, detail="Manager access required")
     st = store.get_state()
+    org_id = effective_org(u)
+    if org_id:
+        cur = st.setdefault("watchlist_email_by_org", {}).setdefault(org_id, {})
+        cur.update({k: v for k, v in body.items() if k in {"enabled", "recipient_email", "last_sent_at"}})
+        store.save_state()
+        return cur
     st["watchlist_email"] = {**st.get("watchlist_email", {}), **body}
     store.save_state()
     return st["watchlist_email"]
@@ -956,18 +1056,27 @@ def put_watchlist_email(body: dict[str, Any]) -> dict[str, Any]:
 
 # Keywords
 @router.get("/api/keywords")
-def get_keywords() -> list[dict[str, Any]]:
+def get_keywords(request: Request) -> list[dict[str, Any]]:
+    u = get_current_user(request)
     st = store.get_state()
-    return st.get("keywords", [])
+    org_id = effective_org(u)
+    items = st.get("keywords", [])
+    if org_id:
+        return [k for k in items if k.get("org_id") in (None, "", org_id)]
+    return items
 
 
 @router.post("/api/keywords")
-def post_keyword(body: dict[str, Any]) -> dict[str, Any]:
+def post_keyword(body: dict[str, Any], request: Request) -> dict[str, Any]:
+    u = get_current_user(request)
+    if not is_manager(u):
+        raise HTTPException(status_code=403, detail="Manager access required")
     st = store.get_state()
     kw = {
         "id": str(uuid.uuid4()),
-        "keyword": body.get("keyword", ""),
-        "group": body.get("group", "Custom"),
+        "org_id": effective_org(u) or "",
+        "keyword": str(body.get("keyword", ""))[:120],
+        "group": str(body.get("group", "Custom"))[:60],
     }
     st.setdefault("keywords", []).append(kw)
     store.save_state()
@@ -975,45 +1084,68 @@ def post_keyword(body: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.put("/api/keywords/{kid}")
-def put_keyword(kid: str, body: dict[str, Any]) -> dict[str, Any]:
+def put_keyword(kid: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
+    u = get_current_user(request)
+    if not is_manager(u):
+        raise HTTPException(status_code=403, detail="Manager access required")
     st = store.get_state()
     for kw in st.get("keywords", []):
         if kw.get("id") == kid:
-            kw["keyword"] = body.get("keyword", kw["keyword"])
-            kw["group"] = body.get("group", kw["group"])
+            if kw.get("org_id"):
+                assert_same_org(u, kw.get("org_id"))
+            kw["keyword"] = str(body.get("keyword", kw["keyword"]))[:120]
+            kw["group"] = str(body.get("group", kw["group"]))[:60]
             store.save_state()
             return kw
     raise HTTPException(status_code=404, detail="Keyword not found")
 
 
 @router.delete("/api/keywords/{kid}")
-def delete_keyword(kid: str) -> dict[str, Any]:
+def delete_keyword(kid: str, request: Request) -> dict[str, Any]:
+    u = get_current_user(request)
+    if not is_manager(u):
+        raise HTTPException(status_code=403, detail="Manager access required")
     st = store.get_state()
+    target = next((k for k in st.get("keywords", []) if k.get("id") == kid), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Keyword not found")
+    if target.get("org_id"):
+        assert_same_org(u, target.get("org_id"))
     st["keywords"] = [k for k in st.get("keywords", []) if k.get("id") != kid]
     store.save_state()
     return {"ok": True}
 
 
 @router.get("/api/keywords/alerts")
-def get_keyword_alerts() -> list[dict[str, Any]]:
+def get_keyword_alerts(request: Request) -> list[dict[str, Any]]:
     st = store.get_state()
-    return st["seed"].get("/keywords/alerts", [])
+    org_id = effective_org(get_current_user(request))
+    if org_id is None or org_id == store.KEECH_ORG_ID:
+        return st["seed"].get("/keywords/alerts", [])
+    return []
 
 
 @router.get("/api/keywords/rep-usage")
 def get_keyword_rep_usage(request: Request) -> list[dict[str, Any]]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     if org_id == store.KEECH_ORG_ID:
         return st["seed"].get("/keywords/rep-usage", [])
     return []
 
 
 @router.get("/api/keywords/suggestions")
-def get_keyword_suggestions() -> list[dict[str, Any]]:
+def get_keyword_suggestions(request: Request) -> list[dict[str, Any]]:
     st = store.get_state()
-    return st.get("keyword_suggestions", [])
+    org_id = effective_org(get_current_user(request))
+    items = st.get("keyword_suggestions", [])
+    if org_id is None:
+        return items
+    return [
+        s for s in items
+        if s.get("org_id") == org_id or (org_id == store.KEECH_ORG_ID and not s.get("org_id"))
+    ]
 
 
 @router.post("/api/keywords/suggestions/dismiss")
@@ -1023,9 +1155,11 @@ def post_keyword_suggestion_action() -> dict[str, Any]:
 
 
 @router.get("/api/keywords/{kid}/calls")
-def get_keyword_calls(kid: str, month: Optional[str] = Query(None)) -> list[dict[str, Any]]:
+def get_keyword_calls(kid: str, request: Request, month: Optional[str] = Query(None)) -> list[dict[str, Any]]:
     st = store.get_state()
-    return st.get("calls", [])[:15]
+    org_id = effective_org(get_current_user(request))
+    calls = [c for c in st.get("calls", []) if not org_id or c.get("org_id") == org_id]
+    return calls[:15]
 
 
 # Arrivals & Yard Inventory Lifecycle
@@ -1042,11 +1176,11 @@ def require_inventory_permission(user: dict[str, Any]) -> None:
 def get_arrivals(request: Request) -> list[dict[str, Any]]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
-    items = st.get("arrivals", [])
+    org_id = effective_org(u)
+    items = [a for a in st.get("arrivals", []) if not org_id or a.get("org_id") == org_id]
 
     now_dt = datetime.now(timezone.utc)
-    purged = False
+    purged_ids: set[str] = set()
     surviving = []
 
     MODEL_BODY_MAP = {
@@ -1094,7 +1228,7 @@ def get_arrivals(request: Request) -> list[dict[str, Any]]:
         if status == "to_be_crushed":
             days = a.get("days_until_crushed")
             if days is not None and int(days) <= 0:
-                purged = True
+                purged_ids.add(a.get("id"))
                 continue
             deadline_str = a.get("crush_deadline")
             if deadline_str:
@@ -1102,7 +1236,7 @@ def get_arrivals(request: Request) -> list[dict[str, Any]]:
                     deadline_dt = datetime.fromisoformat(deadline_str.replace("Z", "+00:00"))
                     if now_dt >= deadline_dt:
                         # Vehicle hit crush deadline -> purged entirely
-                        purged = True
+                        purged_ids.add(a.get("id"))
                         continue
                     diff = deadline_dt - now_dt
                     a["days_remaining"] = max(0, int(diff.total_seconds() // 86400) + (1 if diff.total_seconds() % 86400 > 0 else 0))
@@ -1113,12 +1247,10 @@ def get_arrivals(request: Request) -> list[dict[str, Any]]:
 
         surviving.append(a)
 
-    if purged:
-        st["arrivals"] = surviving
+    if purged_ids:
+        st["arrivals"] = [a for a in st.get("arrivals", []) if a.get("id") not in purged_ids]
         store.save_state()
 
-    if org_id:
-        return [a for a in surviving if a.get("org_id") == org_id]
     return surviving
 
 
@@ -1126,11 +1258,17 @@ def get_arrivals(request: Request) -> list[dict[str, Any]]:
 def post_arrival(body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    require_inventory_permission(u)
+    org_id = effective_org(u)
     aid = str(uuid.uuid4())
-    year = int(body.get("vehicle_year") or 2018)
-    make = body.get("vehicle_make", "")
-    model = body.get("vehicle_model", "")
+    try:
+        year = int(body.get("vehicle_year") or 2018)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Vehicle year must be a number")
+    if year < 1900 or year > 2100:
+        raise HTTPException(status_code=400, detail="Vehicle year is out of range")
+    make = str(body.get("vehicle_make", "") or "")[:80]
+    model = str(body.get("vehicle_model", "") or "")[:80]
 
     matching_callers = []
     yard_calls = [c for c in st.get("calls", []) if not org_id or c.get("org_id") == org_id]
@@ -1210,7 +1348,7 @@ def check_in_arrivals(body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
     require_inventory_permission(u)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     ids = set(body.get("ids", []))
     if not ids:
         raise HTTPException(status_code=400, detail="No vehicle IDs provided for check-in")
@@ -1232,7 +1370,7 @@ def queue_crush_arrivals(body: dict[str, Any], request: Request) -> dict[str, An
     st = store.get_state()
     u = get_current_user(request)
     require_inventory_permission(u)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     ids = set(body.get("ids", []))
     if not ids:
         raise HTTPException(status_code=400, detail="No vehicle IDs provided for crush queue")
@@ -1265,7 +1403,7 @@ def patch_crush_days(aid: str, body: dict[str, Any], request: Request) -> dict[s
     st = store.get_state()
     u = get_current_user(request)
     require_inventory_permission(u)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
 
     val = body.get("days")
     if val is None:
@@ -1302,7 +1440,7 @@ def post_crush_now(aid: str, request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
     require_inventory_permission(u)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
 
     initial_len = len(st.get("arrivals", []))
     st["arrivals"] = [a for a in st.get("arrivals", []) if a.get("id") != aid or (org_id and a.get("org_id") != org_id)]
@@ -1317,7 +1455,7 @@ def post_restore_from_crush(aid: str, request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
     require_inventory_permission(u)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
 
     for a in st.get("arrivals", []):
         if a.get("id") == aid and (not org_id or a.get("org_id") == org_id):
@@ -1337,16 +1475,24 @@ def delete_arrival(aid: str, request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
     require_inventory_permission(u)
+    org_id = effective_org(u)
+    target = next((a for a in st.get("arrivals", []) if a.get("id") == aid), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Arrival not found")
+    assert_same_org(u, target.get("org_id"))
     st["arrivals"] = [a for a in st.get("arrivals", []) if a.get("id") != aid]
     store.save_state()
     return {"ok": True}
 
 
 @router.patch("/api/arrivals/{aid}/cost")
-def patch_arrival_cost(aid: str, body: dict[str, Any]) -> dict[str, Any]:
+def patch_arrival_cost(aid: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
+    u = get_current_user(request)
+    require_inventory_permission(u)
     for a in st.get("arrivals", []):
         if a.get("id") == aid:
+            assert_same_org(u, a.get("org_id"))
             a["cost"] = body.get("cost")
             store.save_state()
             return a
@@ -1359,6 +1505,7 @@ def patch_arrival_caller(aid: str, key: str, body: dict[str, Any], request: Requ
     u = get_current_user(request)
     for a in st.get("arrivals", []):
         if a.get("id") == aid:
+            assert_same_org(u, a.get("org_id"))
             for c in a.get("callers", []):
                 if c.get("key") == key:
                     c["status"] = body.get("status", c["status"])
@@ -1379,6 +1526,7 @@ def post_arrival_text(aid: str, body: dict[str, Any], request: Request) -> dict[
     u = get_current_user(request)
     for a in st.get("arrivals", []):
         if a.get("id") == aid:
+            assert_same_org(u, a.get("org_id"))
             template = body.get("template", "")
             for c in a.get("callers", []):
                 c["texted_at"] = store.now_iso()
@@ -1400,28 +1548,46 @@ def post_arrival_text(aid: str, body: dict[str, Any], request: Request) -> dict[
 def post_arrival_callback_list(aid: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
     arrival = next((a for a in st.get("arrivals", []) if a.get("id") == aid), None)
     if not arrival:
         raise HTTPException(status_code=404, detail="Arrival not found")
+    assert_same_org(u, arrival.get("org_id"))
+    org_id = arrival.get("org_id") or effective_org(u)
 
     rep_ids = body.get("rep_ids")
     if not rep_ids and body.get("rep_id"):
         rep_ids = [body["rep_id"]]
     if not rep_ids:
         rep_ids = [u["id"]]
+    if not isinstance(rep_ids, list):
+        raise HTTPException(status_code=400, detail="rep_ids must be a list")
+
+    # Every assignee must belong to the arrival's yard (platform staff may cross).
+    resolved_reps = []
+    for rid in rep_ids:
+        rep = st.get("users_by_id", {}).get(str(rid))
+        if not rep or rep.get("disabled"):
+            raise HTTPException(status_code=400, detail="Unknown team member")
+        if not is_staff(u) and rep.get("org_id") != org_id:
+            raise HTTPException(status_code=403, detail="You cannot assign callers to another yard")
+        resolved_reps.append(rep)
+    if not resolved_reps:
+        raise HTTPException(status_code=400, detail="Select at least one rep")
 
     created_lists = []
     base_name = body.get("name") or f"{arrival.get('vehicle_year')} {arrival.get('vehicle_make')} {arrival.get('vehicle_model')} callers"
     due_date = body.get("due_date") or ""
     waiting_callers = [c for c in arrival.get("callers", []) if c.get("status") == "to_call" and c.get("last_call_id")]
 
-    # Index calls by call id for quick lookup
-    calls_by_id = {c["id"]: c for c in st.get("calls", []) if c.get("id")}
+    # Index calls by call id for quick lookup (never across yard boundaries)
+    calls_by_id = {
+        c["id"]: c
+        for c in st.get("calls", [])
+        if c.get("id") and (not org_id or c.get("org_id") == org_id)
+    }
 
-    for rid in rep_ids:
+    for rep in resolved_reps:
         lid = str(uuid.uuid4())
-        rep = st["users_by_id"].get(rid, u)
         
         # Add each waiting caller to callbacks_open under this rep and list
         items_added = 0
@@ -1457,6 +1623,7 @@ def post_arrival_callback_list(aid: str, body: dict[str, Any], request: Request)
 
         new_list = {
             "id": lid,
+            "org_id": org_id,
             "name": base_name,
             "rep_id": rep["id"],
             "rep_name": rep["name"],
@@ -1484,7 +1651,7 @@ def post_arrival_callback_list(aid: str, body: dict[str, Any], request: Request)
 def get_arrivals_leaderboard(request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     if org_id == store.KEECH_ORG_ID:
         return st["seed"].get("/arrivals/leaderboard", {})
     return {"month": "2026-10", "leaders": []}
@@ -1494,7 +1661,7 @@ def get_arrivals_leaderboard(request: Request) -> dict[str, Any]:
 def get_arrivals_winner(request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     if org_id == store.KEECH_ORG_ID:
         return st["seed"].get("/arrivals/winner", {})
     return {"month": "2026-10", "winners": []}
@@ -1504,7 +1671,7 @@ def get_arrivals_winner(request: Request) -> dict[str, Any]:
 def get_arrivals_streak_chase(request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     if org_id == store.KEECH_ORG_ID:
         return st["seed"].get("/arrivals/streak-chase", {})
     return {}
@@ -1514,7 +1681,7 @@ def get_arrivals_streak_chase(request: Request) -> dict[str, Any]:
 def get_arrivals_streak_break(request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     if org_id == store.KEECH_ORG_ID:
         return st["seed"].get("/arrivals/streak-break", {})
     return {}
@@ -1529,7 +1696,7 @@ def get_callbacks(
 ) -> list[dict[str, Any]]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     if status == "resolved":
         items = st.get("callbacks_resolved", [])
     else:
@@ -1562,49 +1729,70 @@ def get_callbacks(
 def post_callbacks_assign(body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
-    cids = set(body.get("call_ids", []))
-    rep_id = body.get("rep_id")
-    rep = st["users_by_id"].get(rep_id, u)
-    list_id = body.get("list_id", "")
+    if not is_manager(u):
+        raise HTTPException(status_code=403, detail="Manager access required")
+    org_id = resolve_write_org(u, body.get("org_id"))
+    cids = {str(c) for c in body.get("call_ids", []) if c}
+    if not cids:
+        raise HTTPException(status_code=400, detail="Select at least one call to assign")
 
+    rep_id = body.get("rep_id") or u.get("id")
+    rep = st["users_by_id"].get(rep_id)
+    if not rep:
+        raise HTTPException(status_code=400, detail="Unknown team member")
+    if not is_staff(u) and rep.get("org_id") != org_id:
+        raise HTTPException(status_code=403, detail="You cannot assign calls to another yard")
+
+    list_id = body.get("list_id", "") or ""
     lists = st.get("callback_lists", [])
     target_list = next((l for l in lists if l.get("id") == list_id), None)
+    if list_id and not target_list:
+        raise HTTPException(status_code=404, detail="Callback list not found")
+    if target_list:
+        assert_same_org(u, target_list.get("org_id"))
     list_name = target_list.get("name", "") if target_list else ""
 
+    assigned = 0
     for c in st.get("calls", []):
-        if c.get("id") in cids:
-            item = dict(c)
-            item["org_id"] = org_id
-            item["customer_phone"] = item.get("customer_phone") or "+15551234567"
-            item["reason"] = body.get("note") or "Assigned by manager"
-            item["followed_up"] = False
-            item["followed_up_at"] = None
-            item["assigned_list_id"] = list_id
-            item["assigned_list_name"] = list_name
-            item["assigned_by"] = u.get("name", "Manager")
-            item["assigned_by_id"] = u.get("id", "")
-            item["assigned_by_role"] = u.get("role", "")
-            item["assigned_note"] = body.get("note", "")
-            item["list_due_date"] = target_list.get("due_date", "") if target_list else ""
-            item["list_overdue"] = False
-            item["rep_id"] = rep["id"]
-            item["rep_name"] = rep["name"]
-            st.setdefault("callbacks_open", []).insert(0, item)
+        if c.get("id") not in cids:
+            continue
+        # Never let a manager pull another yard's call into their callback queue.
+        if c.get("org_id") and c.get("org_id") != org_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        item = dict(c)
+        item["org_id"] = org_id
+        item["customer_phone"] = item.get("customer_phone") or "+15551234567"
+        item["reason"] = body.get("note") or "Assigned by manager"
+        item["followed_up"] = False
+        item["followed_up_at"] = None
+        item["assigned_list_id"] = list_id
+        item["assigned_list_name"] = list_name
+        item["assigned_by"] = u.get("name", "Manager")
+        item["assigned_by_id"] = u.get("id", "")
+        item["assigned_by_role"] = u.get("role", "")
+        item["assigned_note"] = body.get("note", "")
+        item["list_due_date"] = target_list.get("due_date", "") if target_list else ""
+        item["list_overdue"] = False
+        item["rep_id"] = rep["id"]
+        item["rep_name"] = rep["name"]
+        st.setdefault("callbacks_open", []).insert(0, item)
+        assigned += 1
 
+    if assigned == 0:
+        raise HTTPException(status_code=404, detail="No matching calls found")
     if target_list:
-        target_list["total"] += len(cids)
-        target_list["open"] += len(cids)
+        target_list["total"] = int(target_list.get("total") or 0) + assigned
+        target_list["open"] = int(target_list.get("open") or 0) + assigned
 
     store.save_state()
-    return {"assigned": len(cids)}
+    return {"assigned": assigned}
 
 
 @router.get("/api/callback-lists")
 def get_callback_lists(request: Request) -> list[dict[str, Any]]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     items = st.get("callback_lists", [])
     if org_id:
         return [l for l in items if l.get("org_id") == org_id]
@@ -1615,15 +1803,25 @@ def get_callback_lists(request: Request) -> list[dict[str, Any]]:
 def post_callback_lists(body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
-    lid = str(uuid.uuid4())
-    rep_id = body.get("rep_id") or u["id"]
-    rep = st["users_by_id"].get(rep_id, u)
+    if not is_manager(u):
+        raise HTTPException(status_code=403, detail="Manager access required")
+    org_id = resolve_write_org(u, body.get("org_id"))
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Give the callback list a name")
 
+    rep_id = body.get("rep_id") or u["id"]
+    rep = st["users_by_id"].get(rep_id)
+    if not rep:
+        raise HTTPException(status_code=400, detail="Unknown team member")
+    if not is_staff(u) and rep.get("org_id") != org_id:
+        raise HTTPException(status_code=403, detail="You cannot create a list for another yard")
+
+    lid = str(uuid.uuid4())
     new_list = {
         "id": lid,
         "org_id": org_id,
-        "name": body["name"],
+        "name": name[:120],
         "rep_id": rep["id"],
         "rep_name": rep["name"],
         "created_by": u.get("name", "Manager"),
@@ -1643,10 +1841,14 @@ def post_callback_lists(body: dict[str, Any], request: Request) -> dict[str, Any
 
 
 @router.patch("/api/callback-lists/{lid}")
-def patch_callback_list(lid: str, body: dict[str, Any]) -> dict[str, Any]:
+def patch_callback_list(lid: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
+    u = get_current_user(request)
+    if not is_manager(u):
+        raise HTTPException(status_code=403, detail="Manager access required")
     for l in st.get("callback_lists", []):
         if l.get("id") == lid:
+            assert_same_org(u, l.get("org_id"))
             l["due_date"] = body.get("due_date") or ""
             store.save_state()
             return l
@@ -1654,22 +1856,39 @@ def patch_callback_list(lid: str, body: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.delete("/api/callback-lists/{lid}")
-def delete_callback_list(lid: str) -> dict[str, Any]:
+def delete_callback_list(lid: str, request: Request) -> dict[str, Any]:
     st = store.get_state()
+    u = get_current_user(request)
+    if not is_manager(u):
+        raise HTTPException(status_code=403, detail="Manager access required")
+    target = next((l for l in st.get("callback_lists", []) if l.get("id") == lid), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Callback list not found")
+    assert_same_org(u, target.get("org_id"))
     st["callback_lists"] = [l for l in st.get("callback_lists", []) if l.get("id") != lid]
-    st["callbacks_open"] = [c for c in st.get("callbacks_open", []) if c.get("assigned_list_id") != lid]
+    st["callbacks_open"] = [
+        c for c in st.get("callbacks_open", [])
+        if c.get("assigned_list_id") != lid or c.get("org_id") != target.get("org_id")
+    ]
     store.save_state()
     return {"ok": True}
 
 
 @router.get("/api/callback-lists/leaderboard")
-def get_callback_lists_leaderboard() -> dict[str, Any]:
+def get_callback_lists_leaderboard(request: Request) -> dict[str, Any]:
     st = store.get_state()
-    return st["seed"].get("/callback-lists/leaderboard", {})
+    u = get_current_user(request)
+    org_id = effective_org(u)
+    if org_id == store.KEECH_ORG_ID:
+        return st["seed"].get("/callback-lists/leaderboard", {})
+    return {"reps": [], "period": ""}
 
 
 @router.post("/api/callback-lists/overdue-alerts/send-now")
-def post_callback_lists_overdue_alerts() -> dict[str, Any]:
+def post_callback_lists_overdue_alerts(request: Request) -> dict[str, Any]:
+    u = get_current_user(request)
+    if not is_manager(u):
+        raise HTTPException(status_code=403, detail="Manager access required")
     return {"lists": 0, "emails": 0, "texts": 0}
 
 
@@ -1678,7 +1897,7 @@ def post_callback_lists_overdue_alerts() -> dict[str, Any]:
 def get_call_queue(request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     if org_id == store.KEECH_ORG_ID:
         return st["seed"].get("/queue", {"items": [], "counts": {}, "progress": None})
     return {"items": [], "counts": {"roleplay": 0, "arrival": 0, "missed": 0}, "progress": None}
@@ -1688,7 +1907,7 @@ def get_call_queue(request: Request) -> dict[str, Any]:
 def get_team_queue(request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     if org_id == store.KEECH_ORG_ID:
         return st["seed"].get("/queue/team", {"after_noon": False, "reps": []})
 
@@ -1727,7 +1946,7 @@ def get_team_queue(request: Request) -> dict[str, Any]:
 def get_leaderboards_champions(request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     if org_id == store.KEECH_ORG_ID:
         return {
             "champions": [
@@ -1776,7 +1995,7 @@ def get_leaderboards_champions(request: Request) -> dict[str, Any]:
 def get_leaderboards_delivery(request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     if org_id == store.KEECH_ORG_ID:
         return {
             "month": "2026-10",
@@ -1794,7 +2013,7 @@ def get_leaderboards_delivery(request: Request) -> dict[str, Any]:
 def get_leaderboards_team_player(request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     if org_id == store.KEECH_ORG_ID:
         return {
             "month": "2026-10",
@@ -1829,7 +2048,7 @@ def get_reports_summary(
 ) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
 
     calls = [c for c in st.get("calls", []) if not org_id or c.get("org_id") == org_id]
     if site_id:

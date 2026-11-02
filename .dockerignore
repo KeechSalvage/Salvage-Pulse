@@ -15,6 +15,12 @@ backend/preview_state.json
 backend/data/
 backend/uploads/
 
+# Secrets must never enter an image layer
+.env
+.env.*
+**/.env
+**/.env.*
+
 # IDE & Editor files
 .git/
 .gitignore

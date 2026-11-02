@@ -395,7 +395,7 @@ export default function Team() {
                 ["name", "Full name", "text"],
                 ["title", "Desk / title", "text"],
                 ["email", "Login email", "email"],
-                ["password", "Temporary password (6+ chars)", "password"],
+                ["password", "Temporary password (8+ chars)", "password"],
               ] as const
             ).map(([k, l, t]) => (
               <div key={k} className="space-y-1.5">

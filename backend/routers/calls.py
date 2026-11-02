@@ -3,15 +3,38 @@ from __future__ import annotations
 import os
 import uuid
 from typing import Any, Optional
-from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 import analyzer
 from auth_utils import get_current_user, get_uploads_dir
 from gemini_service import analyze_audio_call_llm, is_gemini_configured, normalize_audio_mime
 import store
 from database import get_org_scoring_config, compute_weighted_overall_score
+from security import (
+    ALLOWED_AUDIO_EXTENSIONS,
+    assert_call_access,
+    assert_same_org,
+    effective_org,
+    find_call,
+    is_manager,
+    is_staff,
+    require_authenticated,
+    safe_join,
+    validate_upload,
+)
 
-router = APIRouter(tags=["calls"])
+router = APIRouter(tags=["calls"], dependencies=[Depends(require_authenticated)])
+
+
+def _resolve_rep(st: dict[str, Any], actor: dict[str, Any], chosen_id: str | None) -> dict[str, Any]:
+    """Pick the rep a new call belongs to without allowing cross-yard spoofing."""
+    rep = st.get("users_by_id", {}).get(chosen_id) if chosen_id else None
+    if not rep or rep.get("disabled"):
+        rep = actor
+    if not is_staff(actor):
+        if rep.get("org_id") != actor.get("org_id"):
+            raise HTTPException(status_code=403, detail="You cannot create calls for another yard")
+    return rep
 
 
 # ==========================================
@@ -33,8 +56,7 @@ def get_calls(
 ) -> list[dict[str, Any]]:
     st = store.get_state()
     u = get_current_user(request)
-    user_org = u.get("org_id")
-    effective_org = user_org if user_org else org_id
+    org_filter = effective_org(u, org_id)
 
     calls = st.get("calls", [])
     filtered = []
@@ -49,7 +71,7 @@ def get_calls(
         site_rep_ids = {uid for uid, usr in st["users_by_id"].items() if usr.get("site_id") == site_id}
 
     for c in calls:
-        if effective_org and c.get("org_id") != effective_org:
+        if org_filter and c.get("org_id") != org_filter:
             continue
         if effective_rep_id and c.get("rep_id") != effective_rep_id:
             continue
@@ -99,38 +121,55 @@ def get_recent_uploads(request: Request) -> list[dict[str, Any]]:
 
 
 @router.delete("/api/calls/uploads/{uid}")
-def delete_recent_upload(uid: str) -> dict[str, Any]:
+def delete_recent_upload(uid: str, request: Request) -> dict[str, Any]:
     st = store.get_state()
+    actor = get_current_user(request)
+    target = next((u for u in st.get("recent_uploads", []) if u.get("id") == uid), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Upload not found")
+    assert_same_org(actor, target.get("org_id"))
     st["recent_uploads"] = [u for u in st.get("recent_uploads", []) if u.get("id") != uid]
     store.save_state()
     return {"ok": True}
 
 
 @router.get("/api/calls/vehicle-options")
-def get_vehicle_options(catalog: bool = Query(False), rank: str = Query("calls")) -> dict[str, Any]:
+def get_vehicle_options(request: Request, catalog: bool = Query(False), rank: str = Query("calls")) -> dict[str, Any]:
     st = store.get_state()
-    return st["seed"].get("/calls/vehicle-options?catalog=true&rank=calls", st["seed"].get("/calls/vehicle-options", {}))
+    u = get_current_user(request)
+    seed = st["seed"].get("/calls/vehicle-options?catalog=true&rank=calls", st["seed"].get("/calls/vehicle-options", {}))
+    if u.get("org_id") == store.KEECH_ORG_ID:
+        return seed
+    # Other yards get the make/model catalogue for their pickers, but never the
+    # call/lost counts that describe another yard's business.
+    makes = [
+        {
+            "make": m.get("make", ""),
+            "models": list(m.get("models") or []),
+            "calls": 0,
+            "calls_30d": 0,
+            "lost": 0,
+            "model_stats": [
+                {"model": model, "calls": 0, "calls_30d": 0, "lost": 0}
+                for model in (m.get("models") or [])
+            ],
+        }
+        for m in seed.get("makes", [])
+    ]
+    return {**seed, "makes": makes}
 
 
 @router.get("/api/calls/{call_id}")
 def get_call_detail(call_id: str, request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
     full_calls = st.get("full_calls", {})
 
     # Check primary calls list, or open callbacks (e.g. vehicle arrival callbacks)
-    match = next((c for c in st.get("calls", []) if c.get("id") == call_id), None)
-    if not match:
-        match = next((c for c in st.get("callbacks_open", []) if c.get("id") == call_id), None)
-    if not match:
-        match = next((c for c in st.get("callbacks_resolved", []) if c.get("id") == call_id), None)
-
+    match = find_call(st, call_id)
     if not match:
         raise HTTPException(status_code=404, detail="Call not found")
-
-    if org_id and match.get("org_id") and match.get("org_id") != org_id:
-        raise HTTPException(status_code=403, detail="Call not found")
+    assert_call_access(u, match)
 
     full = full_calls.get(call_id)
     if not full:
@@ -150,20 +189,24 @@ def get_call_detail(call_id: str, request: Request) -> dict[str, Any]:
 
 
 @router.get("/api/calls/{call_id}/audio")
-def get_call_audio(call_id: str) -> Response:
+def get_call_audio(call_id: str, request: Request) -> Response:
     st = store.get_state()
-    call_obj = st.get("full_calls", {}).get(call_id) or next(
-        (c for c in st.get("calls", []) if c.get("id") == call_id), None
-    )
-    if call_obj and call_obj.get("audio_path"):
-        path = call_obj["audio_path"]
+    actor = get_current_user(request)
+    call_obj = find_call(st, call_id)
+    if not call_obj:
+        raise HTTPException(status_code=404, detail="Call not found")
+    assert_call_access(actor, call_obj)
+
+    if call_obj.get("audio_path"):
+        uploads_dir = get_uploads_dir()
+        path = safe_join(uploads_dir, os.path.basename(str(call_obj["audio_path"])))
         if os.path.exists(path):
             mime = call_obj.get("audio_mime") or normalize_audio_mime(path)
             return FileResponse(path, media_type=mime)
 
     uploads_dir = get_uploads_dir()
-    for ext in [".wav", ".mp3", ".m4a", ".ogg", ".webm", ".flac", ".aac"]:
-        p = os.path.join(uploads_dir, f"{call_id}{ext}")
+    for ext in ALLOWED_AUDIO_EXTENSIONS:
+        p = safe_join(uploads_dir, f"{os.path.basename(call_id)}{ext}")
         if os.path.exists(p):
             mime = normalize_audio_mime(p)
             return FileResponse(p, media_type=mime)
@@ -173,27 +216,33 @@ def get_call_audio(call_id: str) -> Response:
 
 
 @router.get("/api/calls/{call_id}/customer-calls")
-def get_customer_calls(call_id: str) -> dict[str, Any]:
+def get_customer_calls(call_id: str, request: Request) -> dict[str, Any]:
     st = store.get_state()
-    match = next((c for c in st.get("calls", []) if c.get("id") == call_id), None)
+    actor = get_current_user(request)
+    match = find_call(st, call_id)
     if not match:
         return {"key": "", "calls": []}
+    assert_call_access(actor, match)
 
+    org_filter = effective_org(actor)
     cust_name = match.get("customer_name")
     phone = match.get("customer_phone")
     related = [
         {**c, "parts_sold": c.get("parts_sold") or [], "topics": c.get("topics") or []}
         for c in st.get("calls", [])
-        if c.get("customer_name") == cust_name or (phone and c.get("customer_phone") == phone)
+        if (not org_filter or c.get("org_id") == org_filter)
+        and (c.get("customer_name") == cust_name or (phone and c.get("customer_phone") == phone))
     ]
     return {"key": cust_name, "calls": related[:20]}
 
 
 @router.patch("/api/calls/{call_id}/vehicle")
-def patch_call_vehicle(call_id: str, body: dict[str, Any]) -> dict[str, Any]:
+def patch_call_vehicle(call_id: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
+    actor = get_current_user(request)
     for c in st.get("calls", []):
         if c.get("id") == call_id:
+            assert_call_access(actor, c)
             if "vehicle_year" in body:
                 c["vehicle_year"] = body["vehicle_year"]
             if "vehicle_make" in body:
@@ -209,10 +258,12 @@ def patch_call_vehicle(call_id: str, body: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.patch("/api/calls/{call_id}/sale")
-def patch_call_sale(call_id: str, body: dict[str, Any]) -> dict[str, Any]:
+def patch_call_sale(call_id: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
+    actor = get_current_user(request)
     for c in st.get("calls", []):
         if c.get("id") == call_id:
+            assert_call_access(actor, c)
             is_sold = body.get("sold", False)
             c["outcome"] = "won" if is_sold else "lost"
             c["order_value"] = float(body.get("sold_price") or 0.0) if is_sold else 0.0
@@ -226,10 +277,12 @@ def patch_call_sale(call_id: str, body: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.patch("/api/calls/{call_id}/delivery")
-def patch_call_delivery(call_id: str, body: dict[str, Any]) -> dict[str, Any]:
+def patch_call_delivery(call_id: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
+    actor = get_current_user(request)
     for c in st.get("calls", []):
         if c.get("id") == call_id:
+            assert_call_access(actor, c)
             c["delivery_call"] = bool(body.get("delivery"))
             if "delivery_kind" in body:
                 c["delivery_kind"] = body["delivery_kind"]
@@ -244,6 +297,7 @@ def put_call_delivery_check(call_id: str, body: dict[str, Any], request: Request
     u = get_current_user(request)
     for c in st.get("calls", []):
         if c.get("id") == call_id:
+            assert_call_access(u, c)
             dg = bool(body.get("date_given"))
             ac = bool(body.get("address_confirmed"))
             th = bool(body.get("thanked"))
@@ -264,10 +318,12 @@ def put_call_delivery_check(call_id: str, body: dict[str, Any], request: Request
 
 
 @router.post("/api/calls/{call_id}/delivery-check/ai")
-def post_call_delivery_check_ai(call_id: str) -> dict[str, Any]:
+def post_call_delivery_check_ai(call_id: str, request: Request) -> dict[str, Any]:
     st = store.get_state()
+    actor = get_current_user(request)
     for c in st.get("calls", []):
         if c.get("id") == call_id:
+            assert_call_access(actor, c)
             c["delivery_check"] = {
                 "date_given": True,
                 "address_confirmed": True,
@@ -291,6 +347,7 @@ def patch_call_callback(call_id: str, body: dict[str, Any], request: Request) ->
     # 1. Check primary calls list
     for c in st.get("calls", []):
         if c.get("id") == call_id:
+            assert_call_access(u, c)
             c["callback_done"] = bool(body.get("done"))
             c["callback_by"] = u.get("name", "Rep")
             c["callback_at"] = store.now_iso()
@@ -306,6 +363,7 @@ def patch_call_callback(call_id: str, body: dict[str, Any], request: Request) ->
     cb_open = st.get("callbacks_open", [])
     for idx, c in enumerate(cb_open):
         if c.get("id") == call_id:
+            assert_call_access(u, c)
             c["callback_done"] = bool(body.get("done"))
             c["callback_by"] = u.get("name", "Rep")
             c["callback_at"] = store.now_iso()
@@ -327,8 +385,13 @@ def patch_call_callback(call_id: str, body: dict[str, Any], request: Request) ->
 
 
 @router.delete("/api/calls/{call_id}/assignment")
-def delete_call_assignment(call_id: str) -> dict[str, Any]:
+def delete_call_assignment(call_id: str, request: Request) -> dict[str, Any]:
     st = store.get_state()
+    actor = get_current_user(request)
+    target = next((c for c in st.get("callbacks_open", []) if c.get("id") == call_id), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Call not found")
+    assert_call_access(actor, target)
     st["callbacks_open"] = [c for c in st.get("callbacks_open", []) if c.get("id") != call_id]
     store.save_state()
     return {"ok": True}
@@ -338,24 +401,16 @@ def delete_call_assignment(call_id: str) -> dict[str, Any]:
 def post_call_reanalyze(call_id: str, request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id") or store.KEECH_ORG_ID
     full_calls = st.get("full_calls", {})
 
     # Locate call in calls, callbacks_open, or callbacks_resolved
-    match = next((c for c in st.get("calls", []) if c.get("id") == call_id), None)
-    if not match:
-        match = next((c for c in st.get("callbacks_open", []) if c.get("id") == call_id), None)
-    if not match:
-        match = next((c for c in st.get("callbacks_resolved", []) if c.get("id") == call_id), None)
-
+    match = find_call(st, call_id)
     if not match:
         raise HTTPException(status_code=404, detail="Call not found")
-
-    if org_id and match.get("org_id") and match.get("org_id") != org_id:
-        raise HTTPException(status_code=403, detail="Access denied")
+    assert_call_access(u, match)
 
     # Get yard scoring configuration
-    yard_org_id = match.get("org_id") or org_id
+    yard_org_id = match.get("org_id") or u.get("org_id") or ""
     has_custom, yard_weights = get_org_scoring_config(yard_org_id)
     custom_weights = yard_weights if has_custom else None
 
@@ -422,8 +477,15 @@ def post_call_reanalyze(call_id: str, request: Request) -> dict[str, Any]:
 
 
 @router.delete("/api/calls/{call_id}")
-def delete_call(call_id: str) -> dict[str, Any]:
+def delete_call(call_id: str, request: Request) -> dict[str, Any]:
     st = store.get_state()
+    actor = get_current_user(request)
+    if not is_manager(actor):
+        raise HTTPException(status_code=403, detail="Manager access required to delete calls")
+    target = find_call(st, call_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="Call not found")
+    assert_call_access(actor, target)
     st["calls"] = [c for c in st.get("calls", []) if c.get("id") != call_id]
     st.get("full_calls", {}).pop(call_id, None)
     store.save_state()
@@ -431,11 +493,21 @@ def delete_call(call_id: str) -> dict[str, Any]:
 
 
 @router.post("/api/calls/bulk-delete")
-def post_calls_bulk_delete(body: dict[str, Any]) -> dict[str, Any]:
+def post_calls_bulk_delete(body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
+    actor = get_current_user(request)
+    if not is_manager(actor):
+        raise HTTPException(status_code=403, detail="Manager access required to delete calls")
+    org_filter = effective_org(actor)
     ids_to_del = set(body.get("ids", []))
+    targets = [c for c in st.get("calls", []) if c.get("id") in ids_to_del]
+    for c in targets:
+        assert_call_access(actor, c)
+    allowed_ids = {c.get("id") for c in targets if not org_filter or c.get("org_id") == org_filter}
     orig_len = len(st.get("calls", []))
-    st["calls"] = [c for c in st.get("calls", []) if c.get("id") not in ids_to_del]
+    st["calls"] = [c for c in st.get("calls", []) if c.get("id") not in allowed_ids]
+    for cid in allowed_ids:
+        st.get("full_calls", {}).pop(cid, None)
     store.save_state()
     return {"deleted": orig_len - len(st["calls"])}
 
@@ -448,13 +520,12 @@ def post_call_transcript(body: dict[str, Any], request: Request) -> dict[str, An
     st = store.get_state()
     cid = str(uuid.uuid4())
     u = get_current_user(request)
-    rep_id = body.get("rep_id") or u["id"]
-    rep = st["users_by_id"].get(rep_id, u)
+    rep = _resolve_rep(st, u, body.get("rep_id") or u["id"])
 
     transcript = body.get("transcript", "")
     cust_name = body.get("customer_name") or "Direct Caller"
     rep_name = rep.get("name", "Sales Rep")
-    yard_org_id = rep.get("org_id") or u.get("org_id") or store.KEECH_ORG_ID
+    yard_org_id = rep.get("org_id") or u.get("org_id") or ""
 
     has_custom, yard_weights = get_org_scoring_config(yard_org_id)
     custom_weights = yard_weights if has_custom else None
@@ -536,22 +607,22 @@ async def post_call_audio(
     st = store.get_state()
     cid = str(uuid.uuid4())
     u = get_current_user(request)
-    chosen_rep_id = rep_id or rep or u["id"]
-    rep_user = st["users_by_id"].get(chosen_rep_id, u)
+    rep_user = _resolve_rep(st, u, rep_id or rep or u["id"])
     cust_name = customer_name or customer or "Audio Caller"
     rep_name = rep_user.get("name", "Sales Rep")
 
     audio_bytes = await file.read()
     orig_name = file.filename or "recording.wav"
-    ext = os.path.splitext(orig_name)[1].lower() or ".wav"
+    ext = validate_upload(audio_bytes, orig_name, ALLOWED_AUDIO_EXTENSIONS)
     mime_type = normalize_audio_mime(orig_name, file.content_type)
 
     uploads_dir = get_uploads_dir()
-    saved_path = os.path.join(uploads_dir, f"{cid}{ext}")
+    saved_path = safe_join(uploads_dir, f"{cid}{ext}")
     with open(saved_path, "wb") as f:
         f.write(audio_bytes)
+    os.chmod(saved_path, 0o600)
 
-    yard_org_id = rep_user.get("org_id") or u.get("org_id") or store.KEECH_ORG_ID
+    yard_org_id = rep_user.get("org_id") or u.get("org_id") or ""
     has_custom, yard_weights = get_org_scoring_config(yard_org_id)
     custom_weights = yard_weights if has_custom else None
 
@@ -589,7 +660,7 @@ async def post_call_audio(
 
     summary_item = {
         "id": cid,
-        "org_id": rep_user.get("org_id") or u.get("org_id") or store.KEECH_ORG_ID,
+        "org_id": rep_user.get("org_id") or u.get("org_id") or "",
         "rep_id": rep_user["id"],
         "rep_name": rep_user["name"],
         "customer_name": cust_name,
@@ -659,8 +730,7 @@ async def post_bulk_audio(
 ) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    chosen_rep_id = rep_id or u["id"]
-    rep_user = st["users_by_id"].get(chosen_rep_id, u)
+    rep_user = _resolve_rep(st, u, rep_id or u["id"])
     rep_name = rep_user.get("name", "Sales Rep")
 
     upload_list = []
@@ -680,14 +750,15 @@ async def post_bulk_audio(
             cid = str(uuid.uuid4())
             audio_bytes = await up_file.read()
             orig_name = up_file.filename or "recording.wav"
-            ext = os.path.splitext(orig_name)[1].lower() or ".wav"
+            ext = validate_upload(audio_bytes, orig_name, ALLOWED_AUDIO_EXTENSIONS)
             mime_type = normalize_audio_mime(orig_name, up_file.content_type)
 
-            saved_path = os.path.join(uploads_dir, f"{cid}{ext}")
+            saved_path = safe_join(uploads_dir, f"{cid}{ext}")
             with open(saved_path, "wb") as f:
                 f.write(audio_bytes)
+            os.chmod(saved_path, 0o600)
 
-            batch_yard_org_id = rep_user.get("org_id") or u.get("org_id") or store.KEECH_ORG_ID
+            batch_yard_org_id = rep_user.get("org_id") or u.get("org_id") or ""
             b_custom, b_weights = get_org_scoring_config(batch_yard_org_id)
             b_custom_weights = b_weights if b_custom else None
 
@@ -726,7 +797,7 @@ async def post_bulk_audio(
             cust_name = analyzed.get("customer_name") or "Inbound Caller"
             summary_item = {
                 "id": cid,
-                "org_id": rep_user.get("org_id") or u.get("org_id") or store.KEECH_ORG_ID,
+                "org_id": batch_yard_org_id,
                 "rep_id": rep_user["id"],
                 "rep_name": rep_user["name"],
                 "customer_name": cust_name,
@@ -811,7 +882,12 @@ async def post_bulk_audio(
 
 
 @router.post("/api/calls/import")
-async def post_calls_import(file: UploadFile = File(...)) -> dict[str, Any]:
+async def post_calls_import(request: Request, file: UploadFile = File(...)) -> dict[str, Any]:
+    actor = get_current_user(request)
+    if not is_manager(actor):
+        raise HTTPException(status_code=403, detail="Manager access required to import calls")
+    content = await file.read()
+    validate_upload(content, file.filename or "import.csv", {".csv", ".xlsx", ".xls"}, max_bytes=10 * 1024 * 1024)
     return {
         "file_from": "2026-10-01",
         "file_to": store.today_str(),
@@ -834,6 +910,14 @@ async def post_calls_import(file: UploadFile = File(...)) -> dict[str, Any]:
 
 @router.post("/api/calls/{call_id}/attach")
 async def post_call_attach(call_id: str, request: Request, file: UploadFile = File(...)) -> dict[str, Any]:
+    st = store.get_state()
+    actor = get_current_user(request)
+    target = find_call(st, call_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="Call not found")
+    assert_call_access(actor, target)
+    content = await file.read()
+    validate_upload(content, file.filename or "recording.wav", ALLOWED_AUDIO_EXTENSIONS)
     return get_call_detail(call_id, request)
 
 
@@ -862,7 +946,7 @@ def get_drill_calls(
 ) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     calls = st.get("calls", [])
     res = []
 
@@ -908,31 +992,54 @@ def get_drill_calls(
     return {"total": len(res), "calls": res[:200]}
 
 
+def _scope_cleanup(items: list[dict[str, Any]], org_id: Optional[str]) -> list[dict[str, Any]]:
+    """Keep cleanup records inside the caller's yard (legacy rows belong to Keech)."""
+    if org_id is None:
+        return items
+    return [
+        item for item in items
+        if item.get("org_id") == org_id
+        or (org_id == store.KEECH_ORG_ID and not item.get("org_id"))
+    ]
+
+
 # Call cleanup
 @router.get("/api/call-cleanup/batches")
-def get_cleanup_batches() -> list[dict[str, Any]]:
+def get_cleanup_batches(request: Request) -> list[dict[str, Any]]:
+    actor = get_current_user(request)
+    if not is_manager(actor):
+        raise HTTPException(status_code=403, detail="Manager access required")
     st = store.get_state()
-    return st.get("cleanup_batches", [])
+    return _scope_cleanup(st.get("cleanup_batches", []), effective_org(actor))
 
 
 @router.delete("/api/call-cleanup/batches/{bid}")
-def delete_cleanup_batch(bid: str) -> dict[str, Any]:
+def delete_cleanup_batch(bid: str, request: Request) -> dict[str, Any]:
+    if not is_manager(get_current_user(request)):
+        raise HTTPException(status_code=403, detail="Manager access required")
     return {"matched": 0, "deleted": 0}
 
 
 @router.post("/api/call-cleanup/range")
-def post_cleanup_range(body: dict[str, Any]) -> dict[str, Any]:
+def post_cleanup_range(body: dict[str, Any], request: Request) -> dict[str, Any]:
+    if not is_manager(get_current_user(request)):
+        raise HTTPException(status_code=403, detail="Manager access required")
     return {"matched": 12, "deleted": 12 if not body.get("dry_run") else 0}
 
 
 @router.get("/api/call-cleanup/trash")
-def get_cleanup_trash() -> list[dict[str, Any]]:
+def get_cleanup_trash(request: Request) -> list[dict[str, Any]]:
+    actor = get_current_user(request)
+    if not is_manager(actor):
+        raise HTTPException(status_code=403, detail="Manager access required")
     st = store.get_state()
-    return st.get("cleanup_trash", [])
+    return _scope_cleanup(st.get("cleanup_trash", []), effective_org(actor))
 
 
 @router.post("/api/call-cleanup/trash/{tid}/restore")
-def post_cleanup_restore(tid: str) -> dict[str, Any]:
+def post_cleanup_restore(tid: str, request: Request) -> dict[str, Any]:
+    if not is_manager(get_current_user(request)):
+        raise HTTPException(status_code=403, detail="Manager access required")
     return {"restored": 10}
 
 

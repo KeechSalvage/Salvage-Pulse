@@ -1,5 +1,4 @@
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { GoogleCallback } from "@/components/GoogleSignIn";
+import { Navigate, Route, Routes } from "react-router-dom";
 import PremiumGate from "@/components/PremiumGate";
 import { Toaster } from "@/components/ui/sonner";
 import AppShell, { homeFor } from "@/components/AppShell";
@@ -37,16 +36,6 @@ function HomeRedirect() {
 
 // One <Route> per page in src/pages; BrowserRouter already wraps this in main.tsx.
 export default function App() {
-  // Back from Google sign-in: handle #session_id before any route (and its /auth/me check) renders.
-  const { hash } = useLocation();
-  if (hash.includes("session_id=")) {
-    return (
-      <>
-        <GoogleCallback hash={hash} />
-        <Toaster richColors />
-      </>
-    );
-  }
   return (
     <ErrorBoundary>
       <Routes>

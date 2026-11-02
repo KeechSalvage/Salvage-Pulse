@@ -5,9 +5,15 @@ import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from html import escape
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _clean_header(value: str | None) -> str:
+    """Strip CR/LF so user-supplied text cannot inject extra mail headers."""
+    return (value or "").replace("\r", "").replace("\n", " ").strip()
 
 
 def is_smtp_configured() -> bool:
@@ -35,8 +41,15 @@ def send_email(
     port = int(os.environ.get("SMTP_PORT", "587"))
     user = os.environ.get("SMTP_USER", "").strip()
     password = os.environ.get("SMTP_PASSWORD", "").strip()
-    from_name = os.environ.get("SMTP_FROM_NAME", "Salvage Pulse").strip()
-    from_email = os.environ.get("SMTP_FROM", user).strip()
+    from_name = _clean_header(os.environ.get("SMTP_FROM_NAME", "Salvage Pulse"))
+    from_email = _clean_header(os.environ.get("SMTP_FROM", user))
+    to_email = _clean_header(to_email)
+    subject = _clean_header(subject)[:250]
+    reply_to = _clean_header(reply_to) if reply_to else None
+
+    if not to_email:
+        logger.warning("Refusing to send email with an empty recipient")
+        return False
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
@@ -71,8 +84,13 @@ def send_staff_welcome_email(
     app_url: str = "https://app.salvagepulsepro.com",
 ) -> bool:
     """Send a professional welcome email to a new staff member with temporary password and login link."""
-    subject = f"Welcome to Salvage Pulse — Your {role} Access"
+    subject = f"Welcome to Salvage Pulse — Your {_clean_header(role)} Access"
     clean_url = app_url.rstrip("/")
+    safe_name = escape(name or "there")
+    safe_role = escape(role or "Admin")
+    safe_email = escape(to_email or "")
+    safe_password = escape(temp_password or "")
+    safe_url = escape(clean_url)
 
     html = f"""
     <!DOCTYPE html>
@@ -97,17 +115,17 @@ def send_staff_welcome_email(
     <body>
       <div class="card">
         <div class="brand">⚡ Salvage Pulse</div>
-        <h1>Welcome, {name}!</h1>
-        <p>A new <strong>{role}</strong> staff account has been created for you on the Salvage Pulse platform.</p>
+        <h1>Welcome, {safe_name}!</h1>
+        <p>A new <strong>{safe_role}</strong> staff account has been created for you on the Salvage Pulse platform.</p>
         
         <div class="credentials">
-          <div class="field"><span class="label">Login Email:</span> <span class="value">{to_email}</span></div>
-          <div class="field"><span class="label">Temporary Password:</span> <span class="value">{temp_password}</span></div>
+          <div class="field"><span class="label">Login Email:</span> <span class="value">{safe_email}</span></div>
+          <div class="field"><span class="label">Temporary Password:</span> <span class="value">{safe_password}</span></div>
         </div>
 
         <p>You can sign in using your temporary password, or click <strong>Continue with Google</strong> using this email address for instant passwordless access.</p>
 
-        <a href="{clean_url}/login" class="btn">Sign In to Salvage Pulse</a>
+        <a href="{safe_url}/login" class="btn">Sign In to Salvage Pulse</a>
 
         <div class="footer">
           <p>If you have any questions or did not expect this invitation, please contact your platform administrator.</p>
@@ -141,6 +159,9 @@ def send_password_reset_email(
     """Send a password reset email with temporary credentials."""
     subject = "Salvage Pulse — Password Reset"
     clean_url = app_url.rstrip("/")
+    safe_name = escape(name or "there")
+    safe_password = escape(temp_password or "")
+    safe_url = escape(clean_url)
 
     html = f"""
     <!DOCTYPE html>
@@ -161,14 +182,14 @@ def send_password_reset_email(
     <body>
       <div class="card">
         <div class="brand">⚡ Salvage Pulse</div>
-        <h1>Password Reset for {name}</h1>
+        <h1>Password Reset for {safe_name}</h1>
         <p>Your password has been reset by an administrator.</p>
         <div class="credentials">
           <p style="margin: 0 0 8px 0; color: #94a3b8; font-size: 14px;">Your new temporary password:</p>
-          <div class="value">{temp_password}</div>
+          <div class="value">{safe_password}</div>
         </div>
         <p>Please log in and update your password, or use Google Sign-In with this email.</p>
-        <a href="{clean_url}/login" class="btn">Sign In Now</a>
+        <a href="{safe_url}/login" class="btn">Sign In Now</a>
       </div>
     </body>
     </html>
@@ -181,6 +202,40 @@ Temporary Password: {temp_password}
 Sign In URL: {clean_url}/login
 """
     return send_email(to_email, subject, html, text)
+
+
+def send_password_reset_link_email(
+    to_email: str,
+    name: str,
+    token: str,
+    app_url: str = "",
+    expires_minutes: int = 60,
+) -> bool:
+    """Email a single-use password reset link (no temporary password is sent)."""
+    from html import escape
+
+    base = (app_url or os.environ.get("APP_URL", "") or "https://app.salvagepulsepro.com").rstrip("/")
+    url = f"{base}/reset-password?token={token}"
+    safe_name = escape(name or "there")
+    safe_url = escape(url)
+
+    html = f"""
+    <div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;color:#0f172a">
+      <div style="color:#b45309;font-size:18px;font-weight:800;margin-bottom:20px">Salvage Pulse</div>
+      <h2 style="font-size:22px;margin:0 0 14px">Reset your password</h2>
+      <p style="font-size:15px;color:#475569;line-height:1.6;margin:0 0 18px">Hi {safe_name}, we received a request to reset the password for your Salvage Pulse account.</p>
+      <p style="margin:0 0 24px"><a href="{safe_url}" style="display:inline-block;background:#f59e0b;color:#0f172a;font-weight:700;text-decoration:none;padding:12px 26px;border-radius:6px">Choose a new password</a></p>
+      <p style="font-size:13px;color:#64748b;line-height:1.6;margin:0 0 12px">This link works once and expires in {expires_minutes} minutes. If you didn't ask for it, you can safely ignore this email.</p>
+      <p style="font-size:12px;color:#94a3b8;word-break:break-all;margin:0">{safe_url}</p>
+    </div>"""
+
+    text = (
+        f"Hi {name or 'there'},\n\n"
+        "We received a request to reset your Salvage Pulse password.\n"
+        f"Choose a new password here (works once, expires in {expires_minutes} minutes):\n{url}\n\n"
+        "If you didn't ask for it, you can ignore this email."
+    )
+    return send_email(to_email, "Salvage Pulse — Reset your password", html, text)
 
 
 def support_address() -> str:
@@ -249,9 +304,20 @@ def send_new_device_login_email(
     browser: str,
     ip: str,
     timestamp: str,
+    not_me_token: str = "",
+    lock_token: str = "",
+    app_url: str = "",
 ) -> bool:
-    """Alert support when platform staff signs in from a previously unseen device/browser."""
+    """Alert a staff member (and support) about a previously unseen device.
+
+    The email contains single-use links that let the recipient revoke the new
+    session or lock the account without signing in.
+    """
     from html import escape
+
+    base = (app_url or os.environ.get("APP_URL", "") or "https://app.salvagepulsepro.com").rstrip("/")
+    not_me_url = f"{base}/not-me?token={not_me_token}" if not_me_token else ""
+    lock_url = f"{base}/lock-account?token={lock_token}" if lock_token else ""
 
     safe_name = escape(staff_name or "Staff Member")
     safe_email = escape(staff_email or "")
@@ -259,6 +325,8 @@ def send_new_device_login_email(
     safe_browser = escape(browser or "Unknown Browser")
     safe_ip = escape(ip or "Unknown IP")
     safe_time = escape(timestamp or "")
+    safe_not_me = escape(not_me_url)
+    safe_lock = escape(lock_url)
 
     html = f"""
     <div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;color:#0f172a">
@@ -295,8 +363,9 @@ def send_new_device_login_email(
           <td style="padding:8px 0;color:#0f172a">{safe_time}</td>
         </tr>
       </table>
+      {f'<p style="margin:0 0 12px 0"><a href="{safe_not_me}" style="display:inline-block;background:#dc2626;color:#ffffff;font-weight:700;text-decoration:none;padding:10px 18px;border-radius:6px;margin-right:8px">This wasn&rsquo;t me &mdash; sign it out</a><a href="{safe_lock}" style="display:inline-block;background:#0f172a;color:#ffffff;font-weight:700;text-decoration:none;padding:10px 18px;border-radius:6px">Lock my account</a></p>' if safe_not_me or safe_lock else ''}
       <div style="border-radius:8px;background:#f8fafc;border:1px solid #e2e8f0;padding:12px 16px;font-size:12px;color:#64748b;line-height:1.5">
-        If this was authorized by your team, no action is needed. If suspicious, you can revoke active sessions immediately from the Admin Console under <strong>Platform Team &rarr; Trusted Devices</strong>.
+        If this was authorized by your team, no action is needed. If suspicious, use the buttons above or manage active sessions from the Admin Console under <strong>Platform Team &rarr; Trusted Devices</strong>.
       </div>
     </div>"""
 
@@ -306,14 +375,17 @@ def send_new_device_login_email(
         f"Browser / OS: {browser}\n"
         f"IP Address: {ip}\n"
         f"Time (UTC): {timestamp}\n\n"
-        f"Manage active staff sessions in the Admin Console under Trusted Devices."
+        + (f"This wasn't me (sign this device out): {not_me_url}\n" if not_me_url else "")
+        + (f"Lock my account: {lock_url}\n" if lock_url else "")
+        + "\nManage active staff sessions in the Admin Console under Trusted Devices."
     )
 
+    recipient = staff_email.strip() if staff_email and staff_email.strip() else support_address()
     return send_email(
-        support_address(),
+        recipient,
         f"[Security Alert] New device sign-in for {staff_name} ({browser})",
         html,
         text,
-        reply_to=staff_email or None,
+        reply_to=support_address(),
     )
 

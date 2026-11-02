@@ -3,11 +3,19 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from typing import Any
-from fastapi import APIRouter, HTTPException, Request
+from typing import Any, Optional
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 import analyzer
 from auth_utils import get_current_user
+from security import (
+    assert_same_org,
+    effective_org,
+    is_manager,
+    is_staff,
+    require_authenticated,
+    resolve_write_org,
+)
 from gemini_service import (
     generate_roleplay_scenario_draft_llm,
     is_gemini_configured,
@@ -15,7 +23,33 @@ from gemini_service import (
 )
 import store
 
-router = APIRouter(tags=["roleplay"])
+router = APIRouter(tags=["roleplay"], dependencies=[Depends(require_authenticated)])
+
+
+def _session_org(st: dict[str, Any], sess: dict[str, Any]) -> str:
+    owner = st.get("users_by_id", {}).get(sess.get("user_id") or "", {})
+    return owner.get("org_id") or ""
+
+
+def _session_access(st: dict[str, Any], user: dict[str, Any], sess: dict[str, Any], *, write: bool = False) -> None:
+    assert_same_org(user, _session_org(st, sess))
+    if is_staff(user) or sess.get("user_id") == user.get("id"):
+        return
+    if is_manager(user) and not write:
+        return
+    raise HTTPException(status_code=403, detail="Access denied")
+
+
+def _scenario_visible(sc: dict[str, Any], org_id: str | None) -> bool:
+    if not org_id:
+        return True
+    return not sc.get("org_id") or sc.get("org_id") == org_id
+
+
+def _require_manager(user: dict[str, Any]) -> None:
+    if not is_manager(user):
+        raise HTTPException(status_code=403, detail="Manager access required")
+
 
 SCENARIO_OPENERS = {
     "df412cc9-fc87-4999-936b-33af076b2a9b": "Hey there, this is Dale over at Precision Fleet. I've got two of our Transit vans down and I need four OEM alternators as soon as possible. What do you have on the shelf?",
@@ -55,24 +89,30 @@ def compute_roleplay_scoreboard(st: dict[str, Any], org_id: Optional[str] = None
 
 
 @router.get("/api/roleplay/scenarios")
-def get_roleplay_scenarios() -> list[dict[str, Any]]:
+def get_roleplay_scenarios(request: Request) -> list[dict[str, Any]]:
     st = store.get_state()
-    return st.get("roleplay_scenarios", [])
+    u = get_current_user(request)
+    org_id = effective_org(u)
+    return [sc for sc in st.get("roleplay_scenarios", []) if _scenario_visible(sc, org_id)]
 
 
 @router.post("/api/roleplay/scenarios")
-def post_roleplay_scenario(body: dict[str, Any]) -> dict[str, Any]:
+def post_roleplay_scenario(body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
+    u = get_current_user(request)
+    _require_manager(u)
+    org_id = resolve_write_org(u, body.get("org_id"))
     sc = {
         "id": str(uuid.uuid4()),
-        "title": body.get("title", "New Scenario"),
-        "difficulty": body.get("difficulty", "Medium"),
-        "persona": body.get("persona", "Auto Shop Owner"),
-        "objective": body.get("objective", "Confirm fitment and close."),
-        "opening_hint": body.get("opening_hint", ""),
-        "customer_brief": body.get("customer_brief", ""),
+        "org_id": org_id,
+        "title": str(body.get("title") or "New Scenario")[:160],
+        "difficulty": str(body.get("difficulty") or "Medium")[:32],
+        "persona": str(body.get("persona") or "Auto Shop Owner")[:500],
+        "objective": str(body.get("objective") or "Confirm fitment and close.")[:1000],
+        "opening_hint": str(body.get("opening_hint") or "")[:1000],
+        "customer_brief": str(body.get("customer_brief") or "")[:2000],
         "custom": True,
-        "price_objection": body.get("price_objection", False),
+        "price_objection": bool(body.get("price_objection", False)),
     }
     st.setdefault("roleplay_scenarios", []).insert(0, sc)
     store.save_state()
@@ -80,27 +120,52 @@ def post_roleplay_scenario(body: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.put("/api/roleplay/scenarios/{sc_id}")
-def put_roleplay_scenario(sc_id: str, body: dict[str, Any]) -> dict[str, Any]:
+def put_roleplay_scenario(sc_id: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
+    u = get_current_user(request)
+    _require_manager(u)
+    org_id = effective_org(u)
     for sc in st.get("roleplay_scenarios", []):
         if sc.get("id") == sc_id:
-            sc.update(body)
+            if sc.get("org_id"):
+                assert_same_org(u, sc.get("org_id"))
+            elif org_id and org_id != store.KEECH_ORG_ID:
+                raise HTTPException(status_code=403, detail="Built-in scenarios are read-only")
+            allowed = {
+                "title", "difficulty", "persona", "objective", "opening_hint",
+                "customer_brief", "price_objection",
+            }
+            for key, value in body.items():
+                if key in allowed:
+                    sc[key] = value
             store.save_state()
             return sc
     raise HTTPException(status_code=404, detail="Scenario not found")
 
 
 @router.delete("/api/roleplay/scenarios/{sc_id}")
-def delete_roleplay_scenario(sc_id: str) -> dict[str, Any]:
+def delete_roleplay_scenario(sc_id: str, request: Request) -> dict[str, Any]:
     st = store.get_state()
+    u = get_current_user(request)
+    _require_manager(u)
+    org_id = effective_org(u)
+    target = next((s for s in st.get("roleplay_scenarios", []) if s.get("id") == sc_id), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Scenario not found")
+    if target.get("org_id"):
+        assert_same_org(u, target.get("org_id"))
+    elif org_id and org_id != store.KEECH_ORG_ID:
+        raise HTTPException(status_code=403, detail="Built-in scenarios cannot be deleted")
     st["roleplay_scenarios"] = [s for s in st.get("roleplay_scenarios", []) if s.get("id") != sc_id]
     store.save_state()
     return {"ok": True}
 
 
 @router.post("/api/roleplay/scenarios/draft")
-def post_roleplay_scenario_draft(body: dict[str, Any]) -> dict[str, Any]:
-    idea = body.get("idea", "price negotiation")
+def post_roleplay_scenario_draft(body: dict[str, Any], request: Request) -> dict[str, Any]:
+    u = get_current_user(request)
+    _require_manager(u)
+    idea = str(body.get("idea") or "price negotiation")[:300]
     if is_gemini_configured():
         try:
             draft = generate_roleplay_scenario_draft_llm(idea)
@@ -121,17 +186,27 @@ def post_roleplay_scenario_draft(body: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.get("/api/roleplay/sessions")
-def get_roleplay_sessions() -> list[dict[str, Any]]:
+def get_roleplay_sessions(request: Request) -> list[dict[str, Any]]:
     st = store.get_state()
-    return st.get("roleplay_sessions", [])
+    u = get_current_user(request)
+    org_id = effective_org(u)
+    if not org_id:
+        return st.get("roleplay_sessions", [])
+    if is_manager(u):
+        org_user_ids = {uid for uid, usr in st["users_by_id"].items() if usr.get("org_id") == org_id}
+        return [s for s in st.get("roleplay_sessions", []) if s.get("user_id") in org_user_ids]
+    return [s for s in st.get("roleplay_sessions", []) if s.get("user_id") == u.get("id")]
 
 
 @router.post("/api/roleplay/sessions")
 def post_roleplay_session(body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
+    org_id = resolve_write_org(u, body.get("org_id"))
     sc_id = body.get("scenario_id")
     sc = next((s for s in st.get("roleplay_scenarios", []) if s.get("id") == sc_id), None)
+    if sc_id and (not sc or not _scenario_visible(sc, org_id)):
+        raise HTTPException(status_code=404, detail="Scenario not found")
     sc_title = sc.get("title", "Practice Scenario") if sc else "Practice Scenario"
 
     sess_id = str(uuid.uuid4())
@@ -165,22 +240,28 @@ def post_roleplay_session(body: dict[str, Any], request: Request) -> dict[str, A
 
 
 @router.get("/api/roleplay/sessions/{sess_id}")
-def get_roleplay_session_detail(sess_id: str) -> dict[str, Any]:
+def get_roleplay_session_detail(sess_id: str, request: Request) -> dict[str, Any]:
     st = store.get_state()
+    u = get_current_user(request)
     s = next((x for x in st.get("roleplay_sessions", []) if x.get("id") == sess_id), None)
     if not s:
         raise HTTPException(status_code=404, detail="Session not found")
+    _session_access(st, u, s)
     return s
 
 
 @router.post("/api/roleplay/sessions/{sess_id}/message")
-async def post_roleplay_message(sess_id: str, body: dict[str, Any]) -> StreamingResponse:
+async def post_roleplay_message(sess_id: str, body: dict[str, Any], request: Request) -> StreamingResponse:
     st = store.get_state()
+    u = get_current_user(request)
     sess = next((x for x in st.get("roleplay_sessions", []) if x.get("id") == sess_id), None)
     if not sess:
         raise HTTPException(status_code=404, detail="Session not found")
+    _session_access(st, u, sess, write=True)
 
-    rep_text = body.get("text", "")
+    rep_text = str(body.get("text") or "")[:8000]
+    if not rep_text.strip():
+        raise HTTPException(status_code=400, detail="Enter a reply before sending")
     sess.setdefault("messages", []).append({"role": "rep", "text": rep_text})
 
     scenario = sess.get("scenario")
@@ -217,11 +298,13 @@ async def post_roleplay_message(sess_id: str, body: dict[str, Any]) -> Streaming
 
 
 @router.post("/api/roleplay/sessions/{sess_id}/grade")
-def post_roleplay_grade(sess_id: str) -> dict[str, Any]:
+def post_roleplay_grade(sess_id: str, request: Request) -> dict[str, Any]:
     st = store.get_state()
+    u = get_current_user(request)
     sess = next((x for x in st.get("roleplay_sessions", []) if x.get("id") == sess_id), None)
     if not sess:
         raise HTTPException(status_code=404, detail="Session not found")
+    _session_access(st, u, sess, write=True)
 
     scenario = sess.get("scenario")
     if not scenario and sess.get("scenario_id"):
@@ -244,14 +327,14 @@ def post_roleplay_grade(sess_id: str) -> dict[str, Any]:
 def get_roleplay_scoreboard(request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    return compute_roleplay_scoreboard(st, org_id=u.get("org_id"))
+    return compute_roleplay_scoreboard(st, org_id=effective_org(u))
 
 
 @router.get("/api/roleplay/assignments")
 def get_roleplay_assignments(request: Request) -> list[dict[str, Any]]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
+    org_id = effective_org(u)
     items = st.get("roleplay_assignments", [])
     if org_id:
         return [a for a in items if a.get("org_id") == org_id]
@@ -262,21 +345,36 @@ def get_roleplay_assignments(request: Request) -> list[dict[str, Any]]:
 def post_roleplay_assignments(body: dict[str, Any], request: Request) -> list[dict[str, Any]]:
     st = store.get_state()
     u = get_current_user(request)
-    sc_id = body["scenario_id"]
+    _require_manager(u)
+    org_id = resolve_write_org(u, body.get("org_id"))
+    sc_id = str(body.get("scenario_id") or "")
     sc = next((s for s in st.get("roleplay_scenarios", []) if s.get("id") == sc_id), None)
-    sc_title = sc.get("title", "Scenario") if sc else "Scenario"
+    if not sc or not _scenario_visible(sc, org_id):
+        raise HTTPException(status_code=404, detail="Scenario not found")
+    sc_title = sc.get("title", "Scenario")
+
+    try:
+        pass_score = int(body.get("pass_score", 80))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Pass score must be a number")
+    if pass_score < 0 or pass_score > 100:
+        raise HTTPException(status_code=400, detail="Pass score must be between 0 and 100")
 
     created = []
     for rid in body.get("rep_ids", []):
-        ruser = st["users_by_id"].get(rid, {})
+        ruser = st["users_by_id"].get(str(rid))
+        if not ruser:
+            raise HTTPException(status_code=400, detail="Unknown team member")
+        assert_same_org(u, ruser.get("org_id"))
         asgn = {
             "id": str(uuid.uuid4()),
+            "org_id": org_id,
             "scenario_id": sc_id,
             "scenario_title": sc_title,
-            "rep_id": rid,
+            "rep_id": ruser["id"],
             "rep_name": ruser.get("name", "Rep"),
-            "due_date": body.get("due_date", store.today_str()),
-            "pass_score": body.get("pass_score", 80),
+            "due_date": str(body.get("due_date") or store.today_str())[:32],
+            "pass_score": pass_score,
             "assigned_by": u.get("name", "Manager"),
             "created_at": store.now_iso(),
             "best_score": None,
@@ -292,8 +390,14 @@ def post_roleplay_assignments(body: dict[str, Any], request: Request) -> list[di
 
 
 @router.delete("/api/roleplay/assignments/{aid}")
-def delete_roleplay_assignment(aid: str) -> dict[str, Any]:
+def delete_roleplay_assignment(aid: str, request: Request) -> dict[str, Any]:
     st = store.get_state()
+    u = get_current_user(request)
+    _require_manager(u)
+    target = next((a for a in st.get("roleplay_assignments", []) if a.get("id") == aid), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    assert_same_org(u, target.get("org_id"))
     st["roleplay_assignments"] = [a for a in st.get("roleplay_assignments", []) if a.get("id") != aid]
     store.save_state()
     return {"ok": True}

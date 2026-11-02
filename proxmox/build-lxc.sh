@@ -82,6 +82,14 @@ cp -a "$APP_DIR/frontend/dist/." "$APP_DIR/backend/static/"
 mkdir -p "$APP_DIR/backend/data"
 mkdir -p "$APP_DIR/backend/uploads"
 
+# Run the service as an unprivileged system user; it only needs write access
+# to the mutable state and upload directories.
+if ! id salvage-pulse >/dev/null 2>&1; then
+  useradd --system --home-dir "$APP_DIR" --shell /usr/sbin/nologin salvage-pulse
+fi
+chown -R salvage-pulse:salvage-pulse "$APP_DIR/backend/data" "$APP_DIR/backend/uploads"
+chmod 750 "$APP_DIR/backend/data" "$APP_DIR/backend/uploads"
+
 # Create /opt/salvage-pulse/.env if it doesn't exist
 if [ ! -f "$APP_DIR/.env" ]; then
   echo -e "${YELLOW}--> Initializing /opt/salvage-pulse/.env configuration...${NC}"
@@ -91,8 +99,19 @@ if [ ! -f "$APP_DIR/.env" ]; then
 # ============================================================
 PORT=8000
 DATA_DIR=/opt/salvage-pulse/backend/data
+ENVIRONMENT=production
+# Leave blank to derive links from the request host, or set your public URL.
+APP_URL=
+# Set to 1 once the app is behind HTTPS.
+COOKIE_SECURE=0
+TRUST_PROXY_HEADERS=0
+SEED_DEMO_DATA=0
+DEMO_LOGIN_ENABLED=0
 INITIAL_MASTER_EMAIL=brettk@salvagepulsepro.com
 INITIAL_MASTER_NAME="Brett K"
+# Leave blank to generate a random password at
+# /opt/salvage-pulse/backend/data/initial_admin_password.txt
+INITIAL_MASTER_PASSWORD=${INITIAL_MASTER_PASSWORD:-}
 
 # Google Gemini API for Real AI Call Scoring & Roleplay
 # Get your free key at: https://aistudio.google.com/
@@ -110,7 +129,11 @@ SMTP_PASSWORD=${SMTP_PASSWORD:-}
 SMTP_FROM_NAME="Salvage Pulse"
 SMTP_FROM=${SMTP_FROM:-}
 EOF
+  chmod 600 "$APP_DIR/.env"
 fi
+
+# Keep existing secret files private too.
+chmod 600 "$APP_DIR/.env" 2>/dev/null || true
 
 # Install systemd service
 echo -e "${YELLOW}--> Installing systemd unit /etc/systemd/system/salvage-pulse.service...${NC}"

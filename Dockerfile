@@ -27,11 +27,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     INITIAL_MASTER_EMAIL=brettk@salvagepulsepro.com \
     INITIAL_MASTER_NAME="Brett K"
 
-# Install runtime dependencies
+# Install runtime dependencies and create an unprivileged runtime user
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /app/backend/data
+    && groupadd --gid 10001 app \
+    && useradd --uid 10001 --gid app --home-dir /app --shell /usr/sbin/nologin app \
+    && mkdir -p /app/backend/data \
+    && chown -R app:app /app/backend
 
 # Install python requirements
 COPY backend/requirements.txt ./backend/requirements.txt
@@ -43,7 +46,11 @@ COPY backend/ ./backend/
 # Copy built frontend assets from stage 1 into backend/static
 COPY --from=frontend-builder /build/dist ./backend/static
 
+RUN chown -R app:app /app/backend/data
+
 WORKDIR /app/backend
+
+USER app
 
 EXPOSE 8000
 

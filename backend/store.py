@@ -15,31 +15,89 @@ import wave
 from collections import Counter, defaultdict
 from typing import Any
 
+import passwords
+
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("DATA_DIR") or os.path.join(BACKEND_DIR, "data")
-os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(DATA_DIR, mode=0o700, exist_ok=True)
+try:
+    os.chmod(DATA_DIR, 0o700)
+except OSError:
+    pass
 
 SEED_PATH = os.path.join(BACKEND_DIR, "preview_seed.json")
 STATE_PATH = os.path.join(DATA_DIR, "preview_state.json")
+BOOTSTRAP_PASSWORD_PATH = os.path.join(DATA_DIR, "initial_admin_password.txt")
 
 INITIAL_MASTER_EMAIL = os.environ.get("INITIAL_MASTER_EMAIL", "brettk@salvagepulsepro.com").strip().lower()
 INITIAL_MASTER_NAME = os.environ.get("INITIAL_MASTER_NAME", "Brett K").strip()
 INITIAL_MASTER_PASSWORD = os.environ.get("INITIAL_MASTER_PASSWORD", "").strip()
+SEED_DEMO_DATA = os.environ.get("SEED_DEMO_DATA", "0").lower() in ("1", "true", "yes")
 
 
 def hash_password(password: str) -> str:
-    salt = secrets.token_hex(8)
-    h = hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
-    return f"{salt}:{h}"
+    return passwords.hash_password(password)
 
 
 def verify_password(password: str, stored: str | None) -> bool:
-    if not stored:
-        return True
-    if ":" in stored:
-        salt, h = stored.split(":", 1)
-        return hashlib.sha256((salt + password).encode("utf-8")).hexdigest() == h
-    return password == stored
+    return passwords.verify_password(password, stored)
+
+
+def needs_rehash(stored: str | None) -> bool:
+    return passwords.needs_rehash(stored)
+
+
+def _write_bootstrap_password(password: str) -> None:
+    """Persist a generated first-run admin password for the operator to read."""
+    try:
+        fd = os.open(BOOTSTRAP_PASSWORD_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(
+                "Salvage Pulse initial administrator credentials\n"
+                f"Email: {INITIAL_MASTER_EMAIL}\n"
+                f"Password: {password}\n\n"
+                "Sign in and change this password immediately, then delete this file.\n"
+            )
+    except OSError:
+        pass
+
+
+def _bootstrap_master_password() -> str:
+    """Return the configured master password, or generate and store one once."""
+    if INITIAL_MASTER_PASSWORD:
+        return INITIAL_MASTER_PASSWORD
+    if os.path.exists(BOOTSTRAP_PASSWORD_PATH):
+        try:
+            with open(BOOTSTRAP_PASSWORD_PATH, "r", encoding="utf-8") as fh:
+                for line in fh:
+                    if line.lower().startswith("password:"):
+                        return line.split(":", 1)[1].strip()
+        except OSError:
+            pass
+    generated = secrets.token_urlsafe(18)
+    _write_bootstrap_password(generated)
+    return generated
+
+
+def _fallback_seed() -> dict[str, Any]:
+    """Minimal seed used on fresh installs where preview_seed.json is absent."""
+    return {
+        "/meta": {
+            "categories": [
+                "Part Inquiry/Quote",
+                "Price Negotiation",
+                "Order/Sale",
+                "Shipping/Delivery",
+                "Warranty/Return",
+                "Core Return",
+                "Vendor/Scrap Seller",
+                "Other",
+            ],
+            "metrics": [],
+        },
+        "/billing/plans": [],
+        "/billing/compare": {},
+    }
 
 
 _LOCK = threading.RLock()
@@ -92,8 +150,9 @@ def synthesize_call_details(call_summary: dict[str, Any], full_existing: dict[st
     cat = merged.get("category") or "Part Inquiry/Quote"
 
     if not merged.get("customer_phone"):
-        # Deterministic phone from customer name
-        h = abs(hash(cust_name)) % 9000000 + 1000000
+        # Deterministic phone from customer name (stable across processes)
+        digest = hashlib.sha256(cust_name.encode("utf-8")).hexdigest()
+        h = int(digest[:12], 16) % 9000000 + 1000000
         merged["customer_phone"] = f"+1555{h:07d}"
 
     if not merged.get("turns"):
@@ -191,7 +250,10 @@ def _build_initial_state() -> dict[str, Any]:
                 seed = json.load(fh)
         except Exception:
             seed = {}
+    if not seed:
+        seed = _fallback_seed()
 
+    master_password = _bootstrap_master_password()
     master_user = {
         "id": "master-brettk",
         "email": INITIAL_MASTER_EMAIL,
@@ -200,11 +262,10 @@ def _build_initial_state() -> dict[str, Any]:
         "title": "Founder & Master Admin",
         "avatar_url": "",
         "org_id": "",
-        "impersonated_by": "",
         "disabled": False,
         "site_id": "",
-        "must_change_password": False,
-        "password_hash": hash_password(INITIAL_MASTER_PASSWORD) if INITIAL_MASTER_PASSWORD else "",
+        "must_change_password": True,
+        "password_hash": hash_password(master_password),
     }
 
     users_by_id: dict[str, dict[str, Any]] = {
@@ -346,6 +407,21 @@ def _migrate_roles(st: dict[str, Any]) -> dict[str, Any]:
     return st
 
 
+def _clear_legacy_impersonation(st: dict[str, Any]) -> bool:
+    """Impersonation is session-scoped; never trust flags stored on the user.
+
+    Older builds wrote ``impersonated_by`` onto the target account and never
+    removed it, which made that user look permanently impersonated (and, before
+    this fix, bypassed the forced-password-change gate).
+    """
+    changed = False
+    for user in st.get("users_by_id", {}).values():
+        for field in ("impersonated_by", "impersonator_id"):
+            if user.pop(field, None) is not None:
+                changed = True
+    return changed
+
+
 KEECH_ORG_ID = "org-keech-salvage"
 
 KEECH_USERS: dict[str, dict[str, Any]] = {
@@ -357,7 +433,6 @@ KEECH_USERS: dict[str, dict[str, Any]] = {
         "title": "Yard Owner",
         "avatar_url": "",
         "org_id": KEECH_ORG_ID,
-        "impersonated_by": "",
         "disabled": False,
         "site_id": "",
         "must_change_password": False,
@@ -371,7 +446,6 @@ KEECH_USERS: dict[str, dict[str, Any]] = {
         "title": "Sales Manager",
         "avatar_url": "",
         "org_id": KEECH_ORG_ID,
-        "impersonated_by": "",
         "disabled": False,
         "site_id": "",
         "must_change_password": False,
@@ -385,7 +459,6 @@ KEECH_USERS: dict[str, dict[str, Any]] = {
         "title": "Inventory Manager",
         "avatar_url": "",
         "org_id": KEECH_ORG_ID,
-        "impersonated_by": "",
         "disabled": False,
         "site_id": "",
         "must_change_password": False,
@@ -399,7 +472,6 @@ KEECH_USERS: dict[str, dict[str, Any]] = {
         "title": "Sales Representative",
         "avatar_url": "",
         "org_id": KEECH_ORG_ID,
-        "impersonated_by": "",
         "disabled": False,
         "site_id": "",
         "must_change_password": False,
@@ -413,7 +485,6 @@ KEECH_USERS: dict[str, dict[str, Any]] = {
         "title": "Sales Representative",
         "avatar_url": "",
         "org_id": KEECH_ORG_ID,
-        "impersonated_by": "",
         "disabled": False,
         "site_id": "",
         "must_change_password": False,
@@ -427,7 +498,6 @@ KEECH_USERS: dict[str, dict[str, Any]] = {
         "title": "Sales Representative",
         "avatar_url": "",
         "org_id": KEECH_ORG_ID,
-        "impersonated_by": "",
         "disabled": False,
         "site_id": "",
         "must_change_password": False,
@@ -441,7 +511,6 @@ KEECH_USERS: dict[str, dict[str, Any]] = {
         "title": "Sales Representative",
         "avatar_url": "",
         "org_id": KEECH_ORG_ID,
-        "impersonated_by": "",
         "disabled": False,
         "site_id": "",
         "must_change_password": False,
@@ -455,7 +524,6 @@ KEECH_USERS: dict[str, dict[str, Any]] = {
         "title": "Platform Master Admin",
         "avatar_url": "",
         "org_id": "",
-        "impersonated_by": "",
         "disabled": False,
         "site_id": "",
         "must_change_password": False,
@@ -485,6 +553,14 @@ KEECH_ORG: dict[str, Any] = {
 
 
 def _ensure_demo_users(st: dict[str, Any]) -> dict[str, Any]:
+    """Optionally seed the Keech demo yard.
+
+    Disabled by default so a fresh deployment never inherits demo accounts or
+    branding.  Even when enabled, existing passwords are left untouched.
+    """
+    if not SEED_DEMO_DATA:
+        return st
+
     users = st.setdefault("users_by_id", {})
     for uid, udata in KEECH_USERS.items():
         if uid not in users:
@@ -493,7 +569,8 @@ def _ensure_demo_users(st: dict[str, Any]) -> dict[str, Any]:
             users[uid]["email"] = udata["email"]
             users[uid]["name"] = udata["name"]
             users[uid]["org_id"] = udata.get("org_id", "")
-            users[uid]["password_hash"] = udata["password_hash"]
+            if not users[uid].get("password_hash"):
+                users[uid]["password_hash"] = udata["password_hash"]
             if not users[uid].get("role"):
                 users[uid]["role"] = udata["role"]
 
@@ -624,6 +701,57 @@ def _ensure_roleplay_scenarios(st: dict[str, Any]) -> dict[str, Any]:
     return st
 
 
+DEMO_PASSWORDS = {
+    "user-keech-owner": "owner",
+    "user-keech-sales-mgr": "salesmanager",
+    "user-keech-inv-mgr": "inventory",
+    "user-keech-rep": "rep1",
+    "user-keech-rep-2": "rep2",
+    "user-keech-rep-3": "rep3",
+    "user-keech-rep-4": "rep4",
+    "user-keech-admin": "admin",
+}
+
+
+def _ensure_master_password(st: dict[str, Any]) -> bool:
+    """Make sure every master account has a usable credential.
+
+    A state file created before secure hashing shipped can contain a master with
+    an empty hash, which locks the operator out permanently.  Generate a
+    one-time password (or use INITIAL_MASTER_PASSWORD) and persist it to a
+    root-only file in DATA_DIR.
+    """
+    changed = False
+    password: str | None = None
+    for user in st.get("users_by_id", {}).values():
+        if user.get("role") != "master" or user.get("disabled"):
+            continue
+        if user.get("password_hash") or user.get("google_linked"):
+            continue
+        if password is None:
+            password = _bootstrap_master_password()
+        user["password_hash"] = hash_password(password)
+        user["must_change_password"] = True
+        changed = True
+    return changed
+
+
+def _enforce_demo_password_rotation(st: dict[str, Any]) -> bool:
+    """Force known demo credentials to be changed on production instances."""
+    if SEED_DEMO_DATA:
+        return False
+    changed = False
+    for uid, weak in DEMO_PASSWORDS.items():
+        user = st.get("users_by_id", {}).get(uid)
+        if not user or user.get("must_change_password") or user.get("disabled"):
+            continue
+        stored = user.get("password_hash") or user.get("password")
+        if stored and verify_password(weak, stored):
+            user["must_change_password"] = True
+            changed = True
+    return changed
+
+
 def get_state() -> dict[str, Any]:
     global _STATE, _STATE_MTIME
     with _LOCK:
@@ -645,7 +773,13 @@ def get_state() -> dict[str, Any]:
                 _STATE = _build_initial_state()
             _migrate_roles(_STATE)
             _ensure_roleplay_scenarios(_STATE)
-            _ensure_demo_users(_STATE)
+            changed = _clear_legacy_impersonation(_STATE)
+            changed = _ensure_master_password(_STATE) or changed
+            changed = _enforce_demo_password_rotation(_STATE) or changed
+            if SEED_DEMO_DATA:
+                _ensure_demo_users(_STATE)
+            if changed:
+                save_state()
         return _STATE
 
 
@@ -654,10 +788,19 @@ def save_state() -> None:
     with _LOCK:
         if _STATE is None:
             return
-        # Save a lightweight snapshot excluding the static seed copy if needed, or full state
+        tmp_path = f"{STATE_PATH}.tmp.{os.getpid()}"
         try:
-            with open(STATE_PATH, "w", encoding="utf-8") as fh:
+            os.makedirs(DATA_DIR, exist_ok=True)
+            with open(tmp_path, "w", encoding="utf-8") as fh:
                 json.dump(_STATE, fh)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.chmod(tmp_path, 0o600)
+            os.replace(tmp_path, STATE_PATH)
             _STATE_MTIME = os.path.getmtime(STATE_PATH) if os.path.exists(STATE_PATH) else 0.0
         except Exception:
-            pass
+            try:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+            except OSError:
+                pass
