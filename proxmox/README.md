@@ -12,8 +12,13 @@ The installer is designed for a real production install:
 - `.env` is `0640` (`root:salvage-pulse`), data is `0700`, and the service has
   systemd sandboxing
 - Demo data and one-click demo logins are **off** by default
-- The initial master password is generated once and written to
-  `backend/data/initial_admin_password.txt` (mode `0600`) unless you set one
+- The container root password is chosen during deployment, or generated and
+  printed once
+- Three platform masters are prepopulated by default:
+  `brettk@salvagepulsepro.com`, `benk@salvagepulsepro.com`, and
+  `genk@salvagepulsepro.com`
+- Per-account master passwords are generated once and written to
+  `backend/data/initial_admin_password.txt` (mode `0600`) unless you supply one
 
 ---
 
@@ -50,21 +55,24 @@ The script prompts for:
 | Rootfs storage | first `rootdir` storage |
 | Bridge | `vmbr0` |
 | Network | `dhcp` |
-| Initial master email | `brettk@salvagepulsepro.com` |
+| Platform master emails | `brettk@`, `benk@`, and `genk@salvagepulsepro.com` |
+| Container root password | prompt (blank = generate) |
 | Public URL | blank (LAN-only HTTP) |
 | Gemini API key | blank (heuristic fallback) |
-| Initial master password | blank (auto-generate) |
+| Primary master password | blank (unique passwords generated) |
 
 It then:
 
 1. Downloads the Debian 12 (or 13) standard LXC template if needed.
 2. Creates an unprivileged container with `nesting=1,keyctl=1` and starts it.
-3. Pushes the in-guest installer and a temporary config file into the container.
-4. Installs system packages, Node.js 22, Python venv, and Python requirements.
-5. Builds the React frontend and publishes it to `backend/static`.
-6. Creates the `salvage-pulse` service user and hardened systemd unit.
-7. Starts the service and waits for `/api/health`.
-8. Prints the container IP, master login, initial password, and next steps.
+3. Sets the container root password you chose (or a generated one).
+4. Pushes the in-guest installer and a temporary config file into the container.
+5. Installs system packages, Node.js 22, Python venv, and Python requirements.
+6. Builds the React frontend and publishes it to `backend/static`.
+7. Creates the `salvage-pulse` service user and hardened systemd unit.
+8. Starts the service and waits for `/api/health`.
+9. Prints the container IP, root password, master logins, initial credentials,
+   and next steps.
 
 The temporary config file is deleted from the container after installation.
 
@@ -77,7 +85,8 @@ CT_ID=120 \
 CT_HOSTNAME=salvage-pulse \
 CT_RAM=4096 CT_CORES=2 CT_DISK=16 \
 CT_STORAGE=local-lvm CT_BRIDGE=vmbr0 CT_NET=dhcp \
-INITIAL_MASTER_EMAIL=you@example.com \
+CT_ROOT_PASSWORD='choose-a-strong-root-password' \
+INITIAL_MASTER_EMAILS='brettk@salvagepulsepro.com,benk@salvagepulsepro.com,genk@salvagepulsepro.com' \
 APP_URL=https://pulse.example.com \
 GEMINI_API_KEY='your-key' \
 bash proxmox/create-lxc.sh --yes
@@ -86,7 +95,11 @@ bash proxmox/create-lxc.sh --yes
 Useful extra variables: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
 `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_FROM_NAME`, `GOOGLE_CLIENT_ID`,
 `ALLOWED_HOSTS`, `APP_BIND_HOST`, `SEED_DEMO_DATA`, `DEMO_LOGIN_ENABLED`,
-`COOKIE_SECURE`, `TRUST_PROXY_HEADERS`, `NODE_MAJOR`.
+`COOKIE_SECURE`, `TRUST_PROXY_HEADERS`, `NODE_MAJOR`, `INITIAL_MASTER_NAMES`.
+
+If `CT_ROOT_PASSWORD` is blank, the installer generates a 32-character root
+password and prints it in the summary. If `INITIAL_MASTER_PASSWORD` is blank,
+each master receives a unique generated password.
 
 If you run the script from a local checkout, it uses the adjacent
 `proxmox/build-lxc.sh` instead of downloading it. That is useful for testing
@@ -121,15 +134,21 @@ rebuilds the frontend, refreshes the systemd unit, and restarts the service.
 ## First login
 
 - **URL:** `http://<CONTAINER_IP>:8000`
-- **Master email:** the address you supplied (`brettk@salvagepulsepro.com` by default)
-- **Password:** the value you supplied as `INITIAL_MASTER_PASSWORD`, or read:
+- **Container root password:** the value you entered at the prompt, or the
+  generated value printed by the installer. Use it with `pct console <CTID>` or
+  SSH if you enable it.
+- **Master emails:** `INITIAL_MASTER_EMAILS` (default:
+  `brettk@salvagepulsepro.com`, `benk@salvagepulsepro.com`, and
+  `genk@salvagepulsepro.com`).
+- **Master passwords:** `INITIAL_MASTER_PASSWORD` applies to the first master
+  only. Read the generated per-account credentials with:
 
 ```bash
 pct exec <CTID> -- cat /opt/salvage-pulse/backend/data/initial_admin_password.txt
 ```
 
-The generated password forces a change on first login. After saving it, delete
-the credential file:
+Every new master must change its password on first login. After saving the
+credentials, delete the file:
 
 ```bash
 pct exec <CTID> -- rm -f /opt/salvage-pulse/backend/data/initial_admin_password.txt
@@ -166,12 +185,22 @@ ALLOWED_HOSTS=pulse.example.com
 SEED_DEMO_DATA=0
 DEMO_LOGIN_ENABLED=0
 
-INITIAL_MASTER_EMAIL=brettk@salvagepulsepro.com
+INITIAL_MASTER_EMAILS=brettk@salvagepulsepro.com,benk@salvagepulsepro.com,genk@salvagepulsepro.com
+INITIAL_MASTER_NAMES=Brett K,Ben K,Gen K
 INITIAL_MASTER_PASSWORD=
 ```
 
-`INITIAL_MASTER_PASSWORD` is only used when the master account has no password
-hash (first boot). Changing it later does not change an existing password.
+`INITIAL_MASTER_EMAILS` is authoritative. `INITIAL_MASTER_EMAIL` remains
+supported for a custom single-master install. `INITIAL_MASTER_PASSWORD` applies
+only to the first configured master; the others receive unique generated
+passwords. Configured masters are added to an existing state once, and a master
+deleted later is not recreated on restart. Changing the password variable later
+does not change an existing password.
+
+On an existing install the updater adds `INITIAL_MASTER_EMAILS` to `.env` if it
+is missing. A custom legacy `INITIAL_MASTER_EMAIL` is preserved as a
+single-master list; the default `brettk@`-only configuration adopts all three
+platform masters.
 
 ### Gemini AI scoring
 
@@ -374,9 +403,9 @@ pct exec <CTID> -- ls -l /opt/salvage-pulse/backend/data/initial_admin_password.
 pct exec <CTID> -- cat /opt/salvage-pulse/backend/data/initial_admin_password.txt
 ```
 
-If the state already had a master password, the bootstrap file is not created.
-Reset it explicitly as the service user (do not run this as root, or the state
-file will become root-owned):
+The bootstrap file is only created when at least one configured master still
+needs an initial password. Reset a password explicitly as the service user (do
+not run this as root, or the state file will become root-owned):
 
 ```bash
 pct exec <CTID> -- su -s /bin/bash salvage-pulse -c \

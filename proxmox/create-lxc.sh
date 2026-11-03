@@ -7,7 +7,8 @@
 #
 # Non-interactive example:
 #   CT_ID=120 CT_RAM=4096 CT_DISK=16 CT_STORAGE=local-lvm \
-#   INITIAL_MASTER_EMAIL=you@example.com \
+#   CT_ROOT_PASSWORD='choose-a-strong-root-password' \
+#   INITIAL_MASTER_EMAILS=you@example.com,ops@example.com \
 #   bash proxmox/create-lxc.sh --yes
 # ==============================================================================
 set -Eeuo pipefail
@@ -54,7 +55,9 @@ Options:
       --storage NAME        Rootfs storage (default: auto-detect)
       --bridge NAME         Network bridge (default: vmbr0)
       --net SPEC            dhcp, or 192.168.1.50/24,gw=192.168.1.1
-      --email ADDRESS       Initial master email
+      --email ADDRESS       Single platform master email (legacy)
+      --masters EMAILS      Comma-separated platform master emails
+      --root-password PW    Root password inside the container (blank = generate)
       --app-url URL         Public URL, e.g. https://pulse.example.com
       --ref REF             Git branch to install (default: main)
       --repo URL            Git repository URL
@@ -62,8 +65,8 @@ Options:
   -h, --help                Show this help
 
 Environment variables are also accepted (CT_ID, CT_RAM, CT_DISK, CT_STORAGE,
-CT_BRIDGE, CT_NET, INITIAL_MASTER_EMAIL, APP_URL, GEMINI_API_KEY, SMTP_*,
-GOOGLE_CLIENT_ID, ALLOWED_HOSTS, APP_BIND_HOST, ...).
+CT_BRIDGE, CT_NET, CT_ROOT_PASSWORD, INITIAL_MASTER_EMAILS, APP_URL,
+GEMINI_API_KEY, SMTP_*, GOOGLE_CLIENT_ID, ALLOWED_HOSTS, APP_BIND_HOST, ...).
 EOF
 }
 
@@ -81,10 +84,14 @@ CT_STORAGE="${CT_STORAGE:-}"
 CT_BRIDGE="${CT_BRIDGE:-vmbr0}"
 CT_NET="${CT_NET:-dhcp}"
 CT_TEMPLATE_PATTERN="${CT_TEMPLATE_PATTERN:-debian-12-standard.*amd64.tar.zst}"
+CT_ROOT_PASSWORD="${CT_ROOT_PASSWORD:-}"
 SP_REF="${SP_REF:-main}"
 SP_REPO_URL="${SP_REPO_URL:-https://github.com/KeechSalvage/Salvage-Pulse.git}"
-INITIAL_MASTER_EMAIL="${INITIAL_MASTER_EMAIL:-brettk@salvagepulsepro.com}"
-INITIAL_MASTER_NAME="${INITIAL_MASTER_NAME:-Brett K}"
+DEFAULT_MASTER_EMAILS="brettk@salvagepulsepro.com,benk@salvagepulsepro.com,genk@salvagepulsepro.com"
+INITIAL_MASTER_EMAILS="${INITIAL_MASTER_EMAILS:-}"
+INITIAL_MASTER_NAMES="${INITIAL_MASTER_NAMES:-}"
+INITIAL_MASTER_EMAIL="${INITIAL_MASTER_EMAIL:-}"
+INITIAL_MASTER_NAME="${INITIAL_MASTER_NAME:-}"
 INITIAL_MASTER_PASSWORD="${INITIAL_MASTER_PASSWORD:-}"
 APP_URL="${APP_URL:-}"
 APP_BIND_HOST="${APP_BIND_HOST:-0.0.0.0}"
@@ -103,7 +110,9 @@ while [[ $# -gt 0 ]]; do
     --storage) CT_STORAGE="${2:?--storage requires a value}"; shift 2 ;;
     --bridge) CT_BRIDGE="${2:?--bridge requires a value}"; shift 2 ;;
     --net) CT_NET="${2:?--net requires a value}"; shift 2 ;;
-    --email) INITIAL_MASTER_EMAIL="${2:?--email requires a value}"; shift 2 ;;
+    --email) INITIAL_MASTER_EMAILS="${2:?--email requires a value}"; shift 2 ;;
+    --masters) INITIAL_MASTER_EMAILS="${2:?--masters requires a value}"; shift 2 ;;
+    --root-password) CT_ROOT_PASSWORD="${2:?--root-password requires a value}"; shift 2 ;;
     --app-url) APP_URL="${2:?--app-url requires a value}"; shift 2 ;;
     --ref) SP_REF="${2:?--ref requires a value}"; shift 2 ;;
     --repo) SP_REPO_URL="${2:?--repo requires a value}"; shift 2 ;;
@@ -162,10 +171,19 @@ fi
 ask CT_STORAGE "Rootfs storage" "${CT_STORAGE:-local-lvm}"
 ask CT_BRIDGE "Network bridge" "vmbr0"
 ask CT_NET "IP assignment (dhcp or 192.168.1.50/24,gw=192.168.1.1)" "dhcp"
-ask INITIAL_MASTER_EMAIL "Initial master email" "brettk@salvagepulsepro.com"
+
+if [[ -z "${INITIAL_MASTER_EMAILS}" ]]; then
+  if [[ -n "${INITIAL_MASTER_EMAIL}" && "${INITIAL_MASTER_EMAIL}" != "brettk@salvagepulsepro.com" ]]; then
+    INITIAL_MASTER_EMAILS="${INITIAL_MASTER_EMAIL}"
+  else
+    INITIAL_MASTER_EMAILS="${DEFAULT_MASTER_EMAILS}"
+  fi
+fi
+ask INITIAL_MASTER_EMAILS "Platform master emails (comma-separated)" "${DEFAULT_MASTER_EMAILS}"
 ask APP_URL "Public URL (blank for LAN-only HTTP)" ""
 ask_secret GEMINI_API_KEY "Google Gemini API key (optional)"
-ask_secret INITIAL_MASTER_PASSWORD "Initial master password (blank = auto-generate)"
+ask_secret INITIAL_MASTER_PASSWORD "Primary master password (blank = auto-generate)"
+ask_secret CT_ROOT_PASSWORD "Container root password (blank = auto-generate)"
 
 [[ "${CT_ID}" =~ ^[0-9]+$ ]] || die "Container ID must be numeric."
 if pct status "${CT_ID}" >/dev/null 2>&1; then
@@ -175,9 +193,38 @@ fi
 [[ "${CT_CORES}" =~ ^[0-9]+$ ]] && (( CT_CORES >= 1 )) || die "CPU cores must be at least 1."
 [[ "${CT_DISK}" =~ ^[0-9]+$ ]] && (( CT_DISK >= 8 )) || die "Disk must be at least 8 GB."
 [[ "${CT_SWAP}" =~ ^[0-9]+$ ]] || die "Swap must be numeric."
-[[ "${INITIAL_MASTER_EMAIL}" == *@* ]] || die "Initial master email looks invalid."
+master_emails_normalized=""
+IFS=',' read -r -a _master_emails <<< "${INITIAL_MASTER_EMAILS}"
+for _email in "${_master_emails[@]}"; do
+  _email="${_email#"${_email%%[![:space:]]*}"}"
+  _email="${_email%"${_email##*[![:space:]]}"}"
+  [[ -n "${_email}" ]] || continue
+  [[ "${_email}" == *@* ]] || die "Invalid platform master email: ${_email}"
+  [[ "${_email}" != *"'"* ]] || die "Platform master emails may not contain single quotes."
+  master_emails_normalized="${master_emails_normalized:+${master_emails_normalized},}${_email}"
+done
+[[ -n "${master_emails_normalized}" ]] || die "At least one platform master email is required."
+INITIAL_MASTER_EMAILS="${master_emails_normalized}"
+INITIAL_MASTER_EMAIL="${INITIAL_MASTER_EMAIL:-${INITIAL_MASTER_EMAILS%%,*}}"
+unset _master_emails _email
+
 if [[ -n "${INITIAL_MASTER_PASSWORD}" && ${#INITIAL_MASTER_PASSWORD} -lt 8 ]]; then
   die "Initial master password must be at least 8 characters."
+fi
+
+# Root password for the container. chpasswd splits on ':', so a colon (or a
+# newline) cannot be represented safely in a password line.
+if [[ -n "${CT_ROOT_PASSWORD}" ]]; then
+  [[ "${CT_ROOT_PASSWORD}" != *$'\n'* && "${CT_ROOT_PASSWORD}" != *$'\r'* ]] || die "The container root password may not contain a newline."
+  [[ "${CT_ROOT_PASSWORD}" != *":"* ]] || die "The container root password may not contain a colon."
+  (( ${#CT_ROOT_PASSWORD} >= 8 )) || die "The container root password must be at least 8 characters."
+else
+  if command -v openssl >/dev/null 2>&1; then
+    CT_ROOT_PASSWORD="$(openssl rand -hex 16)"
+  else
+    # od reads a fixed number of bytes, so pipefail cannot trip on SIGPIPE.
+    CT_ROOT_PASSWORD="$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')"
+  fi
 fi
 if [[ -n "${APP_URL}" ]]; then
   [[ "${APP_URL}" == http://* || "${APP_URL}" == https://* ]] || die "APP_URL must start with http:// or https://."
@@ -227,7 +274,8 @@ printf '  Hostname     : %b%s%b\n' "${BOLD}" "${CT_HOSTNAME}" "${NC}"
 printf '  Resources    : %b%s MB RAM / %s vCPU / %s GB disk%b\n' "${BOLD}" "${CT_RAM}" "${CT_CORES}" "${CT_DISK}" "${NC}"
 printf '  Storage      : %b%s%b\n' "${BOLD}" "${CT_STORAGE}" "${NC}"
 printf '  Network      : %b%s (%s)%b\n' "${BOLD}" "${CT_BRIDGE}" "${NET_CONFIG}" "${NC}"
-printf '  Master email : %b%s%b\n' "${BOLD}" "${INITIAL_MASTER_EMAIL}" "${NC}"
+printf '  Masters      : %b%s%b\n' "${BOLD}" "${INITIAL_MASTER_EMAILS}" "${NC}"
+printf '  Root password: %b%s%b\n' "${BOLD}" "${CT_ROOT_PASSWORD}" "${NC}"
 printf '  Public URL   : %b%s%b\n' "${BOLD}" "${APP_URL:-LAN-only HTTP}" "${NC}"
 printf '%b\n\n' "${CYAN}==============================================${NC}"
 
@@ -273,6 +321,12 @@ if [[ "${NET_OK}" != "1" ]]; then
   warn "The container could not resolve deb.debian.org yet; installation may fail."
 fi
 
+log "Setting the container root password..."
+if ! printf 'root:%s\n' "${CT_ROOT_PASSWORD}" | pct exec "${CT_ID}" -- chpasswd; then
+  die "Could not set the root password inside container ${CT_ID}."
+fi
+ok "Container root password set."
+
 # ------------------------------------------------------------------------------
 # Push and run the in-guest installer
 # ------------------------------------------------------------------------------
@@ -316,7 +370,9 @@ add_env DATA_DIR "${DATA_DIR}"
 add_env SP_REPO_URL "${SP_REPO_URL}"
 add_env SP_REF "${SP_REF}"
 add_env SP_UPDATE "0"
-add_env INITIAL_MASTER_EMAIL "${INITIAL_MASTER_EMAIL}"
+add_env INITIAL_MASTER_EMAILS "${INITIAL_MASTER_EMAILS}"
+add_env INITIAL_MASTER_NAMES "${INITIAL_MASTER_NAMES}"
+add_env INITIAL_MASTER_EMAIL "${INITIAL_MASTER_EMAIL:-${INITIAL_MASTER_EMAILS%%,*}}"
 add_env INITIAL_MASTER_NAME "${INITIAL_MASTER_NAME}"
 add_env INITIAL_MASTER_PASSWORD "${INITIAL_MASTER_PASSWORD}"
 add_env APP_URL "${APP_URL}"
@@ -360,7 +416,7 @@ REMOTE_DATA_DIR="${REMOTE_DATA_DIR:-/opt/salvage-pulse/backend/data}"
 REMOTE_PORT="${REMOTE_PORT:-8000}"
 
 BOOTSTRAP_PATH="${REMOTE_DATA_DIR}/initial_admin_password.txt"
-BOOTSTRAP_PW="$(pct exec "${CT_ID}" -- sed -n 's/^Password:[[:space:]]*//p' "${BOOTSTRAP_PATH}" 2>/dev/null | head -n 1 || true)"
+BOOTSTRAP_CREDS="$(pct exec "${CT_ID}" -- sed -n 's/^Email:[[:space:]]*/    /p; s/^Password:[[:space:]]*/      /p' "${BOOTSTRAP_PATH}" 2>/dev/null || true)"
 
 printf '\n%b\n' "${GREEN}==============================================================================${NC}"
 printf '%b\n' "${GREEN}🎉 SALVAGE PULSE LXC INSTALLATION COMPLETED${NC}"
@@ -369,21 +425,25 @@ printf '  Application URL  : %bhttp://%s:%s%b\n' "${BOLD}" "${CT_IP}" "${REMOTE_
 if [[ -n "${APP_URL}" ]]; then
   printf '  Public URL       : %b%s%b\n' "${BOLD}" "${APP_URL}" "${NC}"
 fi
-printf '  Master login     : %b%s%b\n' "${BOLD}" "${INITIAL_MASTER_EMAIL}" "${NC}"
+printf '  Master logins    : %b%s%b\n' "${BOLD}" "${INITIAL_MASTER_EMAILS}" "${NC}"
 if [[ -n "${INITIAL_MASTER_PASSWORD}" ]]; then
-  printf '  Master password  : the value you supplied\n'
-elif [[ -n "${BOOTSTRAP_PW}" ]]; then
-  printf '  Master password  : %b%s%b (first login forces a change)\n' "${BOLD}" "${BOOTSTRAP_PW}" "${NC}"
+  printf '  Master password  : supplied (primary master only; others generated)\n'
+fi
+if [[ -n "${BOOTSTRAP_CREDS}" ]]; then
+  printf '  Credentials      : (first login forces a password change)\n'
+  printf '%s\n' "${BOOTSTRAP_CREDS}"
   printf '  Credential file  : %s\n' "${BOOTSTRAP_PATH}"
   printf '  Delete it after  : %bpct exec %s -- rm -f %s%b\n' "${CYAN}" "${CT_ID}" "${BOOTSTRAP_PATH}" "${NC}"
-else
+elif [[ -z "${INITIAL_MASTER_PASSWORD}" ]]; then
   printf '  Master password  : unchanged (existing state)\n'
 fi
+printf '  Root password    : %b%s%b\n' "${BOLD}" "${CT_ROOT_PASSWORD}" "${NC}"
 printf '  Container ID     : %b%s%b\n' "${BOLD}" "${CT_ID}" "${NC}"
 printf '  Service          : %bsalvage-pulse.service%b\n' "${BOLD}" "${NC}"
 printf '  Config file      : %b%s/.env%b\n' "${BOLD}" "${REMOTE_APP_DIR}" "${NC}"
 printf '\n  Next steps:\n'
-printf '    - Open the URL and sign in. Change the initial password when prompted.\n'
+printf '    - Open the URL and sign in as each master. Change the initial password when prompted.\n'
+printf '    - Root shell: pct console %s (use the root password above).\n' "${CT_ID}"
 printf '    - Put HTTPS in front before exposing this to the internet (see proxmox/README.md).\n'
 printf '    - Restrict port %s at the Proxmox firewall if you add a reverse proxy.\n' "${REMOTE_PORT}"
 printf '\n  Useful commands:\n'

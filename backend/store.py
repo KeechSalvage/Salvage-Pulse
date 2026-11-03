@@ -7,6 +7,7 @@ import io
 import json
 import math
 import os
+import re
 import secrets
 import struct
 import threading
@@ -29,9 +30,35 @@ SEED_PATH = os.path.join(BACKEND_DIR, "preview_seed.json")
 STATE_PATH = os.path.join(DATA_DIR, "preview_state.json")
 BOOTSTRAP_PASSWORD_PATH = os.path.join(DATA_DIR, "initial_admin_password.txt")
 
-INITIAL_MASTER_EMAIL = os.environ.get("INITIAL_MASTER_EMAIL", "brettk@salvagepulsepro.com").strip().lower()
-INITIAL_MASTER_NAME = os.environ.get("INITIAL_MASTER_NAME", "Brett K").strip()
+# Platform master accounts.  ``INITIAL_MASTER_EMAILS`` is the authoritative,
+# comma-separated list.  ``INITIAL_MASTER_EMAIL`` remains supported as the
+# legacy single-account setting.  A fresh install with neither variable gets the
+# three platform masters below.
+DEFAULT_MASTER_EMAILS = (
+    "brettk@salvagepulsepro.com",
+    "benk@salvagepulsepro.com",
+    "genk@salvagepulsepro.com",
+)
+_MASTER_NAMES = {
+    "brettk@salvagepulsepro.com": "Brett K",
+    "benk@salvagepulsepro.com": "Ben K",
+    "genk@salvagepulsepro.com": "Gen K",
+}
+_MASTER_IDS = {
+    "brettk@salvagepulsepro.com": "master-brettk",
+    "benk@salvagepulsepro.com": "master-benk",
+    "genk@salvagepulsepro.com": "master-genk",
+}
+
+INITIAL_MASTER_EMAILS = os.environ.get("INITIAL_MASTER_EMAILS", "").strip()
+INITIAL_MASTER_NAMES = os.environ.get("INITIAL_MASTER_NAMES", "").strip()
+_LEGACY_MASTER_EMAIL = os.environ.get("INITIAL_MASTER_EMAIL", "").strip().lower()
+INITIAL_MASTER_EMAIL = (_LEGACY_MASTER_EMAIL or DEFAULT_MASTER_EMAILS[0]).strip().lower()
+INITIAL_MASTER_NAME = os.environ.get("INITIAL_MASTER_NAME", "").strip()
 INITIAL_MASTER_PASSWORD = os.environ.get("INITIAL_MASTER_PASSWORD", "").strip()
+if "\n" in INITIAL_MASTER_PASSWORD or "\r" in INITIAL_MASTER_PASSWORD:
+    # A newline would corrupt the credential file; fall back to generated ones.
+    INITIAL_MASTER_PASSWORD = ""
 SEED_DEMO_DATA = os.environ.get("SEED_DEMO_DATA", "0").lower() in ("1", "true", "yes")
 
 
@@ -47,36 +74,154 @@ def needs_rehash(stored: str | None) -> bool:
     return passwords.needs_rehash(stored)
 
 
-def _write_bootstrap_password(password: str) -> None:
-    """Persist a generated first-run admin password for the operator to read."""
+def _derive_master_name(email: str) -> str:
+    local = (email.split("@", 1)[0] or "Master").strip()
+    words = [part for part in re.split(r"[._+-]+", local) if part]
+    return " ".join(word[:1].upper() + word[1:] for word in words) or "Master"
+
+
+def _master_id_for_email(email: str, used: set[str]) -> str:
+    known = _MASTER_IDS.get(email)
+    if known and known not in used:
+        used.add(known)
+        return known
+    local = (email.split("@", 1)[0] or "master").lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", local).strip("-") or "master"
+    candidate = known or f"master-{slug}"
+    if candidate in used:
+        candidate = f"master-{slug}"
+    suffix = 2
+    while candidate in used:
+        candidate = f"master-{slug}-{suffix}"
+        suffix += 1
+    used.add(candidate)
+    return candidate
+
+
+def _configured_master_accounts() -> list[dict[str, str]]:
+    """Return the ordered platform-master accounts configured for this install.
+
+    ``INITIAL_MASTER_EMAILS`` wins.  Otherwise an explicit legacy
+    ``INITIAL_MASTER_EMAIL`` is honoured, and a fresh install falls back to the
+    three platform masters.
+    """
+    if INITIAL_MASTER_EMAILS:
+        raw_emails = INITIAL_MASTER_EMAILS.split(",")
+    elif _LEGACY_MASTER_EMAIL:
+        raw_emails = [_LEGACY_MASTER_EMAIL]
+    else:
+        raw_emails = list(DEFAULT_MASTER_EMAILS)
+
+    emails: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_emails:
+        email = raw.strip().lower()
+        if not email or "@" not in email or email in seen:
+            continue
+        seen.add(email)
+        emails.append(email)
+    if not emails:
+        emails = [DEFAULT_MASTER_EMAILS[0]]
+
+    names = [name.strip() for name in INITIAL_MASTER_NAMES.split(",")] if INITIAL_MASTER_NAMES else []
+    used_ids: set[str] = set()
+    accounts: list[dict[str, str]] = []
+    for index, email in enumerate(emails):
+        if index < len(names) and names[index]:
+            name = names[index]
+        elif len(emails) == 1 and INITIAL_MASTER_NAME:
+            name = INITIAL_MASTER_NAME
+        else:
+            name = _MASTER_NAMES.get(email) or _derive_master_name(email)
+        accounts.append(
+            {
+                "id": _master_id_for_email(email, used_ids),
+                "email": email,
+                "name": name,
+            }
+        )
+    return accounts
+
+
+def _read_bootstrap_credentials() -> dict[str, str]:
+    """Read ``email -> password`` pairs from the first-run credential file."""
+    credentials: dict[str, str] = {}
+    try:
+        with open(BOOTSTRAP_PASSWORD_PATH, "r", encoding="utf-8") as fh:
+            current_email = ""
+            for line in fh:
+                stripped = line.strip()
+                if stripped.lower().startswith("email:"):
+                    current_email = stripped.split(":", 1)[1].strip().lower()
+                elif stripped.lower().startswith("password:") and current_email:
+                    credentials[current_email] = stripped.split(":", 1)[1].strip()
+                    current_email = ""
+    except OSError:
+        return {}
+    return credentials
+
+
+def _write_bootstrap_credentials(credentials: dict[str, str]) -> None:
+    """Persist generated first-run passwords for the operator to read."""
     try:
         fd = os.open(BOOTSTRAP_PASSWORD_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(
-                "Salvage Pulse initial administrator credentials\n"
-                f"Email: {INITIAL_MASTER_EMAIL}\n"
-                f"Password: {password}\n\n"
-                "Sign in and change this password immediately, then delete this file.\n"
-            )
+            fh.write("Salvage Pulse initial platform-master credentials\n")
+            fh.write("Sign in and change each password immediately, then delete this file.\n\n")
+            for email, password in credentials.items():
+                fh.write(f"Email: {email}\n")
+                fh.write(f"Password: {password}\n\n")
     except OSError:
         pass
 
 
-def _bootstrap_master_password() -> str:
-    """Return the configured master password, or generate and store one once."""
-    if INITIAL_MASTER_PASSWORD:
+def _bootstrap_credentials(emails: list[str] | None = None) -> dict[str, str]:
+    """Return credentials for the requested masters, generating missing ones once.
+
+    ``INITIAL_MASTER_PASSWORD`` applies to the first configured master only, so
+    a multi-master deployment never shares one password across accounts.  Pass a
+    specific list of emails when adding accounts to an existing state so the
+    credential file does not advertise a new password for a master that already
+    has a working one.
+    """
+    accounts = _configured_master_accounts()
+    first_email = accounts[0]["email"] if accounts else ""
+    if emails is None:
+        targets = [account["email"] for account in accounts]
+    else:
+        targets = [email.strip().lower() for email in emails if email and email.strip()]
+
+    credentials = _read_bootstrap_credentials()
+    changed = False
+    for email in targets:
+        if email in credentials:
+            continue
+        if email == first_email and INITIAL_MASTER_PASSWORD:
+            credentials[email] = INITIAL_MASTER_PASSWORD
+        else:
+            credentials[email] = secrets.token_urlsafe(18)
+        changed = True
+    if changed or (targets and not os.path.exists(BOOTSTRAP_PASSWORD_PATH)):
+        _write_bootstrap_credentials(credentials)
+    return credentials
+
+
+def _initial_password_for(email: str) -> str:
+    """Return a stable initial password for one account, generating it if needed."""
+    email = (email or "").strip().lower()
+    if not email:
+        return secrets.token_urlsafe(18)
+    accounts = _configured_master_accounts()
+    if accounts and email == accounts[0]["email"] and INITIAL_MASTER_PASSWORD:
         return INITIAL_MASTER_PASSWORD
-    if os.path.exists(BOOTSTRAP_PASSWORD_PATH):
-        try:
-            with open(BOOTSTRAP_PASSWORD_PATH, "r", encoding="utf-8") as fh:
-                for line in fh:
-                    if line.lower().startswith("password:"):
-                        return line.split(":", 1)[1].strip()
-        except OSError:
-            pass
-    generated = secrets.token_urlsafe(18)
-    _write_bootstrap_password(generated)
-    return generated
+    credentials = _bootstrap_credentials([email])
+    return credentials.get(email) or secrets.token_urlsafe(18)
+
+
+def _bootstrap_master_password() -> str:
+    """Return the first master's initial password, generating and storing it once."""
+    accounts = _configured_master_accounts()
+    return _initial_password_for(accounts[0]["email"])
 
 
 def _fallback_seed() -> dict[str, Any]:
@@ -253,24 +398,28 @@ def _build_initial_state() -> dict[str, Any]:
     if not seed:
         seed = _fallback_seed()
 
-    master_password = _bootstrap_master_password()
-    master_user = {
-        "id": "master-brettk",
-        "email": INITIAL_MASTER_EMAIL,
-        "name": INITIAL_MASTER_NAME,
-        "role": "master",
-        "title": "Founder & Master Admin",
-        "avatar_url": "",
-        "org_id": "",
-        "disabled": False,
-        "site_id": "",
-        "must_change_password": True,
-        "password_hash": hash_password(master_password),
-    }
+    accounts = _configured_master_accounts()
+    credentials = _bootstrap_credentials()
+    master_users: list[dict[str, Any]] = []
+    for account in accounts:
+        master_users.append(
+            {
+                "id": account["id"],
+                "email": account["email"],
+                "name": account["name"],
+                "role": "master",
+                "title": "Platform Master Admin",
+                "avatar_url": "",
+                "org_id": "",
+                "disabled": False,
+                "site_id": "",
+                "must_change_password": True,
+                "password_hash": hash_password(credentials[account["email"]]),
+            }
+        )
+    master_user = master_users[0]
 
-    users_by_id: dict[str, dict[str, Any]] = {
-        master_user["id"]: master_user,
-    }
+    users_by_id: dict[str, dict[str, Any]] = {user["id"]: user for user in master_users}
 
     state: dict[str, Any] = {
         "seed": seed,
@@ -364,26 +513,30 @@ def _build_initial_state() -> dict[str, Any]:
         ],
         "admin_staff": [
             {
-                "id": master_user["id"],
-                "email": master_user["email"],
-                "name": master_user["name"],
+                "id": user["id"],
+                "email": user["email"],
+                "name": user["name"],
                 "role": "master",
                 "disabled": False,
-                "must_change_password": False,
+                "must_change_password": True,
                 "created_at": now_iso(),
-                "you": True,
-                "google_linked": True,
+                "you": index == 0,
+                "google_linked": False,
                 "email_bounced_at": None,
                 "email_bounce_reason": "",
             }
+            for index, user in enumerate(master_users)
         ],
         "staff_lockdown": {
             "enabled": False,
-            "you_signed_in_with_google": True,
+            "you_signed_in_with_google": False,
             "staff_domain": master_user["email"].split("@")[-1] if "@" in master_user["email"] else "salvagepulsepro.com",
-            "google_linked": 1,
-            "staff_total": 1,
+            "google_linked": 0,
+            "staff_total": len(master_users),
         },
+        # Track the accounts this instance has already provisioned so a master
+        # that an operator later deletes is not recreated on the next restart.
+        "provisioned_master_emails": sorted(account["email"] for account in accounts),
         "trial_reminders": {
             "enabled": True,
             "upcoming": [],
@@ -713,23 +866,137 @@ DEMO_PASSWORDS = {
 }
 
 
+def _staff_record(user: dict[str, Any], *, you: bool = False) -> dict[str, Any]:
+    return {
+        "id": user.get("id", ""),
+        "email": user.get("email", ""),
+        "name": user.get("name", ""),
+        "role": "master",
+        "disabled": bool(user.get("disabled")),
+        "must_change_password": bool(user.get("must_change_password", True)),
+        "created_at": now_iso(),
+        "you": you,
+        "google_linked": bool(user.get("google_linked")),
+        "email_bounced_at": None,
+        "email_bounce_reason": "",
+    }
+
+
+def _ensure_configured_masters(st: dict[str, Any]) -> bool:
+    """Add configured platform masters to an existing state exactly once.
+
+    ``provisioned_master_emails`` records every account this instance has
+    already created.  That makes the migration idempotent and, importantly,
+    stops a master that an operator deliberately deletes from being recreated
+    on the next restart.
+    """
+    accounts = _configured_master_accounts()
+    users = st.setdefault("users_by_id", {})
+    staff = st.setdefault("admin_staff", [])
+
+    marker = st.get("provisioned_master_emails")
+    first_run = marker is None
+    provisioned = {
+        str(email).strip().lower()
+        for email in (marker or [])
+        if isinstance(email, str) and email.strip()
+    }
+    # Any master that already exists was provisioned by an earlier build.
+    for user in users.values():
+        if user.get("role") == "master":
+            email = str(user.get("email") or "").strip().lower()
+            if email:
+                provisioned.add(email)
+
+    changed = False
+    for account in accounts:
+        email = account["email"]
+        existing = next(
+            (u for u in users.values() if str(u.get("email") or "").strip().lower() == email),
+            None,
+        )
+
+        if existing is not None:
+            if existing.get("role") == "master":
+                # A previously provisioned (or operator-created) master: make
+                # sure the Platform Console list has a matching staff row.
+                if not any(str(entry.get("id") or "") == existing.get("id") for entry in staff):
+                    staff.append(_staff_record(existing))
+                    changed = True
+                if email not in provisioned:
+                    provisioned.add(email)
+                    changed = True
+            elif email not in provisioned:
+                # The operator explicitly configured this address as a master.
+                existing["role"] = "master"
+                existing.setdefault("title", "Platform Master Admin")
+                if not existing.get("password_hash") and not existing.get("google_linked"):
+                    existing["password_hash"] = hash_password(_bootstrap_credentials([email])[email])
+                    existing["must_change_password"] = True
+                if not any(str(entry.get("id") or "") == existing.get("id") for entry in staff):
+                    staff.append(_staff_record(existing))
+                provisioned.add(email)
+                changed = True
+            # If the address was provisioned before but is now a non-master,
+            # the operator deleted/demoted that master. Do not recreate it.
+            continue
+
+        # No account with this address exists. Only create one if it was never
+        # provisioned, so a deleted master stays deleted.
+        if email in provisioned:
+            continue
+        user_id = account["id"]
+        if user_id in users:
+            suffix = 2
+            base = user_id
+            while f"{base}-{suffix}" in users:
+                suffix += 1
+            user_id = f"{base}-{suffix}"
+        user = {
+            "id": user_id,
+            "email": email,
+            "name": account["name"],
+            "role": "master",
+            "title": "Platform Master Admin",
+            "avatar_url": "",
+            "org_id": "",
+            "disabled": False,
+            "site_id": "",
+            "must_change_password": True,
+            "password_hash": hash_password(_bootstrap_credentials([email])[email]),
+        }
+        users[user_id] = user
+        staff.append(_staff_record(user))
+        provisioned.add(email)
+        changed = True
+
+    if changed or first_run:
+        st["provisioned_master_emails"] = sorted(provisioned)
+        lockdown = dict(st.get("staff_lockdown", {}))
+        lockdown["staff_total"] = len(
+            [u for u in users.values() if u.get("role") == "master" and not u.get("disabled")]
+        )
+        st["staff_lockdown"] = lockdown
+        changed = True
+    return changed
+
+
 def _ensure_master_password(st: dict[str, Any]) -> bool:
     """Make sure every master account has a usable credential.
 
     A state file created before secure hashing shipped can contain a master with
     an empty hash, which locks the operator out permanently.  Generate a
-    one-time password (or use INITIAL_MASTER_PASSWORD) and persist it to a
-    root-only file in DATA_DIR.
+    one-time password (or use INITIAL_MASTER_PASSWORD for the primary master)
+    and persist it to a root-only file in DATA_DIR.
     """
     changed = False
-    password: str | None = None
     for user in st.get("users_by_id", {}).values():
         if user.get("role") != "master" or user.get("disabled"):
             continue
         if user.get("password_hash") or user.get("google_linked"):
             continue
-        if password is None:
-            password = _bootstrap_master_password()
+        email = str(user.get("email") or "").strip().lower()
+        password = _initial_password_for(email) if email else secrets.token_urlsafe(18)
         user["password_hash"] = hash_password(password)
         user["must_change_password"] = True
         changed = True
@@ -774,6 +1041,7 @@ def get_state() -> dict[str, Any]:
             _migrate_roles(_STATE)
             _ensure_roleplay_scenarios(_STATE)
             changed = _clear_legacy_impersonation(_STATE)
+            changed = _ensure_configured_masters(_STATE) or changed
             changed = _ensure_master_password(_STATE) or changed
             changed = _enforce_demo_password_rotation(_STATE) or changed
             if SEED_DEMO_DATA:

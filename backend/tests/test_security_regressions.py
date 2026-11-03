@@ -208,6 +208,111 @@ class DemoAndBootstrapTests(unittest.TestCase):
             store.BOOTSTRAP_PASSWORD_PATH = original_path
 
 
+class PlatformMasterTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.original_emails = store.INITIAL_MASTER_EMAILS
+        self.original_legacy = store._LEGACY_MASTER_EMAIL
+        self.original_names = store.INITIAL_MASTER_NAMES
+        self.original_password = store.INITIAL_MASTER_PASSWORD
+        self.original_path = store.BOOTSTRAP_PASSWORD_PATH
+        self.temp_path = os.path.join(_TMP_DATA_DIR, f"masters-{uuid.uuid4().hex}.txt")
+        store.BOOTSTRAP_PASSWORD_PATH = self.temp_path
+        store.INITIAL_MASTER_EMAILS = (
+            "brettk@salvagepulsepro.com,benk@salvagepulsepro.com,genk@salvagepulsepro.com"
+        )
+        store._LEGACY_MASTER_EMAIL = ""
+        store.INITIAL_MASTER_NAMES = "Brett K,Ben K,Gen K"
+        store.INITIAL_MASTER_PASSWORD = "MasterPass!234"
+
+    def tearDown(self) -> None:
+        store.INITIAL_MASTER_EMAILS = self.original_emails
+        store._LEGACY_MASTER_EMAIL = self.original_legacy
+        store.INITIAL_MASTER_NAMES = self.original_names
+        store.INITIAL_MASTER_PASSWORD = self.original_password
+        store.BOOTSTRAP_PASSWORD_PATH = self.original_path
+
+    def test_three_platform_masters_are_created(self) -> None:
+        state = store._build_initial_state()
+        masters = [u for u in state["users_by_id"].values() if u.get("role") == "master"]
+        self.assertEqual(len(masters), 3)
+        self.assertEqual(
+            {u["id"] for u in masters},
+            {"master-brettk", "master-benk", "master-genk"},
+        )
+        self.assertEqual(
+            {u["email"] for u in masters},
+            {
+                "brettk@salvagepulsepro.com",
+                "benk@salvagepulsepro.com",
+                "genk@salvagepulsepro.com",
+            },
+        )
+        self.assertTrue(all(u["must_change_password"] for u in masters))
+        self.assertEqual(len(state["admin_staff"]), 3)
+        self.assertEqual(
+            state["provisioned_master_emails"],
+            [
+                "benk@salvagepulsepro.com",
+                "brettk@salvagepulsepro.com",
+                "genk@salvagepulsepro.com",
+            ],
+        )
+
+    def test_each_master_gets_a_unique_generated_password(self) -> None:
+        store.INITIAL_MASTER_PASSWORD = ""
+        credentials = store._bootstrap_credentials()
+        self.assertEqual(len(credentials), 3)
+        self.assertEqual(len(set(credentials.values())), 3)
+        self.assertNotIn("MasterPass!234", credentials.values())
+        with open(self.temp_path, "r", encoding="utf-8") as fh:
+            contents = fh.read()
+        for email, password in credentials.items():
+            self.assertIn(f"Email: {email}", contents)
+            self.assertIn(f"Password: {password}", contents)
+        self.assertEqual(os.stat(self.temp_path).st_mode & 0o777, 0o600)
+
+    def test_existing_state_gains_masters_once_and_keeps_deletions(self) -> None:
+        state = {
+            "users_by_id": {
+                "master-brettk": {
+                    "id": "master-brettk",
+                    "email": "brettk@salvagepulsepro.com",
+                    "name": "Brett K",
+                    "role": "master",
+                    "password_hash": store.hash_password("existing-password"),
+                }
+            },
+            "admin_staff": [],
+        }
+
+        self.assertTrue(store._ensure_configured_masters(state))
+        self.assertEqual(len(state["users_by_id"]), 3)
+        # brettk gets a missing staff row; benk and genk get user + staff rows.
+        self.assertEqual(len(state["admin_staff"]), 3)
+
+        # The credential file must not advertise a replacement password for the
+        # existing brettk master, whose password hash is left untouched.
+        with open(self.temp_path, "r", encoding="utf-8") as fh:
+            contents = fh.read()
+        self.assertNotIn("Email: brettk@salvagepulsepro.com", contents)
+        self.assertIn("Email: benk@salvagepulsepro.com", contents)
+        self.assertIn("Email: genk@salvagepulsepro.com", contents)
+
+        del state["users_by_id"]["master-benk"]
+        self.assertFalse(store._ensure_configured_masters(state))
+        self.assertNotIn("master-benk", state["users_by_id"])
+
+    def test_legacy_single_master_email_is_still_honoured(self) -> None:
+        store.INITIAL_MASTER_EMAILS = ""
+        store._LEGACY_MASTER_EMAIL = "ops@example.com"
+        store.INITIAL_MASTER_NAMES = ""
+        accounts = store._configured_master_accounts()
+        self.assertEqual(len(accounts), 1)
+        self.assertEqual(accounts[0]["email"], "ops@example.com")
+        self.assertEqual(accounts[0]["name"], "Ops")
+        self.assertEqual(accounts[0]["id"], "master-ops")
+
+
 class AuthorizationTests(unittest.TestCase):
     def test_rep_cannot_reach_staff_or_manager_actions(self):
         client = _client()

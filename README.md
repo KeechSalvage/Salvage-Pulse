@@ -11,7 +11,7 @@ Full-stack application featuring:
 
 This app no longer accepts "any password" and does not ship default demo passwords.
 
-1. Copy `.env.example` to `.env` and set a strong `INITIAL_MASTER_PASSWORD`, or leave it blank and read the generated password from `$DATA_DIR/initial_admin_password.txt` after first boot.
+1. Copy `.env.example` to `.env`. The default `INITIAL_MASTER_EMAILS` list creates three platform masters (`brettk@`, `benk@`, and `genk@salvagepulsepro.com`). Set `INITIAL_MASTER_PASSWORD` to give the first master a known password, or leave it blank and read the generated per-account passwords from `$DATA_DIR/initial_admin_password.txt` after first boot.
 2. Set `APP_URL` to the public HTTPS URL and keep `COOKIE_SECURE=1` in production.
 3. Rotate any Gemini API key or SMTP app password that was ever committed or shared.
 4. Keep `SEED_DEMO_DATA=0` and `DEMO_LOGIN_ENABLED=0` unless you intentionally want a disposable demo instance.
@@ -29,7 +29,7 @@ Clone the repository and run:
 
 ```bash
 cp .env.example .env
-# edit .env: INITIAL_MASTER_PASSWORD, APP_URL, SMTP_*, GEMINI_API_KEY
+# edit .env: INITIAL_MASTER_EMAILS, INITIAL_MASTER_PASSWORD, APP_URL, SMTP_*, GEMINI_API_KEY
 docker compose up -d --build
 ```
 
@@ -55,7 +55,7 @@ Run this command directly in your **Proxmox VE Node Shell**:
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/KeechSalvage/Salvage-Pulse/main/proxmox/create-lxc.sh)"
 ```
 
-This creates an unprivileged Debian 12 LXC container (defaults: 4 GB RAM, 2 vCPU, 16 GB disk), installs the app as the unprivileged `salvage-pulse` user, hardens the systemd unit, disables demo data, and starts `salvage-pulse.service`. The installer prints the container URL and a one-time master password (or uses `INITIAL_MASTER_PASSWORD`). Updates run with `salvage-pulse-update`. See [`proxmox/README.md`](proxmox/README.md) for all options, HTTPS setup, and troubleshooting.
+This creates an unprivileged Debian 12 LXC container (defaults: 4 GB RAM, 2 vCPU, 16 GB disk), installs the app as the unprivileged `salvage-pulse` user, hardens the systemd unit, disables demo data, and starts `salvage-pulse.service`. During deployment you choose the container root password (or let the installer generate one), and the installer prepopulates the platform masters from `INITIAL_MASTER_EMAILS` (default: `brettk@`, `benk@`, and `genk@salvagepulsepro.com`). It prints the container URL and one-time credentials for each master. Updates run with `salvage-pulse-update`. See [`proxmox/README.md`](proxmox/README.md) for all options, HTTPS setup, and troubleshooting.
 
 ---
 
@@ -76,12 +76,12 @@ If you are using **ZimaOS** or **CasaOS** at home:
 
 ---
 
-## 🔑 Initial Master Admin Account
+## 🔑 Initial Platform Masters
 
-- **Master Email**: configured by `INITIAL_MASTER_EMAIL` (default `brettk@salvagepulsepro.com`)
+- **Master Emails**: configured by `INITIAL_MASTER_EMAILS` (comma-separated). Defaults to `brettk@salvagepulsepro.com`, `benk@salvagepulsepro.com`, and `genk@salvagepulsepro.com`. `INITIAL_MASTER_EMAIL` remains supported for a custom single-master install.
 - **Role**: `master` (Platform Staff & Console Access)
-- **Password**: `INITIAL_MASTER_PASSWORD` if set; otherwise a random password is generated at `$DATA_DIR/initial_admin_password.txt`
-- The bootstrap password is only used when no master account exists. Existing accounts are never overwritten.
+- **Passwords**: `INITIAL_MASTER_PASSWORD` applies to the first configured master only. Other masters get unique random passwords. All generated credentials are written to `$DATA_DIR/initial_admin_password.txt`, and every new master must change its password at first sign-in.
+- Configured masters are added to an existing installation once. A master deleted later through the Platform Console is not recreated on restart.
 
 ---
 

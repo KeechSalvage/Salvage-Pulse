@@ -88,8 +88,19 @@ APP_PORT="${APP_PORT:-8000}"
 APP_BIND_HOST="${APP_BIND_HOST:-0.0.0.0}"
 DATA_DIR="${DATA_DIR:-${APP_DIR}/backend/data}"
 
-INITIAL_MASTER_EMAIL="${INITIAL_MASTER_EMAIL:-brettk@salvagepulsepro.com}"
-INITIAL_MASTER_NAME="${INITIAL_MASTER_NAME:-Brett K}"
+DEFAULT_MASTER_EMAILS="brettk@salvagepulsepro.com,benk@salvagepulsepro.com,genk@salvagepulsepro.com"
+# INITIAL_MASTER_EMAILS is the authoritative list.  A legacy custom
+# INITIAL_MASTER_EMAIL is still honoured as a single-master configuration.
+if [[ -z "${INITIAL_MASTER_EMAILS:-}" ]]; then
+  if [[ -n "${INITIAL_MASTER_EMAIL:-}" && "${INITIAL_MASTER_EMAIL}" != "brettk@salvagepulsepro.com" ]]; then
+    INITIAL_MASTER_EMAILS="${INITIAL_MASTER_EMAIL}"
+  else
+    INITIAL_MASTER_EMAILS="${DEFAULT_MASTER_EMAILS}"
+  fi
+fi
+INITIAL_MASTER_NAMES="${INITIAL_MASTER_NAMES:-}"
+INITIAL_MASTER_EMAIL="${INITIAL_MASTER_EMAIL:-${INITIAL_MASTER_EMAILS%%,*}}"
+INITIAL_MASTER_NAME="${INITIAL_MASTER_NAME:-}"
 INITIAL_MASTER_PASSWORD="${INITIAL_MASTER_PASSWORD:-}"
 APP_URL="${APP_URL:-}"
 GEMINI_API_KEY="${GEMINI_API_KEY:-}"
@@ -131,6 +142,23 @@ fi
 [[ "${APP_DIR}" != *" "* && "${DATA_DIR}" != *" "* ]] || die "APP_DIR and DATA_DIR may not contain spaces."
 [[ "${APP_DIR}" != *"'"* && "${DATA_DIR}" != *"'"* ]] || die "APP_DIR and DATA_DIR may not contain single quotes."
 [[ "${SP_REPO_URL}" != *"'"* && "${SP_REF}" != *"'"* ]] || die "SP_REPO_URL and SP_REF may not contain single quotes."
+
+# Normalize and validate the platform-master email list.
+master_emails_normalized=""
+IFS=',' read -r -a _master_emails <<< "${INITIAL_MASTER_EMAILS}"
+for _email in "${_master_emails[@]}"; do
+  _email="${_email#"${_email%%[![:space:]]*}"}"
+  _email="${_email%"${_email##*[![:space:]]}"}"
+  [[ -n "${_email}" ]] || continue
+  [[ "${_email}" == *@* ]] || die "Invalid platform master email: ${_email}"
+  [[ "${_email}" != *"'"* ]] || die "Platform master emails may not contain single quotes."
+  master_emails_normalized="${master_emails_normalized:+${master_emails_normalized},}${_email}"
+done
+[[ -n "${master_emails_normalized}" ]] || die "At least one platform master email is required."
+INITIAL_MASTER_EMAILS="${master_emails_normalized}"
+INITIAL_MASTER_EMAIL="${INITIAL_MASTER_EMAIL:-${INITIAL_MASTER_EMAILS%%,*}}"
+unset _master_emails _email
+
 [[ "${APP_PORT}" =~ ^[0-9]+$ ]] || die "APP_PORT/PORT must be numeric."
 (( APP_PORT >= 1 && APP_PORT <= 65535 )) || die "APP_PORT/PORT must be between 1 and 65535."
 if (( APP_PORT < 1024 )); then
@@ -355,7 +383,9 @@ if [[ ! -f "${ENV_FILE}" ]]; then
     env_line TRUST_PROXY_HEADERS "${TRUST_PROXY_HEADERS}"
     env_line SEED_DEMO_DATA "${SEED_DEMO_DATA}"
     env_line DEMO_LOGIN_ENABLED "${DEMO_LOGIN_ENABLED}"
-    printf '\n# --- Initial master account ---\n'
+    printf '\n# --- Initial platform-master accounts ---\n'
+    env_line INITIAL_MASTER_EMAILS "${INITIAL_MASTER_EMAILS}"
+    env_line INITIAL_MASTER_NAMES "${INITIAL_MASTER_NAMES}"
     env_line INITIAL_MASTER_EMAIL "${INITIAL_MASTER_EMAIL}"
     env_line INITIAL_MASTER_NAME "${INITIAL_MASTER_NAME}"
     env_line INITIAL_MASTER_PASSWORD "${INITIAL_MASTER_PASSWORD}"
@@ -385,6 +415,26 @@ if [[ ! -f "${ENV_FILE}" ]]; then
 else
   ok "Keeping existing ${ENV_FILE} (not overwriting your configuration)."
 fi
+
+# Migration for installs created before multi-master support. An explicit custom
+# single master is preserved; the default brettk-only configuration adopts the
+# full platform-master list.
+if ! grep -qE "^[[:space:]]*INITIAL_MASTER_EMAILS[[:space:]]*=" "${ENV_FILE}"; then
+  existing_primary="$(read_env_value INITIAL_MASTER_EMAIL "${ENV_FILE}" 2>/dev/null || true)"
+  if [[ -n "${existing_primary}" && "${existing_primary}" != "brettk@salvagepulsepro.com" ]]; then
+    migration_masters="${existing_primary}"
+  else
+    migration_masters="${INITIAL_MASTER_EMAILS}"
+  fi
+  log "Adding INITIAL_MASTER_EMAILS to the existing configuration..."
+  # Do not glue the new key onto a file that lacks a trailing newline.
+  if [[ -s "${ENV_FILE}" && -n "$(tail -c 1 "${ENV_FILE}")" ]]; then
+    printf '\n' >> "${ENV_FILE}"
+  fi
+  env_line INITIAL_MASTER_EMAILS "${migration_masters}" >> "${ENV_FILE}"
+  unset existing_primary migration_masters
+fi
+
 # Group-readable by the service user so local tools (and older builds that call
 # load_dotenv()) can read it. It is never world-readable.
 chown root:"${APP_GROUP}" "${ENV_FILE}" 2>/dev/null || true
@@ -504,13 +554,13 @@ printf '  URL              : %bhttp://%s:%s%b\n' "${BOLD}" "${CT_IP}" "${APP_POR
 if [[ -n "${APP_URL}" ]]; then
   printf '  Public URL       : %b%s%b\n' "${BOLD}" "${APP_URL}" "${NC}"
 fi
-printf '  Master login     : %b%s%b\n' "${BOLD}" "${INITIAL_MASTER_EMAIL}" "${NC}"
+printf '  Master logins    : %b%s%b\n' "${BOLD}" "${INITIAL_MASTER_EMAILS}" "${NC}"
 if [[ -n "${INITIAL_MASTER_PASSWORD}" ]]; then
-  printf '  Master password  : the value you supplied as INITIAL_MASTER_PASSWORD\n'
+  printf '  Master password  : supplied INITIAL_MASTER_PASSWORD (primary master only; others generated)\n'
 elif [[ -f "${BOOTSTRAP_FILE}" ]]; then
-  BOOTSTRAP_PW="$(sed -n 's/^Password:[[:space:]]*//p' "${BOOTSTRAP_FILE}" | head -n 1)"
-  printf '  Master password  : %b%s%b (first login forces a change)\n' "${BOLD}" "${BOOTSTRAP_PW:-see ${BOOTSTRAP_FILE}}" "${NC}"
+  printf '  Master passwords : generated per account (first login forces a change)\n'
   printf '  Credential file  : %s\n' "${BOOTSTRAP_FILE}"
+  sed -n 's/^Email:[[:space:]]*/    /p; s/^Password:[[:space:]]*/      /p' "${BOOTSTRAP_FILE}"
   printf '  Delete it after  : rm -f %s\n' "${BOOTSTRAP_FILE}"
 else
   printf '  Master password  : unchanged (existing install)\n'
