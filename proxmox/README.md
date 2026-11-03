@@ -9,7 +9,8 @@ The installer is designed for a real production install:
   `nesting=1,keyctl=1`
 - Node.js 22 + Python 3 virtual environment
 - The service runs as the unprivileged `salvage-pulse` user, not root
-- `.env` is `0600`, data is `0700`, and the service has systemd sandboxing
+- `.env` is `0640` (`root:salvage-pulse`), data is `0700`, and the service has
+  systemd sandboxing
 - Demo data and one-click demo logins are **off** by default
 - The initial master password is generated once and written to
   `backend/data/initial_admin_password.txt` (mode `0600`) unless you set one
@@ -140,7 +141,8 @@ Platform console: `http://<CONTAINER_IP>:8000/admin`
 
 ## Configuration (`.env`)
 
-The live configuration is `/opt/salvage-pulse/.env` (mode `0600`, root-owned).
+The live configuration is `/opt/salvage-pulse/.env` (mode `0640`,
+`root:salvage-pulse`).
 The service reads it through systemd's `EnvironmentFile`, so the app itself does
 not need read access to the file.
 
@@ -296,7 +298,7 @@ Useful paths:
 | Path | Purpose |
 |---|---|
 | `/opt/salvage-pulse` | Application checkout |
-| `/opt/salvage-pulse/.env` | Secrets and runtime config (`0600`) |
+| `/opt/salvage-pulse/.env` | Secrets and runtime config (`0640`, `root:salvage-pulse`) |
 | `/opt/salvage-pulse/backend/data` | State, SQLite DB, uploads, bootstrap password (`0700`) |
 | `/etc/salvage-pulse.conf` | Installer settings (`0600`, no secrets) |
 | `/etc/systemd/system/salvage-pulse.service` | Generated unit |
@@ -331,8 +333,8 @@ LXC snapshots are fast and can be restored without rebuilding the app.
 - The service runs as `salvage-pulse`, not root, with `NoNewPrivileges`,
   `ProtectSystem=full`, `ProtectHome`, an empty capability set, and a
   `0077` umask.
-- `.env` is `0600` root-owned; `backend/data` is `0700` owned by the service
-  user.
+- `.env` is `0640` `root:salvage-pulse` (readable by the service, never
+  world-readable); `backend/data` is `0700` owned by the service user.
 - Demo seeding and demo logins are off by default. Do not enable them on a
   production instance.
 - Set `APP_URL`, `COOKIE_SECURE=1`, `TRUST_PROXY_HEADERS=1`, and
