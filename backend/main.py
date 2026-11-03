@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -11,9 +10,11 @@ from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import Headers
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-# Load .env file
-load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
-load_dotenv()
+from env_utils import load_env_files
+
+# Production installs keep .env root-owned (0600) and rely on systemd's
+# EnvironmentFile; an unreadable file must not crash the app.
+load_env_files()
 
 from gemini_service import is_gemini_configured
 import store

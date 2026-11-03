@@ -4,11 +4,12 @@ import logging
 import os
 from typing import Any, AsyncGenerator, Dict, List, Optional
 import httpx
-from dotenv import load_dotenv
 
-# Load .env from backend directory or project root
-load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
-load_dotenv()
+from env_utils import load_env_files
+
+# Load .env from backend directory or project root. An unreadable, root-owned
+# production .env is expected and handled inside load_env_files().
+load_env_files()
 
 logger = logging.getLogger("salvage_pulse.gemini")
 
