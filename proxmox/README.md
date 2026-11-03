@@ -233,6 +233,32 @@ SUPPORT_EMAIL=support@salvagepulsepro.com
 Google sign-in stays disabled when `GOOGLE_CLIENT_ID` is blank. For Gmail, use
 an **App Password**, not your normal account password.
 
+In Google Cloud Console the OAuth client must be a **Web application**. Add
+every URL users open the app from under **Authorized JavaScript origins** (for
+example `https://app.salvagepulsepro.com` and `http://localhost:8000`). No
+redirect URI is needed for the Google Identity Services token flow.
+
+Verify the running service picked up the client ID:
+
+```bash
+curl -sS http://127.0.0.1:8000/api/auth/google/config
+# {"configured":true,"client_id":"...apps.googleusercontent.com","accounts":[]}
+```
+
+If it reports `configured:false`, `GOOGLE_CLIENT_ID` is blank in the
+environment the service actually reads. Check `/opt/salvage-pulse/.env`, then
+`systemctl restart salvage-pulse`. If the button opens Google but returns
+`origin_mismatch`, add the exact scheme/host/port shown in the error to the
+OAuth client's Authorized JavaScript origins.
+
+Google Identity Services only runs on a secure origin: **HTTPS**, or
+`http://localhost`. A plain-HTTP LAN address such as
+`http://10.1.11.181:8000` cannot complete Google sign-in even when the client ID
+is configured. Use the public HTTPS URL, or tunnel the app to localhost
+(`ssh -L 8000:10.1.11.181:8000 root@pve-host` then open
+`http://localhost:8000`). Email and password sign-in still works over plain
+HTTP.
+
 ---
 
 ## HTTPS with Caddy (recommended before exposing publicly)

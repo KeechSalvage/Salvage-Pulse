@@ -108,6 +108,86 @@ class AuthenticationTests(unittest.TestCase):
         finally:
             os.environ["GOOGLE_CLIENT_ID"] = original
 
+    def test_google_config_does_not_enumerate_accounts(self):
+        response = _client().get("/api/auth/google/config")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["configured"])
+        self.assertEqual(body["accounts"], [])
+        self.assertNotIn("owner@keechauto.com", response.text)
+
+    def test_google_access_token_audience_field_is_accepted(self):
+        from routers import auth as auth_module
+        import asyncio
+
+        class FakeResponse:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {
+                    "audience": os.environ["GOOGLE_CLIENT_ID"],
+                    "email": "person@example.test",
+                    "email_verified": True,
+                }
+
+        class FakeClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            async def get(self, *args, **kwargs):
+                return FakeResponse()
+
+        original = auth_module.httpx.AsyncClient
+        auth_module.httpx.AsyncClient = FakeClient
+        try:
+            profile = asyncio.run(auth_module._fetch_google_user("access-token", None))
+        finally:
+            auth_module.httpx.AsyncClient = original
+        self.assertEqual(profile["email"], "person@example.test")
+
+    def test_google_token_with_wrong_audience_is_rejected(self):
+        from routers import auth as auth_module
+        import asyncio
+
+        class FakeResponse:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {
+                    "aud": "some-other-client.apps.googleusercontent.com",
+                    "email": "person@example.test",
+                    "email_verified": True,
+                }
+
+        class FakeClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            async def get(self, *args, **kwargs):
+                return FakeResponse()
+
+        original = auth_module.httpx.AsyncClient
+        auth_module.httpx.AsyncClient = FakeClient
+        try:
+            profile = asyncio.run(auth_module._fetch_google_user(None, "id-token"))
+        finally:
+            auth_module.httpx.AsyncClient = original
+        self.assertIsNone(profile)
+
     def test_login_does_not_leak_hashes_or_account_existence(self):
         client = _client()
         response = _client().post(

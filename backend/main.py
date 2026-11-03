@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
@@ -15,6 +16,12 @@ from env_utils import load_env_files
 # Production installs keep .env root-owned (0600) and rely on systemd's
 # EnvironmentFile; an unreadable file must not crash the app.
 load_env_files()
+
+if not os.environ.get("GOOGLE_CLIENT_ID", "").strip():
+    logging.getLogger("salvage_pulse").warning(
+        "Google sign-in is disabled because GOOGLE_CLIENT_ID is not set. "
+        "Set it in .env and restart the service."
+    )
 
 from gemini_service import is_gemini_configured
 import store

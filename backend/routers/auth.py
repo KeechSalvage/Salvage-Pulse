@@ -287,8 +287,20 @@ async def _fetch_google_user(access_token: Optional[str], id_token: Optional[str
 
             if not profile:
                 return None
-            if str(profile.get("aud") or "") != expected_aud:
-                logger.warning("Rejected Google token with unexpected audience")
+            # ID tokens report ``aud``; access-token introspection has used
+            # ``audience``/``issued_to`` over the years.  Accept any of them,
+            # but still require an exact match against this deployment's client.
+            token_aud = str(
+                profile.get("aud")
+                or profile.get("audience")
+                or profile.get("issued_to")
+                or ""
+            ).strip()
+            if token_aud != expected_aud:
+                logger.warning(
+                    "Rejected Google token with unexpected audience %r",
+                    token_aud[:48],
+                )
                 return None
             verified = profile.get("email_verified")
             if verified is None:

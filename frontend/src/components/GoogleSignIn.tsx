@@ -32,6 +32,7 @@ declare global {
             scope: string;
             prompt?: string;
             callback: (response: { access_token?: string; error?: string }) => void;
+            error_callback?: (error: { type?: string; message?: string }) => void;
           }) => {
             requestAccessToken: () => void;
           };
@@ -64,6 +65,47 @@ function takePendingSignup(): PendingSignup | null {
   } catch {
     return null;
   }
+}
+
+function googleOauth2() {
+  return typeof window !== "undefined" ? window.google?.accounts?.oauth2 : undefined;
+}
+
+/** Wait for the async/defer GIS script instead of failing on an early click. */
+function waitForGoogleIdentityServices(timeoutMs = 6000): Promise<boolean> {
+  if (googleOauth2()) return Promise.resolve(true);
+  if (typeof window === "undefined") return Promise.resolve(false);
+  return new Promise((resolve) => {
+    let settled = false;
+    let poll = 0;
+    let timer = 0;
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      window.clearInterval(poll);
+      window.clearTimeout(timer);
+      resolve(ok);
+    };
+    poll = window.setInterval(() => {
+      if (googleOauth2()) finish(true);
+    }, 100);
+    timer = window.setTimeout(() => finish(false), timeoutMs);
+  });
+}
+
+function handleGoogleError(error: string): void {
+  // The user closing the account picker is not an error worth shouting about.
+  if (error === "popup_closed" || error === "user_cancelled" || error === "access_denied") {
+    return;
+  }
+  if (error === "origin_mismatch" || error === "invalid_client") {
+    toast.error(
+      `Google rejected this site (${error}). Ask your administrator to add ${window.location.origin} to the OAuth client's Authorized JavaScript origins.`,
+      { duration: 12000 }
+    );
+    return;
+  }
+  toast.error(`Google authentication error: ${error}`, { duration: 8000 });
 }
 
 const GoogleIcon = () => (
@@ -107,11 +149,13 @@ export function GoogleButton({
   onBeforeStart?: () => boolean;
 }) {
   const nav = useNavigate();
+  const [busy, setBusy] = useState(false);
 
   const { data: config } = useQuery<GoogleAuthConfig>({
     queryKey: ["google-config"],
     queryFn: () => apiGet<GoogleAuthConfig>("/auth/google/config"),
     staleTime: 60_000,
+    retry: 1,
   });
 
   const handleAuthenticatedUser = useCallback((user: User, isNewSignup = false) => {
@@ -125,7 +169,24 @@ export function GoogleButton({
     nav(homeFor(user.role), { replace: true });
   }, [nav]);
 
-  const triggerGoogleAuth = useCallback((pendingData?: PendingSignup) => {
+  // A click can land before the config query resolves. Fetch on demand instead
+  // of telling the user Google is unavailable.
+  const loadConfig = useCallback(async (): Promise<GoogleAuthConfig | null> => {
+    if (config) return config;
+    try {
+      return await queryClient.fetchQuery<GoogleAuthConfig>({
+        queryKey: ["google-config"],
+        queryFn: () => apiGet<GoogleAuthConfig>("/auth/google/config"),
+        staleTime: 0,
+        retry: 1,
+      });
+    } catch (err) {
+      console.error("Google sign-in config request failed:", err);
+      return null;
+    }
+  }, [config]);
+
+  const triggerGoogleAuth = useCallback(async (pendingData?: PendingSignup) => {
     if (onBeforeStart && !onBeforeStart()) {
       return;
     }
@@ -137,60 +198,89 @@ export function GoogleButton({
       sessionStorage.removeItem(PENDING_SIGNUP);
     }
 
-    if (config?.configured && config.client_id) {
-      if (typeof window !== "undefined" && window.google?.accounts?.oauth2) {
-        try {
-          const client = window.google.accounts.oauth2.initTokenClient({
-            client_id: config.client_id,
-            scope: "openid email profile",
-            prompt: "select_account",
-            callback: async (resp: { access_token?: string; error?: string }) => {
-              if (resp.error) {
-                toast.error(`Google authentication error: ${resp.error}`);
-                return;
-              }
-              if (!resp.access_token) return;
-              try {
-                const pending = takePendingSignup();
-                if (!pending) {
-                  const user = await apiPost<User>("/auth/google", {
-                    access_token: resp.access_token,
-                  } satisfies GoogleSessionRequest);
-                  handleAuthenticatedUser(user);
-                } else {
-                  const r = await apiPost<GoogleSignupResult>("/auth/google/signup", {
-                    access_token: resp.access_token,
-                    ...pending,
-                  } satisfies GoogleSignupRequest);
-                  handleAuthenticatedUser(r.user, r.created);
-                }
-              } catch (e) {
-                toast.error(errorMessage(e, "Google sign-in failed"), { duration: 8000 });
-              }
-            },
-          });
-          client.requestAccessToken();
-          return;
-        } catch (err) {
-          console.error("GIS client init error:", err);
-          toast.error("Google sign-in is currently unavailable. Please sign in with email and password.");
-          return;
-        }
-      } else {
-        toast.error("Google Identity Services script failed to load. Please sign in with email and password.");
+    setBusy(true);
+    let client: { requestAccessToken: () => void } | null = null;
+    try {
+      const cfg = await loadConfig();
+      if (!cfg) {
+        toast.error("Couldn't check Google sign-in availability. Please try again, or sign in with email and password.");
         return;
       }
+      if (!cfg.configured || !cfg.client_id) {
+        toast.error(
+          "Google sign-in isn't enabled on this server. Use email and password, or ask your administrator to configure GOOGLE_CLIENT_ID.",
+          { duration: 10000 }
+        );
+        return;
+      }
+
+      const ready = await waitForGoogleIdentityServices();
+      const oauth2 = googleOauth2();
+      if (!ready || !oauth2) {
+        toast.error("Google sign-in couldn't load. Check your connection or ad blocker, then refresh the page.", { duration: 10000 });
+        return;
+      }
+
+      try {
+        client = oauth2.initTokenClient({
+          client_id: cfg.client_id,
+          scope: "openid email profile",
+          prompt: "select_account",
+          callback: async (resp: { access_token?: string; error?: string }) => {
+            if (resp.error) {
+              handleGoogleError(resp.error);
+              return;
+            }
+            if (!resp.access_token) {
+              toast.error("Google did not return an access token. Please try again.");
+              return;
+            }
+            try {
+              const pending = takePendingSignup();
+              if (!pending) {
+                const user = await apiPost<User>("/auth/google", {
+                  access_token: resp.access_token,
+                } satisfies GoogleSessionRequest);
+                handleAuthenticatedUser(user);
+              } else {
+                const r = await apiPost<GoogleSignupResult>("/auth/google/signup", {
+                  access_token: resp.access_token,
+                  ...pending,
+                } satisfies GoogleSignupRequest);
+                handleAuthenticatedUser(r.user, r.created);
+              }
+            } catch (e) {
+              toast.error(errorMessage(e, "Google sign-in failed"), { duration: 8000 });
+            }
+          },
+          error_callback: (err: { type?: string; message?: string }) => {
+            handleGoogleError(err?.type || "unknown_error");
+          },
+        });
+      } catch (err) {
+        console.error("GIS client init error:", err);
+        toast.error(
+          `Google sign-in could not start: ${err instanceof Error ? err.message : String(err)}`,
+          { duration: 10000 }
+        );
+        return;
+      }
+    } catch (err) {
+      console.error("Google sign-in setup error:", err);
+      toast.error("Google sign-in could not start. Please try again, or sign in with email and password.");
+      return;
+    } finally {
+      setBusy(false);
     }
 
-    // Google Sign-In is unavailable or not configured — inform user to use standard credentials
-    toast.error("Google Sign-In is currently unavailable. Please sign in with email and password.");
-  }, [config, handleAuthenticatedUser, onBeforeStart, signup]);
+    client?.requestAccessToken();
+  }, [handleAuthenticatedUser, loadConfig, onBeforeStart, signup]);
 
   // Listen for programmatic startGoogleSignIn calls
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      triggerGoogleAuth(detail);
+      void triggerGoogleAuth(detail);
     };
     window.addEventListener("sp:trigger-google-sign-in", handler);
     return () => window.removeEventListener("sp:trigger-google-sign-in", handler);
@@ -200,7 +290,7 @@ export function GoogleButton({
     if (onClick) {
       onClick();
     } else {
-      triggerGoogleAuth();
+      void triggerGoogleAuth();
     }
   };
 
@@ -209,10 +299,12 @@ export function GoogleButton({
       type="button"
       data-testid={testId}
       onClick={handleClick}
-      className="flex h-11 w-full items-center justify-center gap-3 rounded-md border border-slate-700 bg-card text-[15px] font-medium text-slate-100 transition-colors duration-150 hover:border-slate-500 hover:bg-slate-800/60"
+      disabled={busy}
+      aria-busy={busy}
+      className="flex h-11 w-full items-center justify-center gap-3 rounded-md border border-slate-700 bg-card text-[15px] font-medium text-slate-100 transition-colors duration-150 hover:border-slate-500 hover:bg-slate-800/60 disabled:cursor-not-allowed disabled:opacity-60"
     >
-      <GoogleIcon />
-      {label}
+      {busy ? <Loader2 className="size-5 animate-spin" /> : <GoogleIcon />}
+      {busy ? "Connecting to Google…" : label}
     </button>
   );
 }
