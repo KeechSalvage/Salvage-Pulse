@@ -29,7 +29,7 @@ import database
 
 # Initialize database schema and run migrations
 database.init_schema()
-from routers import admin, analytics, auth, billing, calls, roleplay, settings, team
+from routers import admin, analytics, auth, billing, calls, forms, roleplay, settings, team
 from security import request_origin_allowed
 
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "development").strip().lower()
@@ -40,7 +40,7 @@ MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_MB", "25")) * 1024 * 1024
 
 app = FastAPI(
     title="Salvage Pulse AI API",
-    version="1.0.0-beta.9",
+    version="1.0.0-beta.10",
     docs_url="/docs" if DOCS_ENABLED else None,
     redoc_url="/redoc" if DOCS_ENABLED else None,
     openapi_url="/openapi.json" if DOCS_ENABLED else None,
@@ -90,6 +90,7 @@ _UPLOAD_PATH_HINTS = (
     "/attach",
     "/branding/logo",
     "/uploads",
+    "/forms/upload",
 )
 
 
@@ -233,7 +234,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 def health() -> dict[str, Any]:
     return {
         "status": "ok",
-        "version": "1.0.0-beta.9",
+        "version": "1.0.0-beta.10",
         "stage": "beta",
         "timestamp": store.now_iso(),
     }
@@ -242,7 +243,7 @@ def health() -> dict[str, Any]:
 @app.get("/api/system/version")
 def system_version() -> dict[str, Any]:
     return {
-        "version": "1.0.0-beta.9",
+        "version": "1.0.0-beta.10",
         "stage": "beta",
         "is_beta": True,
         "release_date": "2026-11-04",
@@ -266,6 +267,7 @@ def ai_status() -> dict[str, Any]:
 app.include_router(auth.router)
 app.include_router(settings.router)
 app.include_router(calls.router)
+app.include_router(forms.router)
 app.include_router(analytics.router)
 app.include_router(roleplay.router)
 app.include_router(team.router)

@@ -609,6 +609,7 @@ def _build_initial_state() -> dict[str, Any]:
         "cleanup_batches": [],
         "cleanup_trash": [],
         "recent_uploads": [],
+        "form_library": [],
         "rep_login_log": [],
         "demo_login_switch": {
             "enabled": False,

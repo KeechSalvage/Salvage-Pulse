@@ -1742,6 +1742,22 @@ export interface ArrivalCallerUpdate {
 export interface TextBlast {
   template: string;
 }
+export interface FormLibraryItem {
+  id: string;
+  org_id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  uploaded_by: string;
+  uploaded_at: string;
+  download_url: string;
+}
+
+export interface FormLibraryUploadResult {
+  uploaded: number;
+  items: FormLibraryItem[];
+}
+
 export interface QueueItem {
   kind: "arrival" | "missed" | "callback" | "roleplay";
   id: string;

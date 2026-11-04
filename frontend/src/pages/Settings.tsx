@@ -1,5 +1,5 @@
 import { Navigate, NavLink, useLocation, useParams } from "react-router-dom";
-import { CreditCard, MapPin, MonitorSmartphone, Palette, Plug, SlidersHorizontal, Smartphone, Upload } from "lucide-react";
+import { CreditCard, FolderOpen, MapPin, MonitorSmartphone, Palette, Plug, SlidersHorizontal, Smartphone, Upload } from "lucide-react";
 import MyDevices from "@/components/MyDevices";
 import { MobileCard } from "@/components/RepExtras";
 import UploadCall from "@/pages/UploadCall";
@@ -7,6 +7,7 @@ import Connectors from "@/pages/Connectors";
 import Billing from "@/pages/Billing";
 import Appearance from "@/pages/Appearance";
 import ScoringSettings from "@/pages/ScoringSettings";
+import FormLibrary from "@/pages/FormLibrary";
 import YardSettings from "@/components/YardSettings";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/lib/hooks";
@@ -25,6 +26,7 @@ function PhoneAndTexts() {
 const TABS = [
   { id: "upload", label: "Upload Call", icon: Upload, page: UploadCall, roles: ["owner", "sales_manager", "inventory_manager", "rep", "manager", "sales_rep"] },
   { id: "locations", label: "Yard & locations", icon: MapPin, page: YardSettings, roles: ["owner", "sales_manager"] },
+  { id: "forms", label: "Form library", icon: FolderOpen, page: FormLibrary, roles: ["owner", "sales_manager"] },
   { id: "scoring", label: "Call Scoring", icon: SlidersHorizontal, page: ScoringSettings, roles: ["owner", "sales_manager", "manager"] },
   { id: "phone", label: "Phone & texts", icon: Smartphone, page: PhoneAndTexts, roles: ["rep", "sales_rep"] },
   { id: "connectors", label: "Phone Connectors", icon: Plug, page: Connectors, roles: ["owner", "sales_manager", "manager"] },

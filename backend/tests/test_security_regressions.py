@@ -528,6 +528,107 @@ class RepQueueTests(unittest.TestCase):
         )
 
 
+class FormLibraryTests(unittest.TestCase):
+    """Forms are uploaded, listed, downloaded, deleted, and isolated per yard."""
+
+    PDF = b"%PDF-1.4\n% salvage pulse test form\n"
+
+    def _upload(self, client: TestClient, name: str = "Warranty Form.pdf", content: bytes = PDF):
+        return client.post(
+            "/api/forms/upload",
+            files=[("files", (name, content, "application/pdf"))],
+        )
+
+    def test_owner_can_upload_download_and_delete_forms(self):
+        client = _client()
+        _signup(client, yard="Forms Yard")
+
+        uploaded = self._upload(client)
+        self.assertEqual(uploaded.status_code, 200, uploaded.text)
+        body = uploaded.json()
+        self.assertEqual(body["uploaded"], 1)
+        item = body["items"][0]
+        self.assertEqual(item["filename"], "Warranty Form.pdf")
+        self.assertEqual(item["size_bytes"], len(self.PDF))
+
+        listed = client.get("/api/forms").json()
+        self.assertEqual(len(listed), 1)
+        self.assertEqual(listed[0]["id"], item["id"])
+
+        download = client.get(item["download_url"])
+        self.assertEqual(download.status_code, 200)
+        self.assertEqual(download.content, self.PDF)
+
+        deleted = client.delete(f"/api/forms/{item['id']}")
+        self.assertEqual(deleted.status_code, 200, deleted.text)
+        self.assertEqual(client.get("/api/forms").json(), [])
+        self.assertEqual(client.get(item["download_url"]).status_code, 404)
+
+    def test_sales_manager_can_manage_but_rep_cannot(self):
+        owner = _client()
+        _, _, _ = _signup(owner, yard="Forms Roles Yard")
+        manager_email = f"forms-manager-{uuid.uuid4().hex[:8]}@example.test"
+        rep_email = f"forms-rep-{uuid.uuid4().hex[:8]}@example.test"
+        self.assertEqual(
+            owner.post(
+                "/api/users/reps",
+                json={
+                    "name": "Forms Manager",
+                    "email": manager_email,
+                    "password": "ManagerPass!234",
+                    "role": "sales_manager",
+                },
+            ).status_code,
+            200,
+        )
+        self.assertEqual(
+            owner.post(
+                "/api/users/reps",
+                json={
+                    "name": "Forms Rep",
+                    "email": rep_email,
+                    "password": "RepPass!234",
+                    "role": "rep",
+                },
+            ).status_code,
+            200,
+        )
+
+        manager = _client()
+        _login(manager, manager_email, "ManagerPass!234")
+        uploaded = self._upload(manager, "Delivery Sheet.docx", b"test form")
+        self.assertEqual(uploaded.status_code, 200, uploaded.text)
+        form_id = uploaded.json()["items"][0]["id"]
+
+        rep = _client()
+        _login(rep, rep_email, "RepPass!234")
+        self.assertEqual(len(rep.get("/api/forms").json()), 1)
+        self.assertEqual(rep.get(f"/api/forms/{form_id}/download").status_code, 200)
+        self.assertEqual(self._upload(rep).status_code, 403)
+        self.assertEqual(rep.delete(f"/api/forms/{form_id}").status_code, 403)
+        self.assertEqual(manager.delete(f"/api/forms/{form_id}").status_code, 200)
+
+    def test_forms_cannot_cross_yards(self):
+        first = _client()
+        _, _, _ = _signup(first, yard="Forms First Yard")
+        uploaded = self._upload(first)
+        self.assertEqual(uploaded.status_code, 200, uploaded.text)
+        form_id = uploaded.json()["items"][0]["id"]
+
+        second = _client()
+        _, _, _ = _signup(second, yard="Forms Second Yard")
+        self.assertEqual(second.get("/api/forms").json(), [])
+        self.assertIn(second.get(f"/api/forms/{form_id}/download").status_code, (403, 404))
+        self.assertIn(second.delete(f"/api/forms/{form_id}").status_code, (403, 404))
+
+    def test_unsupported_file_type_is_rejected(self):
+        client = _client()
+        _signup(client, yard="Forms Types Yard")
+        rejected = self._upload(client, "payload.exe", b"MZ")
+        self.assertEqual(rejected.status_code, 400)
+        self.assertIn("Unsupported file type", rejected.text)
+
+
 class ScoringScopeTests(unittest.TestCase):
     """Custom AI evaluation is isolated to one location."""
 
