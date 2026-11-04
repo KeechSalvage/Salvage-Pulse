@@ -18,6 +18,7 @@ from security import (
     public_user,
     require_authenticated,
     resolve_write_org,
+    validate_email,
 )
 
 router = APIRouter(tags=["analytics"], dependencies=[Depends(require_authenticated)])
@@ -669,6 +670,8 @@ def get_analytics_customers(
     rep_id: Optional[str] = Query(None),
     tag: Optional[str] = Query(None),
     include_all: bool = Query(False),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
 ) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
@@ -680,6 +683,8 @@ def get_analytics_customers(
         rep_id=effective_rep_id,
         tag=tag,
         include_all=include_all,
+        date_from=date_from,
+        date_to=date_to,
     )
 
 
@@ -691,6 +696,8 @@ def get_customer_profile(key: str, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="Customer not found")
     org_id = effective_org(u)
     store_key = _customer_store_key(key, u)
+    profile = ya._customer_profile(st, org_id, key)
+    manual_tag = ya._manual_tag(st, org_id, key)
     full_custs = st.get("full_customers", {})
     full = full_custs.get(key)
     if isinstance(full, dict):
@@ -698,6 +705,14 @@ def get_customer_profile(key: str, request: Request) -> dict[str, Any]:
         # Platform staff may read every yard.  A yard may only read its own
         # full-customer record; legacy Keech records predate ``org_id``.
         if org_id is None or record_org == org_id or (not record_org and org_id == store.KEECH_ORG_ID):
+            full_stat = full.setdefault("stat", {})
+            if isinstance(full_stat, dict):
+                full_stat["name"] = profile.get("name") or full_stat.get("name") or key
+                full_stat["email"] = str(profile.get("email") or "")
+                full_stat["text_ok"] = profile.get("text_ok", True) is not False
+                if manual_tag:
+                    full_stat["tag"] = manual_tag
+                    full_stat["tag_source"] = "manual"
             return full
 
     calls = [
@@ -714,7 +729,7 @@ def get_customer_profile(key: str, request: Request) -> dict[str, Any]:
                 topics.append(str(topic))
     stat = {
         "key": key,
-        "name": calls[0].get("customer_name") or key if calls else key,
+        "name": profile.get("name") or (calls[0].get("customer_name") if calls else key) or key,
         "phone": calls[0].get("customer_phone", "") if calls else "",
         "calls": len(calls),
         "orders": sum(1 for c in metric_calls if c.get("outcome") == "won"),
@@ -724,8 +739,10 @@ def get_customer_profile(key: str, request: Request) -> dict[str, Any]:
         "last_category": calls[0].get("category", "Sales Inquiry") if calls else "Sales Inquiry",
         "top_topics": topics or ["Part Inquiry"],
         "rep_names": list({c.get("rep_name") for c in calls if c.get("rep_name")}),
-        "tag": st.get("customer_tags", {}).get(store_key, ""),
-        "tag_source": "manual" if store_key in st.get("customer_tags", {}) else "",
+        "tag": manual_tag,
+        "tag_source": "manual" if manual_tag else "",
+        "email": str(profile.get("email") or ""),
+        "text_ok": profile.get("text_ok", True) is not False,
         "est_value": sum(float(c.get("order_value") or 0) for c in metric_calls) or 350.0,
         "value_basis": "ai",
     }
@@ -742,12 +759,54 @@ def put_customer_tag(key: str, body: dict[str, Any], request: Request) -> dict[s
     tag = body.get("tag") or ""
     if not isinstance(tag, str) or len(tag) > 64:
         raise HTTPException(status_code=400, detail="tag must be a string of 64 characters or fewer")
-    store_key = _customer_store_key(key, u)
-    st.setdefault("customer_tags", {})[store_key] = tag
+    org_id = effective_org(u)
+    for store_key in ya.customer_store_keys(org_id, key):
+        st.setdefault("customer_tags", {})[store_key] = tag
     prof = get_customer_profile(key, request)
     prof["stat"]["tag"] = tag
     prof["stat"]["tag_source"] = "manual"
     store.save_state()
+    return prof["stat"]
+
+
+@router.put("/api/customers/{key}/profile")
+def put_customer_profile(key: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    u = get_current_user(request)
+    if not _customer_visible(st, key, u):
+        raise HTTPException(status_code=404, detail="Customer not found")
+    if not is_manager(u):
+        raise HTTPException(status_code=403, detail="Manager access required to edit customer details")
+    name = body.get("name", "")
+    if not isinstance(name, str):
+        raise HTTPException(status_code=400, detail="name must be a string")
+    name = name.strip()
+    if len(name) > 120:
+        raise HTTPException(status_code=400, detail="name is too long (max 120 characters)")
+    email = body.get("email", "")
+    if not isinstance(email, str):
+        raise HTTPException(status_code=400, detail="email must be a string")
+    email = email.strip()
+    if email:
+        email = validate_email(email)
+    text_ok = body.get("text_ok", True)
+    if not isinstance(text_ok, bool):
+        raise HTTPException(status_code=400, detail="text_ok must be true or false")
+    org_id = effective_org(u)
+    record = {
+        "name": name,
+        "email": email,
+        "text_ok": text_ok,
+        "updated_at": store.now_iso(),
+        "updated_by": u.get("id", ""),
+    }
+    for store_key in ya.customer_store_keys(org_id, key):
+        st.setdefault("customer_profiles", {})[store_key] = dict(record)
+    store.save_state()
+    prof = get_customer_profile(key, request)
+    prof["stat"]["name"] = name or prof["stat"].get("name", key)
+    prof["stat"]["email"] = email
+    prof["stat"]["text_ok"] = text_ok
     return prof["stat"]
 
 
@@ -766,8 +825,10 @@ def post_customers_bulk_tag(body: dict[str, Any], request: Request) -> dict[str,
     tag = body.get("tag") or ""
     if not isinstance(tag, str) or len(tag) > 64:
         raise HTTPException(status_code=400, detail="tag must be a string of 64 characters or fewer")
+    org_id = effective_org(u)
     for k in keys:
-        st.setdefault("customer_tags", {})[_customer_store_key(k, u)] = tag
+        for store_key in ya.customer_store_keys(org_id, k):
+            st.setdefault("customer_tags", {})[store_key] = tag
     store.save_state()
     return {"updated": len(keys)}
 

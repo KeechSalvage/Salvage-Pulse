@@ -774,8 +774,16 @@ export interface CustomerStat {
   rep_names: string[];
   tag: string;
   tag_source: "manual" | "auto" | "";
+  email: string;
+  text_ok: boolean;
   est_value: number;
   value_basis: "ai" | "mixed" | "estimated" | "";
+}
+
+export interface CustomerProfileUpdate {
+  name: string;
+  email: string;
+  text_ok: boolean;
 }
 
 export type CustomerTag = "body_shop" | "mechanic" | "fleet" | "retail";
@@ -942,6 +950,7 @@ export interface CustomerInsights {
   suggested: SuggestedContact[];
   type_breakdown: TypeStat[];
   all_customers: CustomerStat[];
+  untagged_customers: number;
 }
 
 export interface CustomerNote {

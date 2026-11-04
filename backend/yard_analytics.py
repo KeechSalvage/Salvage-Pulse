@@ -588,14 +588,54 @@ def build_stock_alerts(
     return alerts[:20]
 
 
+def customer_store_keys(org_id: Optional[str], key: str) -> list[str]:
+    """All storage keys a customer may be saved under.
+
+    The profile URL uses the latest raw phone or name, while the customer
+    grouping code uses a normalized ``p:``/``n:`` key.  Writing and reading all
+    variants keeps a tag attached when a newer call changes the display key.
+    """
+    raw = str(key or "").strip()
+    candidates: list[str] = []
+    if raw:
+        candidates.append(raw)
+        if raw.startswith(("p:", "n:")):
+            candidates.append(raw[2:])
+        digits = re.sub(r"\D", "", raw)
+        phone = normalize_phone(raw)
+        # Only add phone aliases for actual phone-shaped keys; a business name
+        # like "86 Auto World" should not collide with a short phone fragment.
+        if phone and (raw.startswith("p:") or len(digits) >= 7):
+            candidates.append(f"p:{phone}")
+            candidates.append(phone)
+    seen: set[str] = set()
+    keys: list[str] = []
+    for candidate in candidates:
+        if not candidate:
+            continue
+        stored = f"{org_id}:{candidate}" if org_id and org_id != "org-keech-salvage" else candidate
+        if stored not in seen:
+            seen.add(stored)
+            keys.append(stored)
+    return keys
+
+
 def _manual_tag(state: dict[str, Any], org_id: Optional[str], key: str) -> str:
     tags = state.get("customer_tags", {}) or {}
-    if org_id and org_id != "org-keech-salvage":
-        value = tags.get(f"{org_id}:{key}")
+    for store_key in customer_store_keys(org_id, key):
+        value = tags.get(store_key)
         if value:
             return str(value)
-    value = tags.get(key)
-    return str(value) if value else ""
+    return ""
+
+
+def _customer_profile(state: dict[str, Any], org_id: Optional[str], key: str) -> dict[str, Any]:
+    profiles = state.get("customer_profiles", {}) or {}
+    for store_key in customer_store_keys(org_id, key):
+        value = profiles.get(store_key)
+        if isinstance(value, dict):
+            return value
+    return {}
 
 
 def _customer_group_key(call: dict[str, Any]) -> str:
@@ -614,8 +654,14 @@ def build_customer_insights(
     tag: Optional[str] = None,
     include_all: bool = False,
     site_id: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
 ) -> dict[str, Any]:
     calls = org_calls(state, org_id, rep_id=rep_id, site_id=site_id)
+    if date_from:
+        calls = [c for c in calls if (c.get("created_at") or "")[:10] >= date_from]
+    if date_to:
+        calls = [c for c in calls if (c.get("created_at") or "")[:10] <= date_to]
     if not calls:
         return {
             "total_customers": 0,
@@ -629,6 +675,7 @@ def build_customer_insights(
             "suggested": [],
             "type_breakdown": [],
             "all_customers": [],
+            "untagged_customers": 0,
         }
 
     avg_order = 350.0
@@ -665,7 +712,8 @@ def build_customer_insights(
         group_calls.sort(key=lambda c: c.get("created_at", ""), reverse=True)
         latest = group_calls[0]
         key = str(latest.get("customer_phone") or latest.get("customer_name") or "")
-        name = str(latest.get("customer_name") or key)
+        profile = _customer_profile(state, org_id, key) or _customer_profile(state, org_id, _group)
+        name = str(profile.get("name") or latest.get("customer_name") or key)
         phone = str(latest.get("customer_phone") or "")
         orders = [c for c in group_calls if _is_won(c) and not c.get("delivery_call")]
         ai_value = sum(float(c.get("order_value") or 0.0) for c in orders)
@@ -688,7 +736,7 @@ def build_customer_insights(
             if part:
                 topics[part] += 1
 
-        manual = _manual_tag(state, org_id, key)
+        manual = _manual_tag(state, org_id, key) or _manual_tag(state, org_id, _group)
         if manual:
             customer_tag, tag_source = manual, "manual"
         else:
@@ -709,6 +757,8 @@ def build_customer_insights(
             "rep_names": sorted({str(c.get("rep_name")) for c in group_calls if c.get("rep_name")}),
             "tag": customer_tag,
             "tag_source": tag_source,
+            "email": str(profile.get("email") or ""),
+            "text_ok": profile.get("text_ok", True) is not False,
             "est_value": round(est_value, 2),
             "value_basis": value_basis,
             "reason": f"Quoted {topics.most_common(1)[0][0] if topics else 'parts'} on {latest.get('created_at', '')[:10]} — follow up recommended",
@@ -726,7 +776,12 @@ def build_customer_insights(
 
     all_customers.sort(key=lambda c: (c["orders"], c["calls"], c["est_value"]), reverse=True)
     filtered = all_customers
-    if tag and tag != "all":
+    if tag == "untagged":
+        # The manager's untagged queue is "not manually confirmed yet".
+        # Auto-suggested tags stay visible on the row but do not clear the
+        # queue until someone saves a business type.
+        filtered = [c for c in all_customers if c["tag_source"] != "manual"]
+    elif tag and tag != "all":
         filtered = [c for c in all_customers if c["tag"] == tag]
 
     type_breakdown = [
@@ -757,6 +812,7 @@ def build_customer_insights(
         "suggested": suggested,
         "type_breakdown": type_breakdown,
         "all_customers": filtered[:limit],
+        "untagged_customers": sum(1 for c in all_customers if c["tag_source"] != "manual"),
     }
 
 

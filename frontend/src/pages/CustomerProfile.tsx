@@ -1,14 +1,18 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, PhoneCall, PhoneIncoming, PhoneOutgoing, StickyNote } from "lucide-react";
+import { ArrowLeft, Loader2, PhoneCall, PhoneIncoming, PhoneOutgoing, Save, StickyNote } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { CategoryBadge, Overline, Panel, ScoreBadge, StatCard, TAG_LABELS, TagBadge, fmtDate, fmtDuration, fmtMoney } from "@/components/common";
 import { apiGet, apiPost, apiPut, errorMessage } from "@/lib/api";
+import { useMe } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
-import type { CustomerNote, CustomerNoteCreate, CustomerProfile, CustomerStat, CustomerTag, CustomerTagUpdate } from "@/lib/types";
+import type { CustomerNote, CustomerNoteCreate, CustomerProfile, CustomerProfileUpdate, CustomerStat, CustomerTag, CustomerTagUpdate } from "@/lib/types";
+import { isManagerLike } from "@/lib/types";
 
 const TAG_OPTIONS: CustomerTag[] = ["body_shop", "mechanic", "fleet", "retail"];
 
@@ -21,11 +25,23 @@ export default function CustomerProfilePage() {
   const { key = "" } = useParams();
   const nav = useNavigate();
   const qc = useQueryClient();
+  const { data: me } = useMe();
+  const canEdit = isManagerLike(me?.role);
   const [note, setNote] = useState("");
+  const [details, setDetails] = useState<CustomerProfileUpdate>({ name: "", email: "", text_ok: true });
   const { data, isError } = useQuery({
     queryKey: ["customer", key],
     queryFn: () => apiGet<CustomerProfile>(`/customers/${encodeURIComponent(key)}`),
   });
+
+  useEffect(() => {
+    if (!data) return;
+    setDetails({
+      name: data.stat.name ?? "",
+      email: data.stat.email ?? "",
+      text_ok: data.stat.text_ok !== false,
+    });
+  }, [data?.stat.key, data?.stat.name, data?.stat.email, data?.stat.text_ok]);
 
   const addNote = useMutation({
     mutationFn: () => apiPost<CustomerNote>(`/customers/${encodeURIComponent(key)}/notes`, { text: note } satisfies CustomerNoteCreate),
@@ -42,9 +58,19 @@ export default function CustomerProfilePage() {
     onSuccess: (st) => {
       toast.success(st.tag_source === "manual" ? `Tagged as ${TAG_LABELS[st.tag]}` : "Tag cleared");
       qc.invalidateQueries({ queryKey: ["customer", key] });
-      qc.invalidateQueries({ queryKey: ["customers"] });
+      qc.invalidateQueries({ queryKey: ["customers"], refetchType: "all" });
     },
     onError: (e) => toast.error(errorMessage(e, "Could not save tag")),
+  });
+
+  const saveDetails = useMutation({
+    mutationFn: () => apiPut<CustomerStat>(`/customers/${encodeURIComponent(key)}/profile`, details),
+    onSuccess: () => {
+      toast.success("Customer details saved");
+      qc.invalidateQueries({ queryKey: ["customer", key] });
+      qc.invalidateQueries({ queryKey: ["customers"], refetchType: "all" });
+    },
+    onError: (e) => toast.error(errorMessage(e, "Could not save customer details")),
   });
 
   const back = (
@@ -71,6 +97,16 @@ export default function CustomerProfilePage() {
           <p className="mt-2 font-mono text-sm text-slate-400">
             {stat.phone ? fmtPhone(stat.phone) : "No phone"} · last call {fmtDate(stat.last_call_at)}
           </p>
+          {(stat.email || stat.text_ok === false) && (
+            <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-400">
+              {stat.email && <span data-testid="customer-profile-email">{stat.email}</span>}
+              {stat.text_ok === false && (
+                <span className="rounded border border-red-500/40 bg-red-500/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-red-300">
+                  No text
+                </span>
+              )}
+            </p>
+          )}
           <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="customer-tag-picker">
             <TagBadge tag={stat.tag} auto={stat.tag_source === "auto"} testId="customer-profile-tag" />
             <span className="mx-1 text-slate-600">|</span>
@@ -138,6 +174,49 @@ export default function CustomerProfilePage() {
         </Panel>
 
         <div className="space-y-6 xl:col-span-4">
+          {canEdit && (
+            <Panel testId="customer-details-panel">
+              <Overline>Customer details</Overline>
+              <p className="mt-1 text-sm text-slate-400">Add a name, email, and whether this number can receive texts.</p>
+              <div className="mt-4 space-y-3">
+                <label className="block text-sm">
+                  <span className="mb-1 block text-slate-300">Name</span>
+                  <Input
+                    data-testid="customer-detail-name"
+                    value={details.name}
+                    onChange={(e) => setDetails((d) => ({ ...d, name: e.target.value }))}
+                    placeholder="Customer or business name"
+                    className="bg-surface"
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="mb-1 block text-slate-300">Email</span>
+                  <Input
+                    data-testid="customer-detail-email"
+                    type="email"
+                    value={details.email}
+                    onChange={(e) => setDetails((d) => ({ ...d, email: e.target.value }))}
+                    placeholder="name@company.com"
+                    className="bg-surface"
+                  />
+                </label>
+                <label className="flex items-center gap-2 text-sm text-slate-300">
+                  <Checkbox
+                    data-testid="customer-detail-text-ok"
+                    checked={details.text_ok}
+                    onCheckedChange={(v) => setDetails((d) => ({ ...d, text_ok: v === true }))}
+                  />
+                  Can text this number
+                </label>
+              </div>
+              <div className="mt-4 flex justify-end">
+                <Button size="sm" data-testid="customer-detail-save" disabled={saveDetails.isPending} onClick={() => saveDetails.mutate()}>
+                  {saveDetails.isPending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} Save details
+                </Button>
+              </div>
+            </Panel>
+          )}
+
           <Panel testId="customer-reps-panel">
             <Overline>Reps they talk to</Overline>
             <ul className="mt-3 space-y-2">

@@ -16,6 +16,7 @@ import { apiGet, apiPost, errorMessage } from "@/lib/api";
 import { useAllReps, useMe, useMeta } from "@/lib/hooks";
 import { SiteFilter } from "@/components/Sites";
 import CallCleanup from "@/components/CallCleanup";
+import { DateRangeFilter } from "@/components/DateRange";
 import { cn } from "@/lib/utils";
 import type { BulkDelete, BulkDeleteResult, CallSummary, VehicleOptions } from "@/lib/types";
 import { isManagerLike } from "@/lib/types";
@@ -56,6 +57,8 @@ export default function Calls() {
   const [model, setModel] = useState(urlParams.get("vehicle_model") ?? "all");
   const [yearFrom, setYearFrom] = useState(urlParams.get("year_from") ?? "");
   const [yearTo, setYearTo] = useState(urlParams.get("year_to") ?? "");
+  const [dateFrom, setDateFrom] = useState(urlParams.get("date_from") ?? "");
+  const [dateTo, setDateTo] = useState(urlParams.get("date_to") ?? "");
   const vopts = useQuery({ queryKey: ["vehicle-options"], queryFn: () => apiGet<VehicleOptions>("/calls/vehicle-options") });
   const models = (vopts.data?.makes ?? []).find((m) => m.make === make)?.models ?? [];
   const vehicleOn = make !== "all" || !!yearFrom || !!yearTo;
@@ -71,6 +74,8 @@ export default function Calls() {
   if (make !== "all" && model !== "all") params.set("vehicle_model", model);
   if (yearFrom.length === 4) params.set("year_from", yearFrom);
   if (yearTo.length === 4) params.set("year_to", yearTo);
+  if (dateFrom) params.set("date_from", dateFrom);
+  if (dateTo) params.set("date_to", dateTo);
   const qs = params.toString();
   const [prevQs, setPrevQs] = useState(qs);
   if (qs !== prevQs) {
@@ -104,6 +109,18 @@ export default function Calls() {
             {c === "all" ? "All categories" : c}
           </button>
         ))}
+      </div>
+
+      <div className="mb-4">
+        <DateRangeFilter
+          from={dateFrom}
+          to={dateTo}
+          onChange={([f, t]) => {
+            setDateFrom(f);
+            setDateTo(t);
+          }}
+          testId="calls-date-range"
+        />
       </div>
 
       <div id="calls-search-filter" className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-3 scroll-mt-6">

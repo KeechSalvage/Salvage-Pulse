@@ -91,6 +91,82 @@ def _master_client() -> TestClient:
     return client
 
 
+class CustomerProfileTests(unittest.TestCase):
+    """Customer profile edits, the untagged queue, and date filtering."""
+
+    def _add_call(self, owner: dict, *, phone: str, name: str, created_at: str) -> None:
+        st = store.get_state()
+        st.setdefault("calls", []).append({
+            "id": f"call-{uuid.uuid4().hex}",
+            "org_id": owner["org_id"],
+            "rep_id": owner["id"],
+            "rep_name": owner["name"],
+            "customer_name": name,
+            "customer_phone": phone,
+            "direction": "inbound",
+            "duration_sec": 60,
+            "status": "analyzed",
+            "source": "test",
+            "category": "Sales Inquiry",
+            "outcome": "pending",
+            "overall_score": 70,
+            "created_at": created_at,
+        })
+        store.save_state()
+
+    def test_profile_details_and_untagged_queue(self):
+        client = _client()
+        owner, _, _ = _signup(client, yard="Customer Profile Yard")
+        phone = "15550007001"
+        self._add_call(owner, phone=phone, name="Original Name", created_at="2026-05-10T12:00:00Z")
+
+        untagged = client.get("/api/analytics/customers?include_all=true&tag=untagged").json()
+        self.assertIn(phone, {c["key"] for c in untagged["all_customers"]})
+        self.assertEqual(untagged["untagged_customers"], 1)
+
+        tagged = client.put(f"/api/customers/{phone}/tag", json={"tag": "fleet"})
+        self.assertEqual(tagged.status_code, 200, tagged.text)
+        untagged = client.get("/api/analytics/customers?include_all=true&tag=untagged").json()
+        self.assertNotIn(phone, {c["key"] for c in untagged["all_customers"]})
+        self.assertEqual(untagged["untagged_customers"], 0)
+
+        updated = client.put(
+            f"/api/customers/{phone}/profile",
+            json={"name": "Acme Fleet", "email": "ops@acme.test", "text_ok": False},
+        )
+        self.assertEqual(updated.status_code, 200, updated.text)
+        profile = client.get(f"/api/customers/{phone}").json()["stat"]
+        self.assertEqual(profile["name"], "Acme Fleet")
+        self.assertEqual(profile["email"], "ops@acme.test")
+        self.assertFalse(profile["text_ok"])
+
+        fleet = client.get("/api/analytics/customers?include_all=true&tag=fleet").json()
+        row = next(c for c in fleet["all_customers"] if c["key"] == phone)
+        self.assertEqual(row["name"], "Acme Fleet")
+        self.assertEqual(row["email"], "ops@acme.test")
+        self.assertFalse(row["text_ok"])
+
+    def test_customer_date_range_filters_calls(self):
+        client = _client()
+        owner, _, _ = _signup(client, yard="Customer Date Yard")
+        self._add_call(owner, phone="15550007101", name="May Customer", created_at="2026-05-10T12:00:00Z")
+        self._add_call(owner, phone="15550007102", name="June Customer", created_at="2026-06-10T12:00:00Z")
+
+        may = client.get(
+            "/api/analytics/customers?include_all=true&date_from=2026-05-01&date_to=2026-05-31"
+        ).json()
+        keys = {c["key"] for c in may["all_customers"]}
+        self.assertIn("15550007101", keys)
+        self.assertNotIn("15550007102", keys)
+
+        june = client.get(
+            "/api/analytics/customers?include_all=true&date_from=2026-06-01&date_to=2026-06-30"
+        ).json()
+        keys = {c["key"] for c in june["all_customers"]}
+        self.assertIn("15550007102", keys)
+        self.assertNotIn("15550007101", keys)
+
+
 class AuthenticationTests(unittest.TestCase):
     def test_unauthenticated_admin_access_is_rejected(self):
         response = _client().get("/api/admin/orgs")

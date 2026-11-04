@@ -5,6 +5,7 @@ import { Copy, DollarSign, List, MessageSquareQuote, PhoneCall, RotateCcw, Shopp
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CategoryBadge, Overline, Panel, TAG_LABELS, TagBadge, fmtDate, fmtMoney } from "@/components/common";
+import { DateRangeFilter } from "@/components/DateRange";
 import { apiGet, apiPost, errorMessage } from "@/lib/api";
 import { useMe } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
@@ -93,6 +94,11 @@ function RowIdentity({ c, rank, tab, team }: Omit<RowProps, "selected" | "onTogg
           {c.name}
         </Link>
         <TagBadge tag={c.tag} auto={c.tag_source === "auto"} testId={`customer-tag-${tab}-${rank}`} />
+        {c.text_ok === false && (
+          <span data-testid={`customer-no-text-${tab}-${rank}`} className="rounded border border-red-500/40 bg-red-500/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-red-300">
+            No text
+          </span>
+        )}
         {s ? (
           <span className={cn("rounded border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider", PRIORITY[s.priority])}>{s.priority}</span>
         ) : (
@@ -173,14 +179,16 @@ function CallButton({ phone, testId }: { phone: string; testId: string }) {
 const EMPTY_LISTS: Record<Tab, Contact[]> = { suggested: [], value: [], calls: [], orders: [], winback: [], all: [] };
 
 /** Customer insights for this panel's scope + filters, bucketed by tab. */
-function useCustomerLists(repId: string | undefined, team: boolean, tag: string, tab: Tab) {
+function useCustomerLists(repId: string | undefined, team: boolean, tag: string, tab: Tab, dateFrom: string, dateTo: string) {
   const params = new URLSearchParams();
   if (repId) params.set("rep_id", repId);
   if (tag !== "all") params.set("tag", tag);
   if (tab === "all") params.set("include_all", "true");
+  if (dateFrom) params.set("date_from", dateFrom);
+  if (dateTo) params.set("date_to", dateTo);
   const qs = params.toString();
   const { data, isError } = useQuery({
-    queryKey: ["customers", team ? "team" : (repId ?? "me"), tag, tab === "all"],
+    queryKey: ["customers", team ? "team" : (repId ?? "me"), tag, tab === "all", dateFrom, dateTo],
     queryFn: () => apiGet<CustomerInsights>(`/analytics/customers${qs ? `?${qs}` : ""}`),
   });
   const ci = isError ? undefined : data;
@@ -201,8 +209,10 @@ export default function CustomerPanel({ repId, team = false }: { repId?: string;
   const [tab, setTab] = useState<Tab>("suggested");
   const [tag, setTag] = useState("all");
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const { data: me } = useMe();
-  const { ci, lists } = useCustomerLists(repId, team, tag, tab);
+  const { ci, lists } = useCustomerLists(repId, team, tag, tab, dateFrom, dateTo);
   const list = lists[tab] ?? [];
   const pickTab = (t: Tab) => {
     setTab(t);
@@ -227,8 +237,22 @@ export default function CustomerPanel({ repId, team = false }: { repId?: string;
         <PanelTitle ci={ci} team={team} />
         <TabBar tab={tab} lists={lists} onPick={pickTab} />
       </div>
+      <div className="mb-4">
+        <DateRangeFilter
+          from={dateFrom}
+          to={dateTo}
+          onChange={([f, t]) => {
+            setDateFrom(f);
+            setDateTo(t);
+            setPicked(new Set());
+          }}
+          testId="customers-date-range"
+        />
+      </div>
       <TypeFilters tag={tag} onPick={pickTag} />
-      {ci && tag === "all" && (ci.type_breakdown ?? []).length > 0 && <TypeBreakdown ci={ci} onPick={pickTag} />}
+      {ci && tag === "all" && ((ci.type_breakdown ?? []).length > 0 || ci.untagged_customers > 0) && (
+        <TypeBreakdown ci={ci} onPick={pickTag} />
+      )}
       <TabHint tab={tab} />
       {canBulk && <BulkTagBar tab={tab} list={list} picked={picked} setPicked={setPicked} />}
       <div className={cn("divide-y divide-border", tab === "all" && "max-h-[640px] overflow-y-auto pr-1")} data-testid={`customer-list-${tab}`}>
@@ -312,8 +336,19 @@ function TypeFilters({ tag, onPick }: { tag: string; onPick: (t: string) => void
 
 function TypeBreakdown({ ci, onPick }: { ci: CustomerInsights; onPick: (t: string) => void }) {
   return (
-    <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-5" data-testid="customer-type-breakdown">
-      {(ci.type_breakdown ?? []).map((t) => (
+    <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6" data-testid="customer-type-breakdown">
+      {ci.untagged_customers > 0 && (
+        <button
+          data-testid="customer-type-card-untagged"
+          onClick={() => onPick("untagged")}
+          className="rounded-lg border border-dashed border-amber-500/50 bg-amber-500/[0.04] p-3 text-left transition-colors duration-150 hover:border-amber-500/80"
+        >
+          <TagBadge tag="" />
+          <p className="mt-2 font-heading text-xl font-bold text-white">{ci.untagged_customers}</p>
+          <p className="font-mono text-[11px] text-slate-500">need a business type</p>
+        </button>
+      )}
+      {(ci.type_breakdown ?? []).filter((t) => t.tag !== "untagged").map((t) => (
         <button
           key={t.tag}
           data-testid={`customer-type-card-${t.tag}`}
