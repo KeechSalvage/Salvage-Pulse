@@ -186,6 +186,69 @@ class CustomerProfileTests(unittest.TestCase):
         self.assertNotIn("15550007101", keys)
 
 
+class RingCentralImportTests(unittest.TestCase):
+    """The upload screen must really add calls, not just report success."""
+
+    CSV = (
+        "Interaction ID,Interaction Name,Host Name,Host Email,Inbound/Outbound,Date and Time,"
+        "Duration,Interaction Category,Topics,Trackers,External Participants,Interaction Url,Score\n"
+        "i-1001,Inbound parts call,Erica Import,erica@import.test,Inbound,2026-10-01T10:00:00Z,"
+        "60,Sales Enquiry Calls,Parts Inquiry; Pricing,,Name: Acme Collision; Email: ; Phone: 15550008001,https://rc/1001,8\n"
+        "i-1002,Outbound delivery,Bob Import,bob@import.test,Outbound,2026-10-02T11:00:00Z,"
+        "90,Order Processing Calls,Delivery Update,,Name: Jane Doe; Email: ; Phone: 15550008002,https://rc/1002,9\n"
+    )
+
+    def test_import_adds_calls_and_dedupes_by_interaction_id(self):
+        client = _client()
+        owner, _, _ = _signup(client, yard="Import Yard")
+        response = client.post(
+            "/api/calls/import",
+            files={"file": ("ringcentral.csv", self.CSV.encode("utf-8"), "text/csv")},
+            data={"replace_demo": "false"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual(body["total_rows"], 2)
+        self.assertEqual(body["imported"], 2)
+        self.assertEqual(body["updated"], 0)
+        self.assertEqual(len(body["rep_logins"]), 2)
+        self.assertEqual({login["email"] for login in body["rep_logins"]}, {"erica@import.test", "bob@import.test"})
+
+        calls = client.get("/api/calls").json()
+        imported = [c for c in calls if c.get("external_id") in ("i-1001", "i-1002")]
+        self.assertEqual(len(imported), 2)
+        by_external = {c["external_id"]: c for c in imported}
+        self.assertEqual(by_external["i-1001"]["category"], "Sales Inquiry")
+        self.assertEqual(by_external["i-1002"]["category"], "Delivery")
+        self.assertTrue(by_external["i-1002"]["delivery_call"])
+        self.assertEqual(by_external["i-1001"]["rep_name"], "Erica Import")
+        self.assertEqual(by_external["i-1002"]["rep_name"], "Bob Import")
+        self.assertEqual(by_external["i-1001"]["org_id"], owner["org_id"])
+
+        again = client.post(
+            "/api/calls/import",
+            files={"file": ("ringcentral.csv", self.CSV.encode("utf-8"), "text/csv")},
+            data={"replace_demo": "false"},
+        )
+        self.assertEqual(again.status_code, 200, again.text)
+        second = again.json()
+        self.assertEqual(second["imported"], 0)
+        self.assertEqual(second["updated"], 2)
+        calls_after = client.get("/api/calls").json()
+        self.assertEqual(len([c for c in calls_after if c.get("external_id") in ("i-1001", "i-1002")]), 2)
+
+    def test_import_rejects_empty_file(self):
+        client = _client()
+        _signup(client, yard="Empty Import Yard")
+        response = client.post(
+            "/api/calls/import",
+            files={"file": ("empty.csv", b"Interaction ID,Host Name\n", "text/csv")},
+            data={"replace_demo": "false"},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("No call rows", response.json()["detail"])
+
+
 class ClassificationAndTextTests(unittest.TestCase):
     """Manual category correction, review queue, and text permission."""
 

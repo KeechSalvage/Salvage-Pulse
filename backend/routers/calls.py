@@ -7,6 +7,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 import analyzer
+import ringcentral_import
 from auth_utils import get_current_user, get_uploads_dir
 from gemini_service import analyze_audio_call_llm, is_gemini_configured, normalize_audio_mime
 import store
@@ -1054,30 +1055,29 @@ async def post_bulk_audio(
 
 
 @router.post("/api/calls/import")
-async def post_calls_import(request: Request, file: UploadFile = File(...)) -> dict[str, Any]:
+async def post_calls_import(
+    request: Request,
+    file: UploadFile = File(...),
+    replace_demo: bool = Form(False),
+) -> dict[str, Any]:
     actor = get_current_user(request)
     if not is_manager(actor):
         raise HTTPException(status_code=403, detail="Manager access required to import calls")
     content = await file.read()
     validate_upload(content, file.filename or "import.csv", {".csv", ".xlsx", ".xls"}, max_bytes=10 * 1024 * 1024)
-    return {
-        "file_from": "2026-10-01",
-        "file_to": store.today_str(),
-        "total_rows": 48,
-        "imported": 48,
-        "updated": 0,
-        "skipped": 0,
-        "reps_created": [],
-        "rep_logins": [],
-        "demo_data_removed": False,
-        "vehicles": {
-            "matched": 38,
-            "newly_matched": 38,
-            "with_part": 30,
-            "top_makes": [{"make": "Ford", "calls": 18}, {"make": "Chevrolet", "calls": 12}],
-            "untagged": 10,
-        },
-    }
+    org_id = effective_org(actor)
+    if not org_id:
+        raise HTTPException(status_code=400, detail="Choose a yard before importing calls")
+    try:
+        return ringcentral_import.import_ringcentral(
+            content=content,
+            filename=file.filename or "import.csv",
+            org_id=org_id,
+            actor=actor,
+            replace_demo=replace_demo,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/api/calls/{call_id}/attach")
