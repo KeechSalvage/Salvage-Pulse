@@ -94,7 +94,16 @@ def _master_client() -> TestClient:
 class CustomerProfileTests(unittest.TestCase):
     """Customer profile edits, the untagged queue, and date filtering."""
 
-    def _add_call(self, owner: dict, *, phone: str, name: str, created_at: str) -> None:
+    def _add_call(
+        self,
+        owner: dict,
+        *,
+        phone: str,
+        name: str,
+        created_at: str,
+        outcome: str = "pending",
+        order_value: float = 0.0,
+    ) -> None:
         st = store.get_state()
         st.setdefault("calls", []).append({
             "id": f"call-{uuid.uuid4().hex}",
@@ -108,7 +117,8 @@ class CustomerProfileTests(unittest.TestCase):
             "status": "analyzed",
             "source": "test",
             "category": "Sales Inquiry",
-            "outcome": "pending",
+            "outcome": outcome,
+            "order_value": order_value,
             "overall_score": 70,
             "created_at": created_at,
         })
@@ -145,6 +155,28 @@ class CustomerProfileTests(unittest.TestCase):
         self.assertEqual(row["name"], "Acme Fleet")
         self.assertEqual(row["email"], "ops@acme.test")
         self.assertFalse(row["text_ok"])
+
+    def test_driver_and_other_are_excluded_from_sales_metrics(self):
+        client = _client()
+        owner, _, _ = _signup(client, yard="Customer Type Yard")
+        self._add_call(owner, phone="15550007501", name="Acme Collision", created_at="2026-05-10T12:00:00Z", outcome="won", order_value=100)
+        self._add_call(owner, phone="15550007502", name="Test Driver", created_at="2026-05-11T12:00:00Z", outcome="won", order_value=50)
+        self._add_call(owner, phone="15550007503", name="Mystery Caller", created_at="2026-05-12T12:00:00Z", outcome="won", order_value=75)
+        tagged = client.put("/api/customers/15550007503/tag", json={"tag": "other"})
+        self.assertEqual(tagged.status_code, 200, tagged.text)
+
+        overview = client.get("/api/analytics/overview").json()
+        self.assertEqual(overview["total_calls"], 3)
+        self.assertEqual(overview["won"], 1)
+        self.assertEqual(overview["conversion_rate"], 100.0)
+
+        insights = client.get("/api/analytics/customers?include_all=true").json()
+        tags = {c["key"]: c["tag"] for c in insights["all_customers"]}
+        self.assertEqual(tags["15550007502"], "driver")
+        self.assertEqual(tags["15550007503"], "other")
+        breakdown = {row["tag"]: row for row in insights["type_breakdown"]}
+        self.assertIn("driver", breakdown)
+        self.assertIn("other", breakdown)
 
     def test_bulk_confirm_suggested_tags(self):
         client = _client()
@@ -706,7 +738,7 @@ class AuthorizationTests(unittest.TestCase):
         customer = next((c.get("customer_name") for c in calls if c.get("customer_name")), None)
         self.assertTrue(customer)
         self.assertEqual(
-            keech.put(f"/api/customers/{customer}/tag", json={"tag": "keech-tag"}).status_code,
+            keech.put(f"/api/customers/{customer}/tag", json={"tag": "fleet"}).status_code,
             200,
         )
 
@@ -726,14 +758,14 @@ class AuthorizationTests(unittest.TestCase):
         })
         store.save_state()
         self.assertEqual(
-            other.put(f"/api/customers/{customer}/tag", json={"tag": "other-tag"}).status_code,
+            other.put(f"/api/customers/{customer}/tag", json={"tag": "other"}).status_code,
             200,
         )
 
         keech_profile = keech.get(f"/api/customers/{customer}").json()
         other_profile = other.get(f"/api/customers/{customer}").json()
-        self.assertEqual(keech_profile["stat"]["tag"], "keech-tag")
-        self.assertEqual(other_profile["stat"]["tag"], "other-tag")
+        self.assertEqual(keech_profile["stat"]["tag"], "fleet")
+        self.assertEqual(other_profile["stat"]["tag"], "other")
 
     def test_analytics_customers_are_scoped_to_the_yard(self):
         other = _client()

@@ -369,6 +369,7 @@ def _is_sales_call(call: dict[str, Any]) -> bool:
 
 
 def _row_from_calls(
+    state: dict[str, Any],
     calls: list[dict[str, Any]],
     vehicles: list[dict[str, Any]],
     *,
@@ -376,9 +377,10 @@ def _row_from_calls(
     model: str,
     body_type: str,
 ) -> dict[str, Any]:
-    won = sum(1 for c in calls if _is_won(c))
-    lost = sum(1 for c in calls if _is_lost(c))
-    sales = sum(1 for c in calls if _is_sales_call(c))
+    sales_source = [c for c in calls if not call_is_non_sales_customer(state, c)]
+    won = sum(1 for c in sales_source if _is_won(c))
+    lost = sum(1 for c in sales_source if _is_lost(c))
+    sales = sum(1 for c in sales_source if _is_sales_call(c))
     years = [v["year"] for v in vehicles if isinstance(v.get("year"), int)]
     parts = Counter(v["part"] for v in vehicles if v.get("part"))
     last_call = max((c.get("created_at") or "" for c in calls), default="")
@@ -429,6 +431,7 @@ def build_vehicle_demand(
 
     model_rows = [
         _row_from_calls(
+            state,
             [c for c, _ in items],
             [v for _, v in items],
             make=key[0],
@@ -439,6 +442,7 @@ def build_vehicle_demand(
     ]
     make_rows = [
         _row_from_calls(
+            state,
             [c for c, _ in items],
             [v for _, v in items],
             make=make,
@@ -490,11 +494,12 @@ def build_lost_vehicles(
     rows: list[dict[str, Any]] = []
     cutoff = _days_ago_iso(30)
     for (make, model, part), items in groups.items():
-        lost = sum(1 for c, _ in items if _is_lost(c))
+        sales_items = [(c, v) for c, v in items if not call_is_non_sales_customer(state, c)]
+        lost = sum(1 for c, _ in sales_items if _is_lost(c))
         if lost == 0:
             continue
-        won = sum(1 for c, _ in items if _is_won(c))
-        sales = sum(1 for c, _ in items if _is_sales_call(c))
+        won = sum(1 for c, _ in sales_items if _is_won(c))
+        sales = sum(1 for c, _ in sales_items if _is_sales_call(c))
         years = [v["year"] for _, v in items if isinstance(v.get("year"), int)]
         rows.append({
             "make": make,
@@ -577,7 +582,7 @@ def build_stock_alerts(
             "projected": projected,
             "baseline": baseline,
             "ratio": ratio,
-            "lost": sum(1 for c, _ in this_calls if _is_lost(c)),
+            "lost": sum(1 for c, _ in this_calls if _is_lost(c) and not call_is_non_sales_customer(state, c)),
         })
 
     sort_key = {
@@ -636,6 +641,23 @@ def _customer_profile(state: dict[str, Any], org_id: Optional[str], key: str) ->
         if isinstance(value, dict):
             return value
     return {}
+
+
+NON_SALES_CUSTOMER_TAGS = {"driver", "other"}
+
+
+def call_is_non_sales_customer(state: dict[str, Any], call: dict[str, Any]) -> bool:
+    """Drivers and "other" callers stay in call history but not in sales metrics."""
+    key = str(call.get("customer_phone") or call.get("customer_name") or "")
+    manual = _manual_tag(state, call.get("org_id"), key)
+    if manual:
+        return manual in NON_SALES_CUSTOMER_TAGS
+    tag, _ = infer_customer_tag(str(call.get("customer_name") or ""))
+    return tag in NON_SALES_CUSTOMER_TAGS
+
+
+def sales_calls_only(state: dict[str, Any], calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [c for c in calls if not c.get("delivery_call") and not call_is_non_sales_customer(state, c)]
 
 
 def _customer_group_key(call: dict[str, Any]) -> str:
@@ -715,7 +737,10 @@ def build_customer_insights(
         profile = _customer_profile(state, org_id, key) or _customer_profile(state, org_id, _group)
         name = str(profile.get("name") or latest.get("customer_name") or key)
         phone = str(latest.get("customer_phone") or "")
-        orders = [c for c in group_calls if _is_won(c) and not c.get("delivery_call")]
+        orders = [
+            c for c in group_calls
+            if _is_won(c) and not c.get("delivery_call") and not call_is_non_sales_customer(state, c)
+        ]
         ai_value = sum(float(c.get("order_value") or 0.0) for c in orders)
         unvalued = sum(1 for c in orders if not (float(c.get("order_value") or 0.0) > 0))
         est_value = ai_value + unvalued * avg_order
@@ -768,7 +793,7 @@ def build_customer_insights(
         }
         all_customers.append(stat)
 
-        bucket = customer_tag if customer_tag in {"body_shop", "mechanic", "fleet", "retail", "dealership", "regular"} else "untagged"
+        bucket = customer_tag if customer_tag in {"body_shop", "mechanic", "fleet", "retail", "dealership", "driver", "other", "regular"} else "untagged"
         type_counts[bucket]["customers"] += 1
         type_counts[bucket]["calls"] += len(group_calls)
         type_counts[bucket]["orders"] += len(orders)
@@ -796,8 +821,9 @@ def build_customer_insights(
         for tag_name, values in sorted(type_counts.items(), key=lambda kv: -kv[1]["customers"])
     ]
 
-    suggested = [c for c in filtered if c["calls"] >= 2 and c["orders"] == 0][:15] or filtered[:15]
-    win_back = [c for c in filtered if c["orders"] > 0][:15]
+    sales_filtered = [c for c in filtered if c["tag"] not in NON_SALES_CUSTOMER_TAGS]
+    suggested = [c for c in sales_filtered if c["calls"] >= 2 and c["orders"] == 0][:15] or sales_filtered[:15]
+    win_back = [c for c in sales_filtered if c["orders"] > 0][:15]
     limit = 500 if include_all else 50
 
     return {
@@ -840,7 +866,7 @@ def _winback_confirmation(state: dict[str, Any], mark: dict[str, Any]) -> tuple[
     for call in state.get("calls", []):
         if org_id is not None and call.get("org_id") != org_id:
             continue
-        if not _is_won(call) or call.get("delivery_call"):
+        if not _is_won(call) or call.get("delivery_call") or call_is_non_sales_customer(state, call):
             continue
         if (call.get("created_at") or "") <= created:
             continue
@@ -1386,7 +1412,7 @@ def build_champions(state: dict[str, Any], org_id: Optional[str], *, site_id: Op
         sales: Counter[str] = Counter()
         names: dict[str, str] = {}
         for call in month_calls:
-            if _is_won(call) and not call.get("delivery_call") and call.get("rep_id"):
+            if _is_won(call) and not call.get("delivery_call") and not call_is_non_sales_customer(state, call) and call.get("rep_id"):
                 sales[call["rep_id"]] += 1
                 names[call["rep_id"]] = call.get("rep_name") or names.get(call["rep_id"], "Rep")
         if sales:
@@ -1397,7 +1423,7 @@ def build_champions(state: dict[str, Any], org_id: Optional[str], *, site_id: Op
                 "period": month,
                 "names": [names.get(rid, "Rep") for rid in winners],
                 "rep_ids": winners,
-                "detail": f"{top} sales · {round(top / max(1, sum(1 for c in month_calls if c.get('rep_id') in winners and _is_sales_call(c))) * 100, 1)}% close rate",
+                "detail": f"{top} sales · {round(top / max(1, sum(1 for c in month_calls if c.get('rep_id') in winners and _is_sales_call(c) and not call_is_non_sales_customer(state, c))) * 100, 1)}% close rate",
                 "site_ids": [],
             })
             for rid in winners:
@@ -1815,14 +1841,15 @@ def build_report_summary(
     # Delivery calls are logged so the yard can see them, but they never count
     # as a sale or as vehicle demand.
     metric_calls = [c for c in calls if not c.get("delivery_call")]
+    sales_metric_calls = [c for c in metric_calls if not call_is_non_sales_customer(state, c)]
     scored = [c for c in calls if c.get("overall_score")]
     avg_score = round(sum(c.get("overall_score", 0) for c in scored) / len(scored), 1) if scored else 0.0
     durations = [c.get("duration_sec", 0) for c in calls if c.get("duration_sec")]
     avg_dur = round(sum(durations) / len(durations), 1) if durations else 0.0
     inbound = sum(1 for c in calls if c.get("direction", "inbound") == "inbound")
     outbound = sum(1 for c in calls if c.get("direction") == "outbound")
-    sales_calls = [c for c in metric_calls if _is_sales_call(c)]
-    won = [c for c in metric_calls if _is_won(c)]
+    sales_calls = [c for c in sales_metric_calls if _is_sales_call(c)]
+    won = [c for c in sales_metric_calls if _is_won(c)]
     revenue = sum(float(c.get("order_value") or 0.0) for c in won)
     close_rate = round(len(won) / max(len(sales_calls), 1) * 100, 1) if sales_calls else 0.0
 
@@ -1837,8 +1864,9 @@ def build_report_summary(
         rname = user.get("name") or (rcalls[0].get("rep_name") if rcalls else "Rep")
         r_scored = [c for c in rcalls if c.get("overall_score")]
         r_metric_calls = [c for c in rcalls if not c.get("delivery_call")]
-        r_sales = [c for c in r_metric_calls if _is_sales_call(c)]
-        r_won = [c for c in r_metric_calls if _is_won(c)]
+        r_sales_metric = [c for c in r_metric_calls if not call_is_non_sales_customer(state, c)]
+        r_sales = [c for c in r_sales_metric if _is_sales_call(c)]
+        r_won = [c for c in r_sales_metric if _is_won(c)]
         by_rep.append({
             "rep_id": rid,
             "name": rname,
@@ -1855,7 +1883,7 @@ def build_report_summary(
     for call in calls:
         entry = cat_map[call.get("category") or "Sales Inquiry"]
         entry["calls"] += 1
-        if _is_won(call):
+        if _is_won(call) and not call_is_non_sales_customer(state, call):
             entry["won"] += 1
     by_category = [
         {"label": label, "calls": values["calls"], "won": values["won"], "key": ""}
@@ -1867,7 +1895,7 @@ def build_report_summary(
         part = _part_from_topics(call, _call_full(state, call))
         if part:
             part_map[part]["calls"] += 1
-            if _is_won(call):
+            if _is_won(call) and not call_is_non_sales_customer(state, call):
                 part_map[part]["won"] += 1
     top_parts = [
         {"label": part, "calls": values["calls"], "won": values["won"], "key": part.lower()}
@@ -1882,7 +1910,7 @@ def build_report_summary(
             continue
         label = f"{vehicle['make']} {vehicle['model']}"
         vehicle_map[label]["calls"] += 1
-        if _is_won(call):
+        if _is_won(call) and not call_is_non_sales_customer(state, call):
             vehicle_map[label]["won"] += 1
         vehicle_keys[label] = f"{vehicle['make']}|{vehicle['model']}"
     top_vehicles = [
@@ -1894,7 +1922,7 @@ def build_report_summary(
     for call in calls:
         day = (call.get("created_at") or today_str())[:10]
         daily_map[day]["calls"] += 1
-        if _is_won(call):
+        if _is_won(call) and not call_is_non_sales_customer(state, call):
             daily_map[day]["won"] += 1
     daily = [{"date": day, "calls": values["calls"], "won": values["won"]} for day, values in sorted(daily_map.items())]
 

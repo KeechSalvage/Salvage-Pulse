@@ -10,7 +10,7 @@ from auth_utils import get_current_user
 import database
 import store
 import yard_analytics as ya
-from database import infer_customer_tag
+from database import CUSTOMER_TAGS, infer_customer_tag
 from security import (
     assert_same_org,
     effective_org,
@@ -110,19 +110,20 @@ def _call_has_warranty(st: dict[str, Any], c: dict[str, Any]) -> bool:
 def _stats(st: dict[str, Any], calls: list[dict[str, Any]]) -> dict[str, Any]:
     scored = [c for c in calls if c.get("overall_score") is not None]
     # Delivery calls are logged for the delivery board but are never sales.
-    sales_calls = [c for c in calls if not c.get("delivery_call")]
+    # Driver and "other" customers stay in call history but are not sales.
+    sales_calls = ya.sales_calls_only(st, calls)
     won = sum(1 for c in sales_calls if c.get("outcome") == "won")
     lost = sum(1 for c in sales_calls if c.get("outcome") == "lost")
     pending = sum(1 for c in sales_calls if c.get("outcome") == "pending")
     sales = won + lost + pending
-    warr = sum(1 for c in calls if _call_has_warranty(st, c))
+    warr = sum(1 for c in sales_calls if _call_has_warranty(st, c))
     return {
         "calls": len(calls),
         "scored": len(scored),
         "avg_score": round(sum(c["overall_score"] for c in scored) / len(scored), 1) if scored else 0,
         "won": won, "lost": lost, "pending": pending,
         "conversion_rate": round(won / sales * 100, 1) if sales else 0,
-        "warranty_pitch_rate": round(warr / len(calls) * 100, 1) if calls else 0,
+        "warranty_pitch_rate": round(warr / len(sales_calls) * 100, 1) if sales_calls else 0,
     }
 
 
@@ -346,7 +347,7 @@ def get_analytics_monthly(
 
     for m in all_months:
         mcalls = months_map[m]
-        metric_calls = [c for c in mcalls if not c.get("delivery_call")]
+        metric_calls = ya.sales_calls_only(st, mcalls)
         m_sales = [c for c in metric_calls if c.get("outcome") in ("won", "lost", "pending")]
         m_won = [c for c in metric_calls if c.get("outcome") == "won"]
         sales_calls_cnt = len(m_sales)
@@ -401,7 +402,7 @@ def _build_monthly_reps(st: dict[str, Any], org_id: Optional[str], site_id: Opti
         total_sales = 0
         for m in all_months:
             mcalls = month_map.get(m, [])
-            metric_calls = [c for c in mcalls if not c.get("delivery_call")]
+            metric_calls = ya.sales_calls_only(st, mcalls)
             m_won = sum(1 for c in metric_calls if c.get("outcome") == "won")
             m_sales = sum(1 for c in metric_calls if c.get("outcome") in ("won", "lost", "pending"))
             total_won += m_won
@@ -447,8 +448,9 @@ def _build_parts_seasonal(st: dict[str, Any], org_id: Optional[str]) -> dict[str
         "Door", "Transmission", "Bumper", "Engine", "Headlight", "Wheel / Rim",
         "Mirror", "Fender", "Axle", "Suspension", "Alternator", "Starter"
     ]
-    total_sales_won = sum(1 for c in calls if c.get("outcome") == "won")
-    total_sales_calls = sum(1 for c in calls if c.get("outcome") in ("won", "lost", "pending"))
+    sales_calls = [c for c in calls if not ya.call_is_non_sales_customer(st, c)]
+    total_sales_won = sum(1 for c in sales_calls if c.get("outcome") == "won")
+    total_sales_calls = sum(1 for c in sales_calls if c.get("outcome") in ("won", "lost", "pending"))
     yard_close_rate = round(total_sales_won / max(1, total_sales_calls) * 100, 1)
 
     # Resolve each call's parts once with the same predicate the drill-down
@@ -459,8 +461,15 @@ def _build_parts_seasonal(st: dict[str, Any], org_id: Optional[str]) -> dict[str
         target = ya.canonical_part(p_name)
         matched = [c for c in calls if target in call_parts[id(c)]]
         asked = len(matched)
-        sold = sum(1 for c in matched if c.get("outcome") == "won")
-        scalls = sum(1 for c in matched if c.get("outcome") in ("won", "lost", "pending"))
+        sold = sum(
+            1 for c in matched
+            if c.get("outcome") == "won" and not ya.call_is_non_sales_customer(st, c)
+        )
+        scalls = sum(
+            1 for c in matched
+            if c.get("outcome") in ("won", "lost", "pending")
+            and not ya.call_is_non_sales_customer(st, c)
+        )
         crate = round(sold / max(1, scalls) * 100, 1) if scalls else 0.0
 
         asked_by_m = []
@@ -468,7 +477,10 @@ def _build_parts_seasonal(st: dict[str, Any], org_id: Optional[str]) -> dict[str
         for m in months:
             mcalls = [c for c in matched if (c.get("created_at") or "")[:7] == m]
             asked_by_m.append(len(mcalls))
-            sold_by_m.append(sum(1 for c in mcalls if c.get("outcome") == "won"))
+            sold_by_m.append(sum(
+                1 for c in mcalls
+                if c.get("outcome") == "won" and not ya.call_is_non_sales_customer(st, c)
+            ))
 
         peak_month = months[asked_by_m.index(max(asked_by_m))] if asked_by_m else ""
 
@@ -722,7 +734,10 @@ def get_customer_profile(key: str, request: Request) -> dict[str, Any]:
         and (c.get("customer_name") == key or c.get("customer_phone") == key)
     ]
     calls.sort(key=lambda c: c.get("created_at", ""), reverse=True)
-    metric_calls = [c for c in calls if not c.get("delivery_call")]
+    metric_calls = [
+        c for c in calls
+        if not c.get("delivery_call") and not ya.call_is_non_sales_customer(st, c)
+    ]
     topics: list[str] = []
     for c in calls[:5]:
         for topic in (c.get("topics") or []):
@@ -760,6 +775,8 @@ def put_customer_tag(key: str, body: dict[str, Any], request: Request) -> dict[s
     tag = body.get("tag") or ""
     if not isinstance(tag, str) or len(tag) > 64:
         raise HTTPException(status_code=400, detail="tag must be a string of 64 characters or fewer")
+    if tag and tag not in CUSTOMER_TAGS:
+        raise HTTPException(status_code=400, detail="Unknown customer type")
     org_id = effective_org(u)
     for store_key in ya.customer_store_keys(org_id, key):
         st.setdefault("customer_tags", {})[store_key] = tag
@@ -826,6 +843,8 @@ def post_customers_bulk_tag(body: dict[str, Any], request: Request) -> dict[str,
     tag = body.get("tag") or ""
     if not isinstance(tag, str) or len(tag) > 64:
         raise HTTPException(status_code=400, detail="tag must be a string of 64 characters or fewer")
+    if tag and tag not in CUSTOMER_TAGS:
+        raise HTTPException(status_code=400, detail="Unknown customer type")
     org_id = effective_org(u)
     for k in keys:
         for store_key in ya.customer_store_keys(org_id, k):

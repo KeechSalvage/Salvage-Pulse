@@ -213,9 +213,21 @@ export const TAG_LABELS: Record<string, string> = {
   mechanic: "Mechanic",
   fleet: "Fleet",
   retail: "Retail",
+  dealership: "Dealership",
+  driver: "Driver",
+  other: "Other",
   untagged: "Untagged",
 };
-const TAG_COLORS: Record<string, string> = { body_shop: "#F472B6", mechanic: "#38BDF8", fleet: "#A78BFA", retail: "#34D399", untagged: "#94A3B8" };
+const TAG_COLORS: Record<string, string> = {
+  body_shop: "#F472B6",
+  mechanic: "#38BDF8",
+  fleet: "#A78BFA",
+  retail: "#34D399",
+  dealership: "#FBBF24",
+  driver: "#2DD4BF",
+  other: "#94A3B8",
+  untagged: "#94A3B8",
+};
 
 export function TagBadge({ tag, auto, testId }: { tag: string; auto?: boolean; testId?: string }) {
   const t = tag || "untagged";

@@ -14,7 +14,7 @@ import type { BulkTagResult, BulkTagUpdate, CustomerInsights, CustomerStat, Cust
 import { isManagerLike } from "@/lib/types";
 
 type Tab = "suggested" | "value" | "calls" | "orders" | "winback" | "all";
-const BULK_TAGS: CustomerTag[] = ["body_shop", "mechanic", "fleet", "retail"];
+const BULK_TAGS: CustomerTag[] = ["body_shop", "mechanic", "fleet", "retail", "dealership", "driver", "other"];
 
 const TABS: { id: Tab; label: string; icon: typeof Users }[] = [
   { id: "suggested", label: "Suggested", icon: Sparkles },
@@ -25,7 +25,7 @@ const TABS: { id: Tab; label: string; icon: typeof Users }[] = [
   { id: "all", label: "All customers", icon: List },
 ];
 
-const TAG_FILTERS = ["all", "body_shop", "mechanic", "fleet", "retail", "untagged"];
+const TAG_FILTERS = ["all", "body_shop", "mechanic", "fleet", "retail", "dealership", "driver", "other", "untagged"];
 
 const PRIORITY: Record<SuggestedContact["priority"], string> = {
   high: "border-red-500/40 text-red-300 bg-red-500/10",

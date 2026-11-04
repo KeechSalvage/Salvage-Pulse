@@ -334,12 +334,27 @@ def make_customer_key(name: Optional[str], phone: Optional[str]) -> str:
     return f"n:{clean_name or 'unknown'}"
 
 
+CUSTOMER_TAGS = {
+    "body_shop",
+    "mechanic",
+    "fleet",
+    "retail",
+    "dealership",
+    "driver",
+    "other",
+}
+
+
 def infer_customer_tag(name: Optional[str]) -> Tuple[str, str]:
     if not name:
         return ("untagged", "auto")
     low = name.lower()
     if any(w in low for w in ["collision", "body", "paint", "autobody", "fender", "restoration"]):
         return ("body_shop", "auto")
+    if any(w in low for w in ["dealer", "dealership", "auto sales", "car sales", "used car", "new car", "auto group"]):
+        return ("dealership", "auto")
+    if any(w in low for w in ["driver", "courier", "transporter", "tow truck", "pickup driver"]):
+        return ("driver", "auto")
     if any(w in low for w in ["fleet", "transit", "plumbing", "hvac", "logistics", "delivery", "municipal", "county", "trucking"]):
         return ("fleet", "auto")
     if any(w in low for w in ["auto", "repair", "garage", "motors", "service", "tire", "automotive", "mechanic", "shop", "transmission", "imports"]):

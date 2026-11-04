@@ -799,7 +799,7 @@ export interface CustomerProfileUpdate {
   text_ok: boolean | null;
 }
 
-export type CustomerTag = "body_shop" | "mechanic" | "fleet" | "retail";
+export type CustomerTag = "body_shop" | "mechanic" | "fleet" | "retail" | "dealership" | "driver" | "other";
 
 export interface CustomerTagUpdate {
   tag: CustomerTag | null;

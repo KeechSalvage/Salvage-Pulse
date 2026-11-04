@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import type { CustomerNote, CustomerNoteCreate, CustomerProfile, CustomerProfileUpdate, CustomerStat, CustomerTag, CustomerTagUpdate } from "@/lib/types";
 import { isManagerLike } from "@/lib/types";
 
-const TAG_OPTIONS: CustomerTag[] = ["body_shop", "mechanic", "fleet", "retail"];
+const TAG_OPTIONS: CustomerTag[] = ["body_shop", "mechanic", "fleet", "retail", "dealership", "driver", "other"];
 
 function fmtPhone(p: string) {
   const d = p.replace(/\D/g, "").slice(-10);
