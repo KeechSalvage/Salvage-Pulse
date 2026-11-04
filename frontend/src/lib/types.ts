@@ -406,9 +406,13 @@ export interface MetricDef {
 }
 
 export interface ScoringSettings {
+  site_id: string;
   custom_scoring: boolean;
   weights: Record<string, number>;
   defaults: Record<string, number>;
+  criteria: Record<string, string>;
+  default_criteria: Record<string, string>;
+  instructions: string;
   metrics: MetricDef[];
 }
 

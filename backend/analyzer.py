@@ -250,6 +250,8 @@ def analyze_transcript(
     customer_name: str = "",
     rep_name: str = "",
     custom_weights: Optional[Dict[str, float]] = None,
+    custom_criteria: Optional[Dict[str, str]] = None,
+    custom_instructions: str = "",
     direction: str = "inbound",
 ) -> Dict[str, Any]:
     """Primary entry point for call scoring.
@@ -260,7 +262,11 @@ def analyze_transcript(
     if is_gemini_configured():
         try:
             llm_result = analyze_call_transcript_llm(
-                transcript, customer_name=customer_name, rep_name=rep_name
+                transcript,
+                customer_name=customer_name,
+                rep_name=rep_name,
+                custom_criteria=custom_criteria,
+                custom_instructions=custom_instructions,
             )
             if llm_result and isinstance(llm_result, dict):
                 # Ensure turns list is populated

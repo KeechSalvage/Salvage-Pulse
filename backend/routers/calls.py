@@ -12,7 +12,8 @@ from auth_utils import get_current_user, get_uploads_dir
 from gemini_service import analyze_audio_call_llm, is_gemini_configured, normalize_audio_mime
 import store
 import yard_analytics as ya
-from database import CATEGORIES, VEHICLE_CATALOG, get_org_scoring_config, compute_weighted_overall_score
+from database import CATEGORIES, VEHICLE_CATALOG, compute_weighted_overall_score
+from scoring_config import resolve_scoring
 from security import (
     ALLOWED_AUDIO_EXTENSIONS,
     assert_call_access,
@@ -569,8 +570,9 @@ def post_call_reanalyze(call_id: str, request: Request) -> dict[str, Any]:
 
     # Get yard scoring configuration
     yard_org_id = match.get("org_id") or u.get("org_id") or ""
-    has_custom, yard_weights = get_org_scoring_config(yard_org_id)
-    custom_weights = yard_weights if has_custom else None
+    site_id = match.get("site_id") or (st.get("users_by_id", {}).get(match.get("rep_id"), {}) or {}).get("site_id") or ""
+    scoring = resolve_scoring(st, yard_org_id, site_id or None)
+    custom_weights = scoring["weights"] if scoring["custom_scoring"] else None
 
     # Get full call detail / transcript
     full = full_calls.get(call_id)
@@ -589,6 +591,8 @@ def post_call_reanalyze(call_id: str, request: Request) -> dict[str, Any]:
             customer_name=cust_name,
             rep_name=rep_name,
             custom_weights=custom_weights,
+            custom_criteria=scoring["criteria"],
+            custom_instructions=scoring["instructions"],
             direction=match.get("direction") or "inbound",
         )
         if analyzed:
@@ -697,15 +701,16 @@ def post_call_transcript(body: dict[str, Any], request: Request) -> dict[str, An
     cust_name = body.get("customer_name") or "Direct Caller"
     rep_name = rep.get("name", "Sales Rep")
     yard_org_id = rep.get("org_id") or u.get("org_id") or ""
-
-    has_custom, yard_weights = get_org_scoring_config(yard_org_id)
-    custom_weights = yard_weights if has_custom else None
+    scoring = resolve_scoring(st, yard_org_id, rep.get("site_id") or None)
+    custom_weights = scoring["weights"] if scoring["custom_scoring"] else None
 
     analyzed = analyzer.analyze_transcript(
         transcript,
         customer_name=cust_name,
         rep_name=rep_name,
         custom_weights=custom_weights,
+        custom_criteria=scoring["criteria"],
+        custom_instructions=scoring["instructions"],
         direction="inbound",
     )
 
@@ -802,13 +807,18 @@ async def post_call_audio(
     os.chmod(saved_path, 0o600)
 
     yard_org_id = rep_user.get("org_id") or u.get("org_id") or ""
-    has_custom, yard_weights = get_org_scoring_config(yard_org_id)
-    custom_weights = yard_weights if has_custom else None
+    scoring = resolve_scoring(st, yard_org_id, rep_user.get("site_id") or None)
+    custom_weights = scoring["weights"] if scoring["custom_scoring"] else None
 
     analyzed = None
     if is_gemini_configured():
         analyzed = analyze_audio_call_llm(
-            audio_bytes, mime_type=mime_type, customer_name=cust_name, rep_name=rep_name
+            audio_bytes,
+            mime_type=mime_type,
+            customer_name=cust_name,
+            rep_name=rep_name,
+            custom_criteria=scoring["criteria"],
+            custom_instructions=scoring["instructions"],
         )
         if analyzed and custom_weights and analyzed.get("metrics"):
             from database import compute_weighted_overall_score
@@ -826,6 +836,8 @@ async def post_call_audio(
             customer_name=cust_name,
             rep_name=rep_name,
             custom_weights=custom_weights,
+            custom_criteria=scoring["criteria"],
+            custom_instructions=scoring["instructions"],
             direction="inbound",
         )
         analyzed["transcript"] = transcript
@@ -946,13 +958,18 @@ async def post_bulk_audio(
             os.chmod(saved_path, 0o600)
 
             batch_yard_org_id = rep_user.get("org_id") or u.get("org_id") or ""
-            b_custom, b_weights = get_org_scoring_config(batch_yard_org_id)
-            b_custom_weights = b_weights if b_custom else None
+            b_scoring = resolve_scoring(st, batch_yard_org_id, rep_user.get("site_id") or None)
+            b_custom_weights = b_scoring["weights"] if b_scoring["custom_scoring"] else None
 
             analyzed = None
             if is_gemini_configured():
                 analyzed = analyze_audio_call_llm(
-                    audio_bytes, mime_type=mime_type, customer_name="Inbound Caller", rep_name=rep_name
+                    audio_bytes,
+                    mime_type=mime_type,
+                    customer_name="Inbound Caller",
+                    rep_name=rep_name,
+                    custom_criteria=b_scoring["criteria"],
+                    custom_instructions=b_scoring["instructions"],
                 )
                 if analyzed and b_custom_weights and analyzed.get("metrics"):
                     from database import compute_weighted_overall_score
@@ -970,6 +987,8 @@ async def post_bulk_audio(
                     customer_name="Inbound Caller",
                     rep_name=rep_name,
                     custom_weights=b_custom_weights,
+                    custom_criteria=b_scoring["criteria"],
+                    custom_instructions=b_scoring["instructions"],
                     direction="inbound",
                 )
                 analyzed["transcript"] = fallback_text

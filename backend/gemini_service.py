@@ -161,8 +161,29 @@ Output a valid JSON object matching this schema:
 """
 
 
+def _custom_evaluation_block(
+    criteria: Optional[Dict[str, str]] = None,
+    instructions: str = "",
+) -> str:
+    """Append yard/location-specific evaluation guidance to the system prompt."""
+    lines: list[str] = []
+    if instructions and instructions.strip():
+        lines.append("LOCATION-SPECIFIC INSTRUCTIONS:")
+        lines.append(instructions.strip()[:4000])
+    if criteria:
+        lines.append("LOCATION-SPECIFIC METRIC CRITERIA:")
+        for key, value in criteria.items():
+            if isinstance(value, str) and value.strip():
+                lines.append(f"- {key}: {value.strip()[:4000]}")
+    return "\n".join(lines)
+
+
 def analyze_call_transcript_llm(
-    transcript: str, customer_name: str = "", rep_name: str = ""
+    transcript: str,
+    customer_name: str = "",
+    rep_name: str = "",
+    custom_criteria: Optional[Dict[str, str]] = None,
+    custom_instructions: str = "",
 ) -> Optional[Dict[str, Any]]:
     """Analyze a call transcript using Google Gemini Flash.
     Returns structured scorecard dictionary, or None if Gemini is unconfigured or fails.
@@ -182,9 +203,11 @@ TRANSCRIPT:
 \"\"\"
 """
 
+    custom_block = _custom_evaluation_block(custom_criteria, custom_instructions)
+    system_prompt = SALVAGE_SCORING_SYSTEM_PROMPT + (f"\n\n{custom_block}" if custom_block else "")
     payload = {
         "systemInstruction": {
-            "parts": [{"text": SALVAGE_SCORING_SYSTEM_PROMPT}]
+            "parts": [{"text": system_prompt}]
         },
         "contents": [
             {
@@ -253,6 +276,8 @@ def analyze_audio_call_llm(
     mime_type: str = "audio/wav",
     customer_name: str = "",
     rep_name: str = "",
+    custom_criteria: Optional[Dict[str, str]] = None,
+    custom_instructions: str = "",
 ) -> Optional[Dict[str, Any]]:
     """Transcribe and evaluate an audio recording using Gemini Multimodal Audio.
     Returns scorecard dictionary including full transcript and turns, or None on failure.
@@ -270,9 +295,11 @@ Rep Name (if known): {rep_name or 'Sales Rep'}
 Transcribe the conversation accurately turn by turn, extract vehicle, part, and pricing, and evaluate sales performance.
 """
 
+    custom_block = _custom_evaluation_block(custom_criteria, custom_instructions)
+    system_prompt = SALVAGE_AUDIO_SYSTEM_PROMPT + (f"\n\n{custom_block}" if custom_block else "")
     payload = {
         "systemInstruction": {
-            "parts": [{"text": SALVAGE_AUDIO_SYSTEM_PROMPT}]
+            "parts": [{"text": system_prompt}]
         },
         "contents": [
             {

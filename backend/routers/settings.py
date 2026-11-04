@@ -12,6 +12,7 @@ from auth_utils import get_current_user
 import store
 import yard_analytics as ya
 from database import CATEGORIES, METRICS, get_db, get_org_scoring_config, compute_weighted_overall_score
+from scoring_config import resolve_scoring
 from security import (
     ALLOWED_IMAGE_EXTENSIONS,
     assert_same_org,
@@ -136,18 +137,21 @@ def get_meta(request: Request = None) -> dict[str, Any]:
 
 
 @router.get("/api/settings/scoring")
-def get_scoring_settings(request: Request) -> dict[str, Any]:
+def get_scoring_settings(
+    request: Request,
+    site_id: Optional[str] = Query(None),
+) -> dict[str, Any]:
     u = get_current_user(request)
+    st = store.get_state()
     org_id = effective_org(u)
     if not org_id:
-        st = store.get_state()
         org_id = st.get("org", {}).get("id") or store.KEECH_ORG_ID
+    if site_id:
+        _site_in_org(st, site_id, org_id)
 
-    scoring = _get_yard_scoring(org_id)
+    scoring = resolve_scoring(st, org_id, site_id or None)
     return {
-        "custom_scoring": scoring["custom_scoring"],
-        "weights": scoring["weights"],
-        "defaults": scoring["defaults"],
+        **scoring,
         "metrics": METRICS,
     }
 
@@ -162,10 +166,14 @@ def update_scoring_settings(request: Request, body: dict[str, Any]) -> dict[str,
     st = store.get_state()
     if not org_id:
         org_id = st.get("org", {}).get("id") or store.KEECH_ORG_ID
+    site_id = str(body.get("site_id") or "")
+    if site_id:
+        _site_in_org(st, site_id, org_id)
 
     custom_scoring = bool(body.get("custom_scoring", False))
     raw_weights = body.get("weights") or {}
     defaults = {m["key"]: m["weight"] for m in METRICS}
+    current = resolve_scoring(st, org_id, site_id or None)
 
     weights: dict[str, int] = {}
     for m in METRICS:
@@ -184,70 +192,111 @@ def update_scoring_settings(request: Request, body: dict[str, Any]) -> dict[str,
         if total != 100:
             raise HTTPException(status_code=400, detail=f"Metric weights must total exactly 100%. Current total: {total}%.")
 
-    # Update only the target yard in memory store
-    for yard in st.get("admin_orgs", []):
-        if yard.get("id") == org_id:
-            yard["custom_scoring"] = custom_scoring
-            yard["metric_weights"] = weights
+    raw_criteria = body.get("criteria")
+    if raw_criteria is not None and not isinstance(raw_criteria, dict):
+        raise HTTPException(status_code=400, detail="criteria must be an object keyed by metric")
+    criteria = dict(current["criteria"])
+    if isinstance(raw_criteria, dict):
+        for m in METRICS:
+            value = raw_criteria.get(m["key"])
+            if isinstance(value, str) and value.strip():
+                criteria[m["key"]] = value.strip()[:4000]
+    instructions = body.get("instructions")
+    if instructions is None:
+        instructions = current["instructions"]
+    if not isinstance(instructions, str):
+        raise HTTPException(status_code=400, detail="instructions must be text")
+    instructions = instructions.strip()[:4000]
 
-    if st.get("org", {}).get("id") == org_id or org_id == store.KEECH_ORG_ID:
-        st["org"]["custom_scoring"] = custom_scoring
-        st["org"]["metric_weights"] = weights
+    # Update only the selected location, or the yard default when no site is selected.
+    if site_id:
+        site = _site_in_org(st, site_id, org_id)
+        site["scoring"] = {
+            "custom_scoring": custom_scoring,
+            "weights": weights,
+            "criteria": criteria,
+            "instructions": instructions,
+        }
+    else:
+        for yard in st.get("admin_orgs", []):
+            if yard.get("id") == org_id:
+                yard["custom_scoring"] = custom_scoring
+                yard["metric_weights"] = weights
+                yard["metric_criteria"] = criteria
+                yard["ai_instructions"] = instructions
 
-    # Recalculate existing calls scored for this yard
-    active_weights = weights if custom_scoring else defaults
+        if st.get("org", {}).get("id") == org_id or org_id == store.KEECH_ORG_ID:
+            st["org"]["custom_scoring"] = custom_scoring
+            st["org"]["metric_weights"] = weights
+            st["org"]["metric_criteria"] = criteria
+            st["org"]["ai_instructions"] = instructions
+
+    # Recalculate existing calls for this location (or the whole yard).
+    active_weights = weights if custom_scoring else resolve_scoring(st, org_id, None)["weights"]
     full_calls = st.get("full_calls", {})
+    rep_site = {
+        uid: str(usr.get("site_id") or "")
+        for uid, usr in st.get("users_by_id", {}).items()
+        if not org_id or usr.get("org_id") == org_id
+    }
     recalc_count = 0
     updated_calls_db = []
 
     for c in st.get("calls", []):
         c_org = c.get("org_id") or store.KEECH_ORG_ID
-        if c_org == org_id:
-            cid = c.get("id")
-            m = full_calls.get(cid, {}).get("metrics") or c.get("metrics")
-            if m and isinstance(m, dict):
-                new_score = compute_weighted_overall_score(m, custom_weights=active_weights)
-                c["overall_score"] = new_score
-                if cid in full_calls:
-                    full_calls[cid]["overall_score"] = new_score
-                updated_calls_db.append((new_score, cid))
-                recalc_count += 1
+        if c_org != org_id:
+            continue
+        if site_id and str(c.get("site_id") or rep_site.get(c.get("rep_id"), "") or "") != site_id:
+            continue
+        cid = c.get("id")
+        m = full_calls.get(cid, {}).get("metrics") or c.get("metrics")
+        if m and isinstance(m, dict):
+            new_score = compute_weighted_overall_score(m, custom_weights=active_weights)
+            c["overall_score"] = new_score
+            if cid in full_calls:
+                full_calls[cid]["overall_score"] = new_score
+            updated_calls_db.append((new_score, cid))
+            recalc_count += 1
 
     store.save_state()
 
-    # Persist in SQLite strictly isolated to this org_id
-    try:
-        with get_db() as conn:
-            cur = conn.execute(
-                """
-                UPDATE orgs
-                SET custom_scoring = ?, metric_weights_json = ?
-                WHERE id = ?
-                """,
-                (1 if custom_scoring else 0, json.dumps(weights), org_id),
-            )
-            if cur.rowcount == 0:
-                conn.execute(
+    # Persist yard-level weights in SQLite. Location overrides live in state.
+    if not site_id:
+        try:
+            with get_db() as conn:
+                cur = conn.execute(
                     """
-                    INSERT INTO orgs (id, name, yard_name, plan, status, webhook_token, custom_scoring, metric_weights_json, created_at)
-                    VALUES (?, ?, ?, 'enterprise', 'active', 'tok', ?, ?, ?)
+                    UPDATE orgs
+                    SET custom_scoring = ?, metric_weights_json = ?
+                    WHERE id = ?
                     """,
-                    (org_id, "Keech's Auto Salvage", "Keech's Auto Salvage", 1 if custom_scoring else 0, json.dumps(weights), store.now_iso()),
+                    (1 if custom_scoring else 0, json.dumps(weights), org_id),
                 )
-            # Batch update recalculated call scores in SQLite
-            if updated_calls_db:
-                conn.executemany(
-                    "UPDATE calls SET overall_score = ? WHERE id = ?",
-                    updated_calls_db,
-                )
-    except Exception as e:
-        print(f"Error persisting scoring settings to SQLite: {e}")
+                if cur.rowcount == 0:
+                    conn.execute(
+                        """
+                        INSERT INTO orgs (id, name, yard_name, plan, status, webhook_token, custom_scoring, metric_weights_json, created_at)
+                        VALUES (?, ?, ?, 'enterprise', 'active', 'tok', ?, ?, ?)
+                        """,
+                        (org_id, "Keech's Auto Salvage", "Keech's Auto Salvage", 1 if custom_scoring else 0, json.dumps(weights), store.now_iso()),
+                    )
+                if updated_calls_db:
+                    conn.executemany(
+                        "UPDATE calls SET overall_score = ? WHERE id = ?",
+                        updated_calls_db,
+                    )
+        except Exception as e:
+            print(f"Error persisting scoring settings to SQLite: {e}")
 
     return {
         "ok": True,
+        "site_id": site_id,
         "custom_scoring": custom_scoring,
         "weights": weights,
         "defaults": defaults,
+        "criteria": criteria,
+        "default_criteria": current["default_criteria"],
+        "instructions": instructions,
         "metrics": METRICS,
         "recalculated_calls": recalc_count,
     }

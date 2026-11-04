@@ -343,6 +343,100 @@ class RingCentralImportTests(unittest.TestCase):
         self.assertIn("No call rows", response.json()["detail"])
 
 
+class ScoringScopeTests(unittest.TestCase):
+    """Custom AI evaluation is isolated to one location."""
+
+    def _call(self, owner: dict, *, site_id: str, greeting: int, other: int) -> str:
+        cid = f"call-{uuid.uuid4().hex}"
+        st = store.get_state()
+        metrics = {
+            "greeting": greeting,
+            "needs_discovery": other,
+            "product_knowledge": other,
+            "upsell_crosssell": other,
+            "objection_handling": other,
+            "closing": other,
+            "compliance_warranty": other,
+            "tone_empathy": other,
+        }
+        st.setdefault("calls", []).append({
+            "id": cid,
+            "org_id": owner["org_id"],
+            "site_id": site_id,
+            "rep_id": owner["id"],
+            "rep_name": owner["name"],
+            "customer_name": "Scoring Customer",
+            "customer_phone": f"1555{uuid.uuid4().int % 10_000_000:07d}",
+            "direction": "inbound",
+            "duration_sec": 60,
+            "status": "analyzed",
+            "source": "test",
+            "category": "Sales Inquiry",
+            "outcome": "pending",
+            "overall_score": 0,
+            "created_at": store.now_iso(),
+        })
+        st.setdefault("full_calls", {})[cid] = {"metrics": metrics}
+        store.save_state()
+        return cid
+
+    def test_location_scoring_is_isolated(self):
+        client = _client()
+        owner, _, _ = _signup(client, yard="Scoring Scope Yard")
+        north = client.post("/api/sites", json={"name": "North scoring"}).json()["sites"][-1]
+        south = client.post("/api/sites", json={"name": "South scoring"}).json()["sites"][-1]
+        north_call = self._call(owner, site_id=north["id"], greeting=100, other=0)
+        south_call = self._call(owner, site_id=south["id"], greeting=0, other=100)
+
+        weights = {
+            "greeting": 100,
+            "needs_discovery": 0,
+            "product_knowledge": 0,
+            "upsell_crosssell": 0,
+            "objection_handling": 0,
+            "closing": 0,
+            "courtesy": 0,
+        }
+        saved = client.put(
+            "/api/settings/scoring",
+            json={
+                "site_id": north["id"],
+                "custom_scoring": True,
+                "weights": weights,
+                "criteria": {"greeting": "North location greeting standard"},
+                "instructions": "North location: always confirm the delivery address.",
+            },
+        )
+        self.assertEqual(saved.status_code, 200, saved.text)
+        body = saved.json()
+        self.assertTrue(body["custom_scoring"])
+        self.assertEqual(body["criteria"]["greeting"], "North location greeting standard")
+        self.assertEqual(body["instructions"], "North location: always confirm the delivery address.")
+        self.assertGreaterEqual(body["recalculated_calls"], 1)
+
+        north_settings = client.get(f"/api/settings/scoring?site_id={north['id']}").json()
+        self.assertTrue(north_settings["custom_scoring"])
+        self.assertEqual(north_settings["criteria"]["greeting"], "North location greeting standard")
+        self.assertEqual(north_settings["weights"]["greeting"], 100)
+
+        south_settings = client.get(f"/api/settings/scoring?site_id={south['id']}").json()
+        self.assertFalse(south_settings["custom_scoring"])
+        self.assertNotEqual(south_settings["criteria"]["greeting"], "North location greeting standard")
+
+        yard_settings = client.get("/api/settings/scoring").json()
+        self.assertFalse(yard_settings["custom_scoring"])
+
+        calls = {c["id"]: c for c in client.get("/api/calls").json()}
+        self.assertEqual(calls[north_call]["overall_score"], 100)
+        self.assertEqual(calls[south_call]["overall_score"], 0)
+
+        other_yard = _client()
+        _signup(other_yard, yard="Other Scoring Yard")
+        other_settings = other_yard.get("/api/settings/scoring").json()
+        self.assertFalse(other_settings["custom_scoring"])
+        self.assertNotEqual(other_settings["criteria"]["greeting"], "North location greeting standard")
+
+
 class LocationScopeTests(unittest.TestCase):
     """Reps stay locked to their location; managers can compare locations."""
 
