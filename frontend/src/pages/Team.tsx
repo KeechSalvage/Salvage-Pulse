@@ -5,7 +5,7 @@ import DeliveryTipLibrary from "@/components/DeliveryTipLibrary";
 import ChampionBadges from "@/components/ChampionBadges";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlarmClock, ArrowRight, DollarSign, Loader2, Mail, Store, Trophy, Truck, UserPlus } from "lucide-react";
+import { AlarmClock, ArrowRight, Loader2, Mail, Trophy, Truck, UserPlus } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -24,109 +24,11 @@ import LoginUsageAlert from "@/components/LoginUsageAlert";
 import RoleplayScoreboardPanel from "@/components/RoleplayScoreboard";
 import { apiGet, apiPost, apiPut, errorMessage } from "@/lib/api";
 import { useAllReps } from "@/lib/hooks";
-import { RepSiteSelect, SiteFilter, SitesPanel, useSites } from "@/components/Sites";
+import { SiteFilter, useSites } from "@/components/Sites";
 import RepLoginToggle, { RepLoginLog, useLoginLog, whenShort } from "@/components/RepLoginToggle";
 import { cn } from "@/lib/utils";
-import type { BusinessSettings, DigestResult, DigestSettings, Overview, RepCreate, Role, User } from "@/lib/types";
+import type { DigestResult, DigestSettings, Overview, RepCreate, Role, User } from "@/lib/types";
 import { roleLabel } from "@/lib/types";
-
-function OrderValuePanel() {
-  const qc = useQueryClient();
-  const { data } = useQuery({ queryKey: ["business-settings"], queryFn: () => apiGet<BusinessSettings>("/settings/business") });
-  const [val, setVal] = useState<string | null>(null);
-  const cur = val ?? (data?.avg_order_value != null ? String(data.avg_order_value) : "");
-  const save = useMutation({
-    mutationFn: (v: number | null) => apiPut<BusinessSettings>("/settings/business", { avg_order_value: v } satisfies BusinessSettings),
-    onSuccess: (r) => {
-      toast.success(r.avg_order_value ? `Average order value set to $${r.avg_order_value}` : "Reset to default ($350)");
-      setVal(null);
-      qc.invalidateQueries({ queryKey: ["business-settings"] });
-      qc.invalidateQueries({ queryKey: ["customers"] });
-      qc.invalidateQueries({ queryKey: ["customer"] });
-    },
-    onError: (e) => toast.error(errorMessage(e, "Enter a positive dollar amount")),
-  });
-  const num = Number(cur);
-  return (
-    <div data-testid="order-value-panel" className="rounded-xl border border-border bg-card p-6">
-      <div className="flex items-center gap-2">
-        <DollarSign className="size-4 text-amber-400" />
-        <h3 className="text-xl font-bold text-white">Average order value</h3>
-      </div>
-      <p className="mt-1 max-w-2xl text-sm text-slate-400">
-        Used to estimate account value for orders without a scored transcript. Once 3+ sales have been AI-scored, the real average from those calls takes over.
-      </p>
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">$</span>
-          <Input
-            data-testid="order-value-input"
-            type="number"
-            min={1}
-            value={cur}
-            onChange={(e) => setVal(e.target.value)}
-            placeholder="350"
-            className="h-10 w-40 bg-surface pl-7"
-          />
-        </div>
-        <Button data-testid="order-value-save" variant="outline" disabled={save.isPending || !(num > 0)} onClick={() => save.mutate(num)}>
-          Save
-        </Button>
-        {data?.avg_order_value != null && (
-          <Button data-testid="order-value-reset" variant="ghost" disabled={save.isPending} onClick={() => save.mutate(null)}>
-            Reset to default
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function YardNamePanel() {
-  const qc = useQueryClient();
-  const { data } = useQuery({ queryKey: ["business-settings"], queryFn: () => apiGet<BusinessSettings>("/settings/business") });
-  const [val, setVal] = useState<string | null>(null);
-  const cur = val ?? data?.yard_name ?? "";
-  const save = useMutation({
-    mutationFn: (v: string | null) => apiPut<BusinessSettings>("/settings/business", { yard_name: v } satisfies BusinessSettings),
-    onSuccess: (r) => {
-      toast.success(r.yard_name ? `Yard name set to ${r.yard_name}` : "Yard name cleared");
-      setVal(null);
-      qc.invalidateQueries({ queryKey: ["business-settings"] });
-      qc.invalidateQueries({ queryKey: ["customers"] });
-    },
-    onError: (e) => toast.error(errorMessage(e, "Couldn't save the yard name")),
-  });
-  return (
-    <div data-testid="yard-name-panel" className="rounded-xl border border-border bg-card p-6">
-      <div className="flex items-center gap-2">
-        <Store className="size-4 text-amber-400" />
-        <h3 className="text-xl font-bold text-white">Yard name</h3>
-      </div>
-      <p className="mt-1 max-w-2xl text-sm text-slate-400">
-        Used in suggested win-back opening lines, e.g. &ldquo;Hi John, it's Rich from {cur.trim() || "Salvage Pulse Pro"}.&rdquo;
-      </p>
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <Input
-          data-testid="yard-name-input"
-          value={cur}
-          maxLength={80}
-          onChange={(e) => setVal(e.target.value)}
-          placeholder="Salvage Pulse Pro"
-          className="h-10 w-72 bg-surface"
-        />
-        <Button data-testid="yard-name-save" variant="outline" disabled={save.isPending || !cur.trim() || cur.trim() === data?.yard_name} onClick={() => save.mutate(cur.trim())}>
-          Save
-        </Button>
-        {data?.yard_name && (
-          <Button data-testid="yard-name-clear" variant="ghost" disabled={save.isPending} onClick={() => save.mutate(null)}>
-            Clear
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
 
 function DigestPanel() {
   const qc = useQueryClient();
@@ -249,7 +151,6 @@ export default function Team() {
         tiles={[
           { id: "callback-lists", label: "Callback lists", node: <ListProgress /> },
           { id: "delivery-tips", label: "Delivery tip texts", node: <DeliveryTipLibrary /> },
-          { id: "sites", label: "Locations", node: <SitesPanel /> },
           { id: "reps", label: "Rep cards", node: (
             <div>
               <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-border/70 bg-surface/50 p-3">
@@ -309,7 +210,6 @@ export default function Team() {
                     <div className="mt-2 flex items-center gap-2">
                       {r.disabled && <span data-testid={`rep-login-off-${r.id}`} className="rounded-full border border-red-500/40 bg-red-500/10 px-2 py-0.5 font-mono text-[11px] text-red-300">Login off</span>}
                       {r.disabled && lastChange(r.id)?.action === "off" && <span data-testid={`rep-login-off-since-${r.id}`} className="truncate text-[11px] text-slate-500">since {lastChange(r.id)?.at ? whenShort(lastChange(r.id)!.at) : ""} · {lastChange(r.id)?.by ?? "admin"}</span>}
-                      <RepSiteSelect rep={r} />
                       <span className="ml-auto"><RepLoginToggle rep={r} reps={reps.data ?? []} /></span>
                     </div>
                     <ChampionBadges repId={r.id} className="mt-3" testId={`rep-champions-${r.id}`} />
@@ -357,8 +257,6 @@ export default function Team() {
           { id: "truck-trophy", label: "Vehicle-sales trophy", node: <PremiumGate feature="leaderboards" hidden><TruckTrophy /></PremiumGate> },
           { id: "trophy-wall", label: "Trophy wall", node: <PremiumGate feature="leaderboards"><TrophyWallPanel /></PremiumGate> },
           { id: "roleplay-scoreboard", label: "Role-play scoreboard", node: <PremiumGate feature="roleplay"><RoleplayScoreboardPanel /></PremiumGate> },
-          { id: "yard-name", label: "Yard name", node: <YardNamePanel /> },
-          { id: "order-value", label: "Average order value", node: <OrderValuePanel /> },
           { id: "daily-email", label: "Daily email", node: <PremiumGate feature="daily_email"><DigestPanel /></PremiumGate> },
         ]}
       />

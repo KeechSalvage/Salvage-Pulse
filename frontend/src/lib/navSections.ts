@@ -60,7 +60,6 @@ export const YARD_PAGE_SECTIONS: Record<string, PageSection[]> = {
   team: [
     { id: "callback-lists", label: "Callback Lists" },
     { id: "delivery-tips", label: "Delivery Tip Texts" },
-    { id: "sites", label: "Yard Locations" },
     { id: "reps", label: "Rep Cards" },
     { id: "login-log", label: "Login Activity Log" },
     { id: "rep-trends", label: "Rep Comparison" },
@@ -68,8 +67,6 @@ export const YARD_PAGE_SECTIONS: Record<string, PageSection[]> = {
     { id: "truck-trophy", label: "Vehicle-Sales Trophy" },
     { id: "trophy-wall", label: "Trophy Wall" },
     { id: "roleplay-scoreboard", label: "Role-play Scoreboard" },
-    { id: "yard-name", label: "Yard Name" },
-    { id: "order-value", label: "Average Order Value" },
     { id: "daily-email", label: "Daily Email Digest" },
   ],
 

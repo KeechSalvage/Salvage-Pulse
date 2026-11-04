@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import TileGrid from "@/components/TileGrid";
 import LotCompare from "@/components/LotCompare";
-import { LocationLeaderboard, LotSwitcher } from "@/components/Sites";
+import { LocationLeaderboard, SiteFilter } from "@/components/Sites";
 import { lotQS, useLotParam } from "@/lib/lot";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ArrowRight, MapPin, PhoneIncoming, PhoneMissed, PhoneOutgoing, Upload, UserRound, Voicemail } from "lucide-react";
@@ -52,7 +52,7 @@ export default function Dashboard() {
   return (
     <>
       <PageHeader overline={ov?.lot_name ? `${ov.lot_name} · ${lot ? "one lot" : "your location"}` : "Manager telemetry"} title={ov?.lot_name ? `${ov.lot_name} call performance` : "Team call performance"}>
-        <LotSwitcher value={lot} onChange={setLot} testId="dashboard-lot-switcher" hideForLotManager />
+        <SiteFilter value={lot} onChange={setLot} testId="dashboard-lot-switcher" />
         <Link to="/upload" data-testid="dashboard-upload-link" className={buttonVariants({ size: "lg" })}>
           <Upload className="size-4" /> Upload call
         </Link>
@@ -222,13 +222,13 @@ export default function Dashboard() {
             </Panel>
           ) },
           { id: "customers", label: "Customers", span: "xl:col-span-12", node: (
-            <CustomerPanel team />
+            <CustomerPanel team siteId={lot} />
           ) },
           { id: "winback-results", label: "Win-back results", span: "xl:col-span-12", node: (
-            <WinBackResultsPanel />
+            <WinBackResultsPanel lot={lot} />
           ) },
           { id: "winback-leaderboard", label: "Win-back leaderboard", span: "xl:col-span-12", node: (
-            <PremiumGate feature="leaderboards"><WinBackLeaderboardPanel /></PremiumGate>
+            <PremiumGate feature="leaderboards"><WinBackLeaderboardPanel lot={lot} /></PremiumGate>
           ) },
           { id: "call-volume", label: "Calls by hour", span: "xl:col-span-7", node: (
             <Panel className="xl:col-span-7" testId="volume-panel">

@@ -23,6 +23,7 @@ from security import (
     is_staff,
     require_authenticated,
     safe_join,
+    scoped_site_id,
     validate_upload,
 )
 
@@ -62,6 +63,7 @@ def get_calls(
     st = store.get_state()
     u = get_current_user(request)
     org_filter = effective_org(u, org_id)
+    site_id = scoped_site_id(u, site_id)
 
     calls = st.get("calls", [])
     filtered = []
@@ -714,6 +716,7 @@ def post_call_transcript(body: dict[str, Any], request: Request) -> dict[str, An
     summary_item = {
         "id": cid,
         "org_id": yard_org_id,
+        "site_id": rep.get("site_id") or u.get("site_id") or "",
         "rep_id": rep["id"],
         "rep_name": rep["name"],
         "customer_name": cust_name,
@@ -841,6 +844,7 @@ async def post_call_audio(
     summary_item = {
         "id": cid,
         "org_id": rep_user.get("org_id") or u.get("org_id") or "",
+        "site_id": rep_user.get("site_id") or u.get("site_id") or "",
         "rep_id": rep_user["id"],
         "rep_name": rep_user["name"],
         "customer_name": cust_name,
@@ -1129,12 +1133,14 @@ def get_drill_calls(
     part: Optional[str] = Query(None),
     part_sold: Optional[str] = Query(None),
     price_missing: Optional[bool] = Query(None),
+    site_id: Optional[str] = Query(None),
 ) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
     org_id = effective_org(u)
+    site_id = scoped_site_id(u, site_id)
     effective_rep_id = ya.scoped_rep_id(u, rep_id, st)
-    calls = st.get("calls", [])
+    calls = ya.filter_calls_by_site(st, st.get("calls", []), site_id)
     res = []
 
     winback_keys: set[str] = set()

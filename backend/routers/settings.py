@@ -10,6 +10,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from auth_utils import get_current_user
 import store
+import yard_analytics as ya
 from database import CATEGORIES, METRICS, get_db, get_org_scoring_config, compute_weighted_overall_score
 from security import (
     ALLOWED_IMAGE_EXTENSIONS,
@@ -21,6 +22,7 @@ from security import (
     public_user,
     require_authenticated,
     resolve_write_org,
+    scoped_site_id,
     validate_email,
     validate_password,
     validate_upload,
@@ -976,6 +978,13 @@ def update_rep_site(rep_id: str, body: dict[str, Any], request: Request) -> dict
     site_id = str(body.get("site_id") or "")
     if site_id:
         _site_in_org(st, site_id, effective_org(actor))
+    old_site = str(target.get("site_id") or "")
+    if old_site and old_site != site_id:
+        # Freeze past calls to the location the rep was working at when they
+        # happened; new calls follow the new assignment.
+        for call in st.get("calls", []):
+            if call.get("rep_id") == rep_id and not call.get("site_id"):
+                call["site_id"] = old_site
     target["site_id"] = site_id
     store.save_state()
     return public_user(target)
@@ -1001,6 +1010,15 @@ def get_sites(request: Request) -> dict[str, Any]:
         )
         sites.append(item)
     data["sites"] = sites
+    data["my_site_id"] = next(
+        (
+            s["id"]
+            for s in sites
+            if s.get("manager_id") == u.get("id")
+            and u.get("role") not in ("owner", "sales_manager", "inventory_manager")
+        ),
+        "",
+    )
     return data
 
 
@@ -1115,10 +1133,69 @@ def get_site_managers(request: Request) -> list[dict[str, Any]]:
 
 
 @router.get("/api/sites/leaderboard")
-def get_sites_leaderboard(request: Request, days: int = Query(30)) -> dict[str, Any]:
+def get_sites_leaderboard(
+    request: Request,
+    days: int = Query(30),
+    site_id: Optional[str] = Query(None),
+) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
     org_id = effective_org(u)
-    if org_id == store.KEECH_ORG_ID:
-        return st["seed"].get("/sites/leaderboard?days=30", {})
-    return {"sites": [], "days": days}
+    site_id = scoped_site_id(u, site_id)
+    sites = [
+        s for s in st.get("sites_data", {}).get("sites", [])
+        if not org_id or _site_org(s) == org_id
+    ]
+    if site_id:
+        sites = [s for s in sites if s.get("id") == site_id]
+    now = dt.datetime.now(dt.timezone.utc)
+    month = now.strftime("%Y-%m")
+    cutoff = (now - dt.timedelta(days=max(1, days))).strftime("%Y-%m-%dT%H:%M:%SZ")
+    all_calls = [
+        c for c in st.get("calls", [])
+        if not org_id or c.get("org_id") == org_id
+    ]
+    rep_site = {
+        uid: str(usr.get("site_id") or "")
+        for uid, usr in st.get("users_by_id", {}).items()
+        if not org_id or usr.get("org_id") == org_id
+    }
+
+    def call_site(call: dict[str, Any]) -> str:
+        return str(call.get("site_id") or rep_site.get(call.get("rep_id"), "") or "")
+
+    def row_for(site: dict[str, Any] | None) -> dict[str, Any]:
+        sid = str((site or {}).get("id") or "")
+        name = str((site or {}).get("name") or "No location")
+        site_calls = [c for c in all_calls if call_site(c) == sid and (c.get("created_at") or "") >= cutoff]
+        sales = ya.sales_calls_only(st, site_calls)
+        won = [c for c in sales if c.get("outcome") == "won"]
+        month_calls = [c for c in all_calls if call_site(c) == sid and (c.get("created_at") or "")[:7] == month]
+        month_sales = ya.sales_calls_only(st, month_calls)
+        month_won = [c for c in month_sales if c.get("outcome") == "won"]
+        reps = sum(
+            1 for usr in st.get("users_by_id", {}).values()
+            if str(usr.get("site_id") or "") == sid
+            and usr.get("role") in ("rep", "sales_rep")
+            and not usr.get("disabled")
+            and (not org_id or usr.get("org_id") == org_id)
+        )
+        return {
+            "site_id": sid,
+            "name": name,
+            "reps": reps,
+            "calls": len(site_calls),
+            "sales_calls": len(sales),
+            "won": len(won),
+            "close_rate": round(len(won) / max(1, len(sales)) * 100, 1) if sales else 0.0,
+            "revenue": round(sum(float(c.get("order_value") or 0.0) for c in won), 2),
+            "goal": float((site or {}).get("goal") or 0.0),
+            "month_revenue": round(sum(float(c.get("order_value") or 0.0) for c in month_won), 2),
+        }
+
+    rows = [row_for(site) for site in sites]
+    if not site_id:
+        no_site = row_for(None)
+        if no_site["calls"] or no_site["reps"]:
+            rows.append(no_site)
+    return {"days": days, "rows": rows, "month": month}

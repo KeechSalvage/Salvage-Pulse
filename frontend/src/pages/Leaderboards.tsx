@@ -12,7 +12,7 @@ import TruckLeaderboard from "@/components/TruckLeaderboard";
 import RoleplayScoreboardPanel from "@/components/RoleplayScoreboard";
 import TrophyWallPanel from "@/components/TrophyWall";
 import StreakBreakBanner from "@/components/StreakBreakBanner";
-import { LotSwitcher } from "@/components/Sites";
+import { SiteFilter } from "@/components/Sites";
 import { lotQS, useLotParam } from "@/lib/lot";
 import PremiumGate from "@/components/PremiumGate";
 import { apiGet, apiPost, errorMessage } from "@/lib/api";
@@ -267,7 +267,7 @@ export default function Leaderboards() {
         {tab === "lists" && <ListBoard lot={lot} />}
         {byLot && (
           <div className="mb-4 flex flex-wrap items-center gap-3">
-            <LotSwitcher value={lot} onChange={setLot} testId="leaderboard-lot-switcher" allLabel="Whole yard" />
+            <SiteFilter value={lot} onChange={setLot} testId="leaderboard-lot-switcher" />
             {lot && <span data-testid="leaderboard-lot-note" className="text-xs text-slate-400">Only people working at this lot now — their own race for trophies and streaks.</span>}
           </div>
         )}

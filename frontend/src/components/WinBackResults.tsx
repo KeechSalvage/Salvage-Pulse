@@ -5,6 +5,7 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { Overline, Panel, fmtDate, fmtMoney } from "@/components/common";
 import { monthLabel } from "@/components/MonthlyTrends";
 import { apiGet } from "@/lib/api";
+import { lotQS } from "@/lib/lot";
 import { cn } from "@/lib/utils";
 import { CHART, axisTick } from "@/lib/chartColors";
 import type { WinBackResult, WinBackResults } from "@/lib/types";
@@ -17,11 +18,11 @@ export const OUTCOMES: { id: WinBackResult; label: string; color: string; cls: s
 ];
 const LABEL = Object.fromEntries(OUTCOMES.map((o) => [o.id, o.label])) as Record<WinBackResult, string>;
 
-export default function WinBackResultsPanel({ repId, testId = "winback-results-panel" }: { repId?: string; testId?: string }) {
+export default function WinBackResultsPanel({ repId, testId = "winback-results-panel", lot = "" }: { repId?: string; testId?: string; lot?: string }) {
   const drill = useDrill();
   const { data, isError } = useQuery({
-    queryKey: ["winback-results", repId ?? "default"],
-    queryFn: () => apiGet<WinBackResults>(`/analytics/winback${repId ? `?rep_id=${repId}` : ""}`),
+    queryKey: ["winback-results", repId ?? "default", lot],
+    queryFn: () => apiGet<WinBackResults>(`/analytics/winback${repId ? `?rep_id=${repId}${lotQS(lot, "&")}` : lotQS(lot)}`),
   });
   const ordered = (data?.months ?? []).reduce((s, m) => s + m.ordered, 0);
   const value = (data?.months ?? []).reduce((s, m) => s + m.confirmed_value, 0);

@@ -297,6 +297,7 @@ def _call_from_row(
     call = {
         "id": cid,
         "org_id": org_id,
+        "site_id": rep.get("site_id") or "",
         "rep_id": rep.get("id", ""),
         "rep_name": rep.get("name", ""),
         "customer_name": customer_name,

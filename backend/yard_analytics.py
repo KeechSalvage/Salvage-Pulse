@@ -193,7 +193,7 @@ def filter_calls_by_site(state: dict[str, Any], calls: list[dict[str, Any]], sit
     }
     return [
         c for c in calls
-        if c.get("site_id") == site_id or c.get("rep_id") in site_rep_ids
+        if (c.get("site_id") or (c.get("rep_id") if c.get("rep_id") in site_rep_ids else "")) == site_id
     ]
 
 

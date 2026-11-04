@@ -19,6 +19,7 @@ from security import (
     public_user,
     require_authenticated,
     resolve_write_org,
+    scoped_site_id,
     validate_email,
 )
 
@@ -175,6 +176,7 @@ def get_analytics_overview(
     st = store.get_state()
     u = get_current_user(request)
     org_id = effective_org(u)
+    site_id = scoped_site_id(u, site_id)
 
     # Reps may only ever see themselves; managers may pick a rep in their own
     # yard; platform staff may cross yards.
@@ -348,6 +350,7 @@ def get_analytics_monthly(
     st = store.get_state()
     u = get_current_user(request)
     org_id = effective_org(u)
+    site_id = scoped_site_id(u, site_id)
     effective_rep_id = ya.scoped_rep_id(u, rep_id, st)
     calls = ya.org_calls(st, org_id, rep_id=effective_rep_id, site_id=site_id)
 
@@ -452,13 +455,14 @@ def get_analytics_monthly_reps(request: Request, site_id: Optional[str] = Query(
     st = store.get_state()
     u = get_current_user(request)
     org_id = effective_org(u)
+    site_id = scoped_site_id(u, site_id)
     return _build_monthly_reps(st, org_id, site_id=site_id)
 
 
-def _build_parts_seasonal(st: dict[str, Any], org_id: Optional[str]) -> dict[str, Any]:
+def _build_parts_seasonal(st: dict[str, Any], org_id: Optional[str], site_id: Optional[str] = None) -> dict[str, Any]:
     calls = [
-        c for c in st.get("calls", [])
-        if (not org_id or c.get("org_id") == org_id) and not c.get("delivery_call")
+        c for c in ya.org_calls(st, org_id, site_id=site_id)
+        if not c.get("delivery_call")
     ]
     if not calls:
         return {"months": [], "parts": [], "yard_close_rate": 0.0}
@@ -628,14 +632,15 @@ def _build_customer_insights(st: dict[str, Any], org_id: Optional[str]) -> dict[
 
 
 @router.get("/api/analytics/parts-seasonal")
-def get_parts_seasonal(request: Request) -> dict[str, Any]:
+def get_parts_seasonal(request: Request, site_id: Optional[str] = Query(None)) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
     org_id = effective_org(u)
+    site_id = scoped_site_id(u, site_id)
     # Computed from each yard's own calls.  The old Keech seed carried demo
     # counts that did not correspond to any real call, so its cells opened a
     # different number of calls than they displayed.
-    return _build_parts_seasonal(st, org_id)
+    return _build_parts_seasonal(st, org_id, site_id=site_id)
 
 
 @router.get("/api/analytics/vehicles")
@@ -648,6 +653,7 @@ def get_vehicles(
     st = store.get_state()
     u = get_current_user(request)
     org_id = effective_org(u)
+    site_id = scoped_site_id(u, site_id)
     if org_id == store.KEECH_ORG_ID and not site_id:
         base = st["seed"].get("/analytics/vehicles?rank=calls", {})
         if not body or body == "all":
@@ -675,6 +681,7 @@ def get_lost_vehicles(
     st = store.get_state()
     u = get_current_user(request)
     org_id = effective_org(u)
+    site_id = scoped_site_id(u, site_id)
     if org_id == store.KEECH_ORG_ID and not site_id:
         base_lost = st["seed"].get("/analytics/lost-vehicles?rank=calls", [])
         if not body or body == "all":
@@ -692,6 +699,7 @@ def get_stock_alerts(
     st = store.get_state()
     u = get_current_user(request)
     org_id = effective_org(u)
+    site_id = scoped_site_id(u, site_id)
     if org_id == store.KEECH_ORG_ID and not site_id:
         return st["seed"].get("/analytics/stock-alerts?rank=calls", [])
     return ya.build_stock_alerts(st, org_id, rank=rank, site_id=site_id)
@@ -705,10 +713,12 @@ def get_analytics_customers(
     include_all: bool = Query(False),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    site_id: Optional[str] = Query(None),
 ) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
     org_id = effective_org(u)
+    site_id = scoped_site_id(u, site_id)
     effective_rep_id = ya.scoped_rep_id(u, rep_id, st)
     return ya.build_customer_insights(
         st,
@@ -718,6 +728,7 @@ def get_analytics_customers(
         include_all=include_all,
         date_from=date_from,
         date_to=date_to,
+        site_id=site_id,
     )
 
 
@@ -1076,6 +1087,7 @@ def get_analytics_winback(
     st = store.get_state()
     u = get_current_user(request)
     org_id = effective_org(u)
+    site_id = scoped_site_id(u, site_id)
     effective_rep_id = ya.scoped_rep_id(u, rep_id, st)
     return ya.build_winback_results(st, org_id, rep_id=effective_rep_id, site_id=site_id)
 
@@ -1087,21 +1099,27 @@ def get_winback_leaderboard(
     site_id: Optional[str] = Query(None),
 ) -> dict[str, Any]:
     st = store.get_state()
-    org_id = effective_org(get_current_user(request))
+    u = get_current_user(request)
+    org_id = effective_org(u)
+    site_id = scoped_site_id(u, site_id)
     return ya.build_winback_leaderboard(st, org_id, month=month, site_id=site_id)
 
 
 @router.get("/api/analytics/winback/trophies")
 def get_winback_trophies(request: Request, site_id: Optional[str] = Query(None)) -> dict[str, Any]:
     st = store.get_state()
-    org_id = effective_org(get_current_user(request))
+    u = get_current_user(request)
+    org_id = effective_org(u)
+    site_id = scoped_site_id(u, site_id)
     return ya.build_winback_trophies(st, org_id, site_id=site_id)
 
 
 @router.get("/api/analytics/winback/winners")
 def get_winback_winners(request: Request, site_id: Optional[str] = Query(None)) -> dict[str, Any]:
     st = store.get_state()
-    org_id = effective_org(get_current_user(request))
+    u = get_current_user(request)
+    org_id = effective_org(u)
+    site_id = scoped_site_id(u, site_id)
     return ya.build_winback_winners(st, org_id, site_id=site_id)
 
 
@@ -1254,14 +1272,18 @@ def delete_keyword(kid: str, request: Request) -> dict[str, Any]:
 @router.get("/api/keywords/alerts")
 def get_keyword_alerts(request: Request, site_id: Optional[str] = Query(None)) -> list[dict[str, Any]]:
     st = store.get_state()
-    org_id = effective_org(get_current_user(request))
+    u = get_current_user(request)
+    org_id = effective_org(u)
+    site_id = scoped_site_id(u, site_id)
     return ya.build_keyword_alerts(st, org_id, site_id=site_id)
 
 
 @router.get("/api/keywords/rep-usage")
 def get_keyword_rep_usage(request: Request, site_id: Optional[str] = Query(None)) -> list[dict[str, Any]]:
     st = store.get_state()
-    org_id = effective_org(get_current_user(request))
+    u = get_current_user(request)
+    org_id = effective_org(u)
+    site_id = scoped_site_id(u, site_id)
     return ya.build_keyword_rep_usage(st, org_id, site_id=site_id)
 
 
@@ -1292,7 +1314,9 @@ def get_keyword_calls(
     site_id: Optional[str] = Query(None),
 ) -> list[dict[str, Any]]:
     st = store.get_state()
-    org_id = effective_org(get_current_user(request))
+    u = get_current_user(request)
+    org_id = effective_org(u)
+    site_id = scoped_site_id(u, site_id)
     keyword = next(
         (
             k for k in (st.get("keywords", []) or [])
@@ -1835,14 +1859,18 @@ def get_arrivals_leaderboard(
     site_id: Optional[str] = Query(None),
 ) -> dict[str, Any]:
     st = store.get_state()
-    org_id = effective_org(get_current_user(request))
+    u = get_current_user(request)
+    org_id = effective_org(u)
+    site_id = scoped_site_id(u, site_id)
     return ya.build_arrivals_leaderboard(st, org_id, month=month, site_id=site_id)
 
 
 @router.get("/api/arrivals/winner")
 def get_arrivals_winner(request: Request, site_id: Optional[str] = Query(None)) -> dict[str, Any]:
     st = store.get_state()
-    org_id = effective_org(get_current_user(request))
+    u = get_current_user(request)
+    org_id = effective_org(u)
+    site_id = scoped_site_id(u, site_id)
     return ya.build_arrivals_winner(st, org_id, site_id=site_id)
 
 
@@ -1850,6 +1878,7 @@ def get_arrivals_winner(request: Request, site_id: Optional[str] = Query(None)) 
 def get_arrivals_streak_chase(request: Request, site_id: Optional[str] = Query(None)) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
+    site_id = scoped_site_id(u, site_id)
     org_id = effective_org(u)
     chase, _ = ya.build_arrivals_streak(st, org_id, user_id=u.get("id", ""), site_id=site_id)
     return chase
@@ -1859,6 +1888,7 @@ def get_arrivals_streak_chase(request: Request, site_id: Optional[str] = Query(N
 def get_arrivals_streak_break(request: Request, site_id: Optional[str] = Query(None)) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
+    site_id = scoped_site_id(u, site_id)
     org_id = effective_org(u)
     _, streak_break = ya.build_arrivals_streak(st, org_id, user_id=u.get("id", ""), site_id=site_id)
     return streak_break
@@ -2064,7 +2094,9 @@ def get_callback_lists_leaderboard(
     site_id: Optional[str] = Query(None),
 ) -> dict[str, Any]:
     st = store.get_state()
-    org_id = effective_org(get_current_user(request))
+    u = get_current_user(request)
+    org_id = effective_org(u)
+    site_id = scoped_site_id(u, site_id)
     return ya.build_list_leaderboard(st, org_id, month=month, site_id=site_id)
 
 
@@ -2081,6 +2113,7 @@ def post_callback_lists_overdue_alerts(request: Request) -> dict[str, Any]:
 def get_call_queue(request: Request, site_id: Optional[str] = Query(None)) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
+    site_id = scoped_site_id(u, site_id)
     org_id = effective_org(u)
     return ya.build_queue(st, org_id, user=u, site_id=site_id)
 
@@ -2088,7 +2121,9 @@ def get_call_queue(request: Request, site_id: Optional[str] = Query(None)) -> di
 @router.get("/api/queue/team")
 def get_team_queue(request: Request, site_id: Optional[str] = Query(None)) -> dict[str, Any]:
     st = store.get_state()
-    org_id = effective_org(get_current_user(request))
+    u = get_current_user(request)
+    org_id = effective_org(u)
+    site_id = scoped_site_id(u, site_id)
     return ya.build_team_queue(st, org_id, site_id=site_id)
 
 
@@ -2096,7 +2131,9 @@ def get_team_queue(request: Request, site_id: Optional[str] = Query(None)) -> di
 @router.get("/api/leaderboards/champions")
 def get_leaderboards_champions(request: Request, site_id: Optional[str] = Query(None)) -> dict[str, Any]:
     st = store.get_state()
-    org_id = effective_org(get_current_user(request))
+    u = get_current_user(request)
+    org_id = effective_org(u)
+    site_id = scoped_site_id(u, site_id)
     return ya.build_champions(st, org_id, site_id=site_id)
 
 
@@ -2107,7 +2144,9 @@ def get_leaderboards_delivery(
     site_id: Optional[str] = Query(None),
 ) -> dict[str, Any]:
     st = store.get_state()
-    org_id = effective_org(get_current_user(request))
+    u = get_current_user(request)
+    org_id = effective_org(u)
+    site_id = scoped_site_id(u, site_id)
     return ya.build_delivery_board(st, org_id, month=month, site_id=site_id)
 
 
@@ -2118,7 +2157,9 @@ def get_leaderboards_team_player(
     site_id: Optional[str] = Query(None),
 ) -> dict[str, Any]:
     st = store.get_state()
-    org_id = effective_org(get_current_user(request))
+    u = get_current_user(request)
+    org_id = effective_org(u)
+    site_id = scoped_site_id(u, site_id)
     return ya.build_team_player_board(st, org_id, month=month, site_id=site_id)
 
 
@@ -2145,6 +2186,7 @@ def get_reports_summary(
     st = store.get_state()
     u = get_current_user(request)
     org_id = effective_org(u)
+    site_id = scoped_site_id(u, site_id)
     effective_rep_id = ya.scoped_rep_id(u, rep_id, st)
     return ya.build_report_summary(
         st,

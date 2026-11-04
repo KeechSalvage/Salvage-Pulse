@@ -343,6 +343,82 @@ class RingCentralImportTests(unittest.TestCase):
         self.assertIn("No call rows", response.json()["detail"])
 
 
+class LocationScopeTests(unittest.TestCase):
+    """Reps stay locked to their location; managers can compare locations."""
+
+    def _call(self, owner: dict, rep: dict, *, site_id: str, value: float, when: str) -> str:
+        cid = f"call-{uuid.uuid4().hex}"
+        st = store.get_state()
+        st.setdefault("calls", []).append({
+            "id": cid,
+            "org_id": owner["org_id"],
+            "site_id": site_id,
+            "rep_id": rep["id"],
+            "rep_name": rep["name"],
+            "customer_name": f"Customer {cid[-6:]}",
+            "customer_phone": f"1555{uuid.uuid4().int % 10_000_000:07d}",
+            "direction": "inbound",
+            "duration_sec": 60,
+            "status": "analyzed",
+            "source": "test",
+            "category": "Order/Sale",
+            "outcome": "won",
+            "order_value": value,
+            "overall_score": 80,
+            "created_at": when,
+        })
+        store.save_state()
+        return cid
+
+    def test_rep_is_locked_to_location_and_site_board_splits_sales(self):
+        client = _client()
+        owner, _, _ = _signup(client, yard="Location Scope Yard")
+        north = client.post("/api/sites", json={"name": "North lot"}).json()["sites"][-1]
+        south = client.post("/api/sites", json={"name": "South lot"}).json()["sites"][-1]
+        created = client.post(
+            "/api/users/reps",
+            json={
+                "name": "Locked Rep",
+                "email": f"locked-{uuid.uuid4().hex[:8]}@example.test",
+                "password": "RepPass!234",
+                "site_id": north["id"],
+            },
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        rep = created.json()
+        self._call(owner, rep, site_id=north["id"], value=100, when=store.now_iso())
+        self._call(owner, rep, site_id=south["id"], value=200, when=store.now_iso())
+
+        rep_client = _client()
+        _login(rep_client, rep["email"], "RepPass!234")
+        rep_calls = rep_client.get("/api/calls").json()
+        self.assertEqual({c["site_id"] for c in rep_calls}, {north["id"]})
+
+        north_overview = client.get(f"/api/analytics/overview?site_id={north['id']}").json()
+        south_overview = client.get(f"/api/analytics/overview?site_id={south['id']}").json()
+        all_overview = client.get("/api/analytics/overview").json()
+        self.assertEqual(north_overview["won"], 1)
+        self.assertEqual(south_overview["won"], 1)
+        self.assertEqual(all_overview["won"], 2)
+
+        board = client.get("/api/sites/leaderboard").json()
+        by_site = {row["site_id"]: row for row in board["rows"]}
+        self.assertEqual(by_site[north["id"]]["revenue"], 100)
+        self.assertEqual(by_site[south["id"]]["revenue"], 200)
+
+        moved = client.patch(f"/api/users/reps/{rep['id']}/site", json={"site_id": south["id"]})
+        self.assertEqual(moved.status_code, 200, moved.text)
+        self._call(owner, rep, site_id="", value=300, when=store.now_iso())
+        rep_calls = rep_client.get("/api/calls").json()
+        self.assertTrue(rep_calls)
+        self.assertTrue(all(c["site_id"] != north["id"] for c in rep_calls))
+
+        board = client.get("/api/sites/leaderboard").json()
+        by_site = {row["site_id"]: row for row in board["rows"]}
+        self.assertEqual(by_site[north["id"]]["revenue"], 100)
+        self.assertEqual(by_site[south["id"]]["revenue"], 500)
+
+
 class ClassificationAndTextTests(unittest.TestCase):
     """Manual category correction, review queue, and text permission."""
 

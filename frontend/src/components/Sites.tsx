@@ -51,15 +51,19 @@ export function RepSiteSelect({ rep }: { rep: User }) {
   const { data } = useSites();
   const save = useMutation({
     mutationFn: (site_id: string) => apiPatch<User>(`/users/reps/${rep.id}/site`, { site_id } satisfies RepSiteUpdate),
-    onSuccess: (u) => (toast.success(`${u.name}: ${(data?.sites ?? []).find((s) => s.id === u.site_id)?.name ?? "no location"}`), qc.invalidateQueries({ queryKey: ["reps"] }), qc.invalidateQueries({ queryKey: ["sites"] })),
+    onSuccess: (u) => {
+      toast.success(`${u.name}: ${(data?.sites ?? []).find((s) => s.id === u.site_id)?.name ?? "no location lock"}`);
+      ["reps", "sites", "calls", "report", "overview", "customers"].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+    },
     onError: (e) => toast.error(errorMessage(e)),
   });
   if (!(data?.sites ?? []).length || data?.my_site_id) return null;
   return (
-    <select data-testid={`rep-site-${rep.id}`} value={rep.site_id} disabled={save.isPending} aria-label="Location"
+    <select data-testid={`rep-site-${rep.id}`} value={rep.site_id} disabled={save.isPending} aria-label="Locked location"
+      title="Lock this rep to a location"
       onClick={(e) => (e.preventDefault(), e.stopPropagation())} onChange={(e) => save.mutate(e.target.value)}
       className="h-7 max-w-36 rounded border border-border bg-surface px-1.5 font-mono text-[11px] text-slate-300">
-      <option value="">No location</option>
+      <option value="">No location lock</option>
       {(data?.sites ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
     </select>
   );
@@ -96,7 +100,9 @@ export function SitesPanel() {
         <MapPin className="size-4 text-sky-300" /><Overline>Locations</Overline>
         <span data-testid="sites-usage" className="ml-auto font-mono text-xs text-slate-400">{(data.sites ?? []).length} of {data.limit} on {data.plan_name}</span>
       </div>
-      <p className="mt-1 text-sm text-slate-400">Put each rep at a location to filter calls, rep cards and reports by lot. A location manager also gets the daily follow-up email for just their lot.</p>
+      <p className="mt-1 text-sm text-slate-400">
+        Lock each rep to the location they work at. Calls, reports, and leaderboards then stay separated by location. A location manager also gets the daily follow-up email for just their lot.
+      </p>
       <ul className="mt-3 flex flex-wrap gap-2">
         {visible.map((s) => (
           <li key={s.id} data-testid={`site-${s.id}`} className="flex items-center gap-2 rounded-lg border border-border bg-surface/60 px-3 py-1.5 text-sm">
@@ -131,6 +137,7 @@ export function SitesPanel() {
         ))}
       </ul>
       {lotMgr && <p data-testid="sites-lot-manager-note" className="mt-3 text-xs text-sky-300">You manage this location — you see and manage only its reps, calls, callbacks and reports.</p>}
+      {!lotMgr && (data.sites ?? []).length > 0 && <RepLocationLocks />}
       {!lotMgr && (data.sites ?? []).length > 0 && <LotBoard sites={data} />}
       {!lotMgr && <form className="mt-3 flex flex-wrap items-center gap-2" onSubmit={(e) => (e.preventDefault(), name.trim() && add.mutate())}>
         <Input data-testid="site-name-input" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} placeholder={full ? "Location limit reached" : "e.g. North lot"} disabled={full} className="h-9 w-56" />
@@ -224,12 +231,35 @@ export function ExtraSitesCard({ org }: { org: OrgInfo }) {
           <Button size="sm" data-testid="extra-sites-save" onClick={() => setConfirm(true)}>{diff > 0 ? `Add ${diff}` : `Remove ${-diff}`}</Button>
         ))}
       </span>
-      {minExtra > 0 && <p className="w-full text-[11px] text-slate-500">You have {org.sites_used} locations set up — remove one on the Reps page to drop below {minExtra} extra.</p>}
+      {minExtra > 0 && <p className="w-full text-[11px] text-slate-500">You have {org.sites_used} locations set up — remove one in Settings → Yard &amp; locations to drop below {minExtra} extra.</p>}
     </div>
   );
 }
 
-/** Reps page: drag a rep onto another lot. Their past calls stay with the lot they were at. */
+/** Settings → Yard & locations: explicit per-rep location locks. */
+function RepLocationLocks() {
+  const reps = useReps();
+  const list = (reps.data ?? []).filter((r) => r.role === "rep" || r.role === "sales_rep");
+  if (!list.length) return null;
+  return (
+    <div className="mt-4 rounded-lg border border-border bg-surface/40 p-3" data-testid="rep-location-locks">
+      <p className="mb-2 font-mono text-[11px] uppercase tracking-wider text-slate-500">Rep location locks</p>
+      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+        {list.map((rep) => (
+          <div key={rep.id} className="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2">
+            <span className="truncate text-sm text-slate-200">{rep.name}</span>
+            <RepSiteSelect rep={rep} />
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-[11px] text-slate-500">
+        Choosing a location locks that rep to it. Their past calls stay with the location they were working at.
+      </p>
+    </div>
+  );
+}
+
+/** Settings → Yard & locations: drag a rep onto another lot. Their past calls stay with the lot they were at. */
 function LotBoard({ sites }: { sites: SiteList }) {
   const qc = useQueryClient();
   const reps = useReps();

@@ -38,6 +38,17 @@ def user_org(user: dict[str, Any] | None) -> str:
     return (user or {}).get("org_id") or ""
 
 
+def scoped_site_id(user: dict[str, Any], requested: Optional[str]) -> str:
+    """Return the location a caller may view.
+
+    Reps with an assigned location are locked to it.  Owners, sales managers,
+    and inventory managers may choose all locations or one location.
+    """
+    if user and user.get("role") in REP_ROLES and user.get("site_id"):
+        return str(user.get("site_id"))
+    return str(requested or "").strip()
+
+
 # Routes a user still on a starting/demo password may call while they choose a
 # new one.  Everything else is blocked so a known weak credential cannot be
 # used to read or change yard data.

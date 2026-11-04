@@ -188,16 +188,17 @@ function CallButton({ phone, testId }: { phone: string; testId: string }) {
 const EMPTY_LISTS: Record<Tab, Contact[]> = { suggested: [], value: [], calls: [], orders: [], winback: [], all: [] };
 
 /** Customer insights for this panel's scope + filters, bucketed by tab. */
-function useCustomerLists(repId: string | undefined, team: boolean, tag: string, tab: Tab, dateFrom: string, dateTo: string) {
+function useCustomerLists(repId: string | undefined, team: boolean, tag: string, tab: Tab, dateFrom: string, dateTo: string, siteId = "") {
   const params = new URLSearchParams();
   if (repId) params.set("rep_id", repId);
   if (tag !== "all") params.set("tag", tag);
   if (tab === "all") params.set("include_all", "true");
   if (dateFrom) params.set("date_from", dateFrom);
   if (dateTo) params.set("date_to", dateTo);
+  if (siteId) params.set("site_id", siteId);
   const qs = params.toString();
   const { data, isError } = useQuery({
-    queryKey: ["customers", team ? "team" : (repId ?? "me"), tag, tab === "all", dateFrom, dateTo],
+    queryKey: ["customers", team ? "team" : (repId ?? "me"), tag, tab === "all", dateFrom, dateTo, siteId],
     queryFn: () => apiGet<CustomerInsights>(`/analytics/customers${qs ? `?${qs}` : ""}`),
   });
   const ci = isError ? undefined : data;
@@ -214,14 +215,14 @@ function useCustomerLists(repId: string | undefined, team: boolean, tag: string,
   return { ci, lists };
 }
 
-export default function CustomerPanel({ repId, team = false }: { repId?: string; team?: boolean }) {
+export default function CustomerPanel({ repId, team = false, siteId = "" }: { repId?: string; team?: boolean; siteId?: string }) {
   const [tab, setTab] = useState<Tab>("suggested");
   const [tag, setTag] = useState("all");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const { data: me } = useMe();
-  const { ci, lists } = useCustomerLists(repId, team, tag, tab, dateFrom, dateTo);
+  const { ci, lists } = useCustomerLists(repId, team, tag, tab, dateFrom, dateTo, siteId);
   const list = lists[tab] ?? [];
   const pickTab = (t: Tab) => {
     setTab(t);
