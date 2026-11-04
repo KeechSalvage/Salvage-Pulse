@@ -349,6 +349,7 @@ def _call_from_row(
         "insights": [],
         "keyword_hits": [],
     }
+    store.fill_coaching_fields(call, full)
     return {"summary": call, "full": full}
 
 

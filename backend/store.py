@@ -273,6 +273,140 @@ def generate_wav_bytes(duration_sec: float = 4.0, sample_rate: int = 16000) -> b
     return buf.getvalue()
 
 
+_METRIC_LABELS = {
+    "greeting": "Greeting & Brand",
+    "needs_discovery": "Needs Discovery",
+    "product_knowledge": "Product Knowledge",
+    "upsell_crosssell": "Upsell & Cross-sell",
+    "objection_handling": "Objection Handling",
+    "closing": "Closing & Next Steps",
+    "compliance_warranty": "Warranty & Compliance",
+    "courtesy": "Courtesy & Professionalism",
+    "tone_empathy": "Courtesy & Professionalism",
+}
+_METRIC_TIPS = {
+    "greeting": "Open with the yard name, your name, and a warm greeting.",
+    "needs_discovery": "Ask for the VIN, trim, engine, or Hollander interchange before quoting.",
+    "product_knowledge": "Explain condition, testing, mileage, and OEM vs aftermarket differences.",
+    "upsell_crosssell": "Offer the matching companion part or extended warranty.",
+    "objection_handling": "Acknowledge the price concern, then defend OEM fit and warranty value.",
+    "closing": "Ask a direct closing question and confirm pickup or delivery.",
+    "compliance_warranty": "State the 90-day warranty and return policy clearly.",
+    "courtesy": "Keep a calm, helpful tone and thank the caller.",
+    "tone_empathy": "Keep a calm, helpful tone and thank the caller.",
+}
+_METRIC_STRENGTHS = {
+    "greeting": "Opened with a clear yard and rep introduction.",
+    "needs_discovery": "Asked good fitment and discovery questions.",
+    "product_knowledge": "Presented part condition and OEM quality clearly.",
+    "upsell_crosssell": "Offered warranty or companion parts.",
+    "objection_handling": "Handled price or quality objections well.",
+    "closing": "Asked for the order and confirmed next steps.",
+    "compliance_warranty": "Explained warranty or return terms clearly.",
+    "courtesy": "Kept a courteous, professional tone.",
+    "tone_empathy": "Kept a courteous, professional tone.",
+}
+
+
+def _metric_pct(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if 0 < number <= 10:
+        number *= 10
+    return max(0, min(100, int(round(number))))
+
+
+def fill_coaching_fields(call_summary: dict[str, Any], full: dict[str, Any] | None = None) -> bool:
+    """Fill empty coaching fields from the call's metrics, request, and outcome."""
+    target = full if full is not None else call_summary
+    metrics = target.get("metrics") or call_summary.get("metrics") or {}
+    values = []
+    for key, label in _METRIC_LABELS.items():
+        if key in metrics:
+            score = _metric_pct(metrics.get(key))
+            if score is not None:
+                values.append((key, label, score))
+    # Prefer tone_empathy over courtesy when both are present.
+    dedup: dict[str, tuple[str, str, int]] = {}
+    for key, label, score in values:
+        dedup[label] = (key, label, score)
+    values = sorted(dedup.values(), key=lambda item: item[2], reverse=True)
+
+    rep_name = str(target.get("rep_name") or call_summary.get("rep_name") or "The rep")
+    cust_name = str(target.get("customer_name") or call_summary.get("customer_name") or "the customer")
+    category = str(target.get("category") or call_summary.get("category") or "Sales Inquiry")
+    vehicle = str(target.get("vehicle") or call_summary.get("vehicle") or "").strip()
+    part = str(target.get("part_requested") or call_summary.get("part_requested") or "").strip()
+    outcome = str(target.get("outcome") or call_summary.get("outcome") or "pending")
+    topics = target.get("topics") or call_summary.get("topics") or []
+    changed = False
+
+    if not target.get("strengths"):
+        strengths = []
+        for key, label, score in values:
+            if score >= 75:
+                strengths.append(f"{_METRIC_STRENGTHS.get(key, 'Strong performance.')} ({label}: {score}/100)")
+            if len(strengths) >= 2:
+                break
+        if not strengths and values:
+            key, label, score = values[0]
+            strengths.append(f"Best area: {label} ({score}/100). {_METRIC_STRENGTHS.get(key, '')}".strip())
+        if not strengths:
+            strengths.append("Handled the call and captured the customer's request.")
+        target["strengths"] = strengths
+        changed = True
+
+    if not target.get("improvements"):
+        improvements = []
+        for key, label, score in reversed(values):
+            if score < 75:
+                improvements.append(f"Improve {label} ({score}/100): {_METRIC_TIPS.get(key, 'Keep coaching this skill.')}")
+            if len(improvements) >= 3:
+                break
+        if not improvements:
+            improvements.append("Keep reinforcing the 90-day warranty and a direct closing question on every call.")
+        target["improvements"] = improvements
+        changed = True
+
+    if not target.get("insights"):
+        insights = [f"Category: {category}"]
+        if part or vehicle:
+            insights.append(f"Requested: {part or 'parts'}{f' for a {vehicle}' if vehicle else ''}.")
+        if topics:
+            insights.append(f"Topics: {', '.join(str(t) for t in topics[:3])}.")
+        if outcome == "won":
+            value = float(target.get("order_value") or call_summary.get("order_value") or 0.0)
+            insights.append(f"Outcome: won{f' at ${value:,.0f}' if value else ''}.")
+        else:
+            insights.append(f"Outcome: {outcome}.")
+        if target.get("caller_intent"):
+            insights.append(f"Caller intent: {str(target['caller_intent']).replace('_', ' ')}.")
+        target["insights"] = insights
+        changed = True
+
+    if not target.get("coaching_feedback"):
+        if values:
+            strong_key, strong_label, strong_score = values[0]
+            weak_key, weak_label, weak_score = values[-1]
+            target["coaching_feedback"] = (
+                f"{rep_name} handled this {category.lower()} with {cust_name}. "
+                f"Strongest area: {strong_label} ({strong_score}/100). "
+                f"Next focus: {weak_label} ({weak_score}/100) — {_METRIC_TIPS.get(weak_key, 'keep coaching this skill')}"
+            )
+        else:
+            target["coaching_feedback"] = (
+                f"{rep_name} handled this {category.lower()} with {cust_name}. "
+                "Review the call and focus on fitment discovery, warranty terms, and a direct closing question."
+            )
+        changed = True
+
+    return changed
+
+
 def synthesize_call_details(call_summary: dict[str, Any], full_existing: dict[str, Any] | None = None) -> dict[str, Any]:
     """Ensure a Call object has all fields required by the Call interface in types.ts."""
     base = dict(full_existing) if full_existing else {}
@@ -343,25 +477,7 @@ def synthesize_call_details(call_summary: dict[str, Any], full_existing: dict[st
             "tone_empathy": min(100, s + 7),
         }
 
-    if not merged.get("strengths"):
-        merged["strengths"] = [
-            f"Clear yard greeting and fast Hollander lookup on {vehicle or 'the requested unit'}",
-            "Confirmed part grade and testing notes clearly",
-        ]
-    if not merged.get("improvements"):
-        merged["improvements"] = [
-            "Offer companion parts or extended labor warranty earlier in the quote",
-            "Confirm exact delivery window and bay address before hanging up",
-        ]
-    if not merged.get("insights"):
-        merged["insights"] = [
-            f"Category: {cat}",
-            f"Customer inquired about {part or 'parts'} for {vehicle or 'vehicle'}.",
-        ]
-    if not merged.get("coaching_feedback"):
-        merged["coaching_feedback"] = (
-            f"Strong call handling by {rep_name} with {cust_name}. Keep pitching the 90-day/1-year warranty and companion parts on every quote."
-        )
+    fill_coaching_fields(merged, merged)
     if "keyword_hits" not in merged or merged["keyword_hits"] is None:
         merged["keyword_hits"] = [{"keyword": "Warranty", "count": 1}]
     if "has_audio" not in merged:

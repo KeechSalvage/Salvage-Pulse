@@ -389,6 +389,86 @@ class RingCentralImportTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("No call rows", response.json()["detail"])
 
+    def test_imported_calls_have_coaching_fields(self):
+        client = _client()
+        _signup(client, yard="Coaching Import Yard")
+        response = client.post(
+            "/api/calls/import",
+            files={"file": ("ringcentral.csv", self.CSV.encode("utf-8"), "text/csv")},
+            data={"replace_demo": "false"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        calls = client.get("/api/calls").json()
+        imported = [c for c in calls if c.get("external_id") in ("i-1001", "i-1002")]
+        self.assertEqual(len(imported), 2)
+        for call in imported:
+            detail = client.get(f"/api/calls/{call['id']}").json()
+            self.assertTrue(str(detail.get("coaching_feedback") or "").strip())
+            self.assertTrue(detail.get("strengths"))
+            self.assertTrue(detail.get("improvements"))
+            self.assertTrue(detail.get("insights"))
+
+
+class CoachingFieldTests(unittest.TestCase):
+    """Existing calls must never show blank coaching sections."""
+
+    def test_existing_call_with_empty_coaching_is_filled_on_read(self):
+        client = _client()
+        owner, _, _ = _signup(client, yard="Coaching Fill Yard")
+        cid = f"call-{uuid.uuid4().hex}"
+        st = store.get_state()
+        st.setdefault("calls", []).append({
+            "id": cid,
+            "org_id": owner["org_id"],
+            "rep_id": owner["id"],
+            "rep_name": owner["name"],
+            "customer_name": "Acme Collision",
+            "customer_phone": "15550009001",
+            "direction": "inbound",
+            "duration_sec": 60,
+            "status": "analyzed",
+            "source": "test",
+            "category": "Sales Inquiry",
+            "outcome": "won",
+            "order_value": 420,
+            "overall_score": 70,
+            "vehicle": "2018 Jeep Grand Cherokee",
+            "part_requested": "Front Door",
+            "topics": ["Jeep Grand Cherokee", "Front Door"],
+            "created_at": store.now_iso(),
+        })
+        st.setdefault("full_calls", {})[cid] = {
+            "metrics": {
+                "greeting": 90,
+                "needs_discovery": 55,
+                "product_knowledge": 80,
+                "upsell_crosssell": 40,
+                "objection_handling": 65,
+                "closing": 70,
+                "courtesy": 95,
+            },
+            "coaching_feedback": "",
+            "strengths": [],
+            "improvements": [],
+            "insights": [],
+        }
+        store.save_state()
+
+        detail = client.get(f"/api/calls/{cid}").json()
+        self.assertTrue(str(detail.get("coaching_feedback") or "").strip())
+        self.assertTrue(detail.get("strengths"))
+        self.assertTrue(detail.get("improvements"))
+        self.assertTrue(detail.get("insights"))
+        self.assertTrue(any("Front Door" in item for item in detail["insights"]))
+
+        # The filled values are persisted, not regenerated on every request.
+        persisted = store.get_state()["full_calls"][cid]
+        self.assertTrue(persisted.get("coaching_feedback"))
+        self.assertTrue(persisted.get("strengths"))
+        self.assertTrue(persisted.get("improvements"))
+        self.assertTrue(persisted.get("insights"))
+
 
 class ScoringScopeTests(unittest.TestCase):
     """Custom AI evaluation is isolated to one location."""

@@ -259,6 +259,9 @@ def get_call_detail(call_id: str, request: Request) -> dict[str, Any]:
         full = store.synthesize_call_details(match)
         full_calls[call_id] = full
         store.save_state()
+    elif store.fill_coaching_fields(match, full):
+        full_calls[call_id] = full
+        store.save_state()
 
     # Ensure required arrays are not None
     full["parts_sold"] = full.get("parts_sold") or []
@@ -628,6 +631,9 @@ def post_call_reanalyze(call_id: str, request: Request) -> dict[str, Any]:
             if not preserve_manual and analyzed.get("category") == "Delivery":
                 match["delivery_call"] = True
                 full["delivery_call"] = True
+
+    # Never leave coaching sections blank, even when the AI returns empty arrays.
+    store.fill_coaching_fields(match, full)
 
     # Recalculate score from metrics if metrics exist
     metrics = full.get("metrics") or match.get("metrics")

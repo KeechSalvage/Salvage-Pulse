@@ -128,6 +128,16 @@ def _call_has_warranty(st: dict[str, Any], c: dict[str, Any]) -> bool:
     return "warranty" in text or any("warranty" in str(t).lower() for t in c.get("topics", []))
 
 
+def _top_improvement(st: dict[str, Any], call: dict[str, Any]) -> str:
+    full = st.get("full_calls", {}).get(call.get("id"), {})
+    improvements = full.get("improvements") or []
+    if not improvements:
+        candidate = dict(full)
+        store.fill_coaching_fields(call, candidate)
+        improvements = candidate.get("improvements") or []
+    return str(improvements[0]) if improvements else "Review this call for coaching opportunities."
+
+
 def _stats(st: dict[str, Any], calls: list[dict[str, Any]]) -> dict[str, Any]:
     scored = [c for c in calls if c.get("overall_score") is not None]
     # Delivery calls are logged for the delivery board but are never sales.
@@ -241,7 +251,7 @@ def get_analytics_overview(
     base["coaching_flags"] = [
         {"call_id": c["id"], "rep_name": c.get("rep_name", ""), "customer_name": c.get("customer_name", ""),
          "category": c.get("category", ""), "overall_score": c.get("overall_score", 0),
-         "top_improvement": ((st.get("full_calls", {}).get(c["id"], {}).get("improvements") or [""])[0])}
+         "top_improvement": _top_improvement(st, c)}
         for c in flags
     ]
     base["leaderboard"] = _build_leaderboard(st, org_id, org_calls)
