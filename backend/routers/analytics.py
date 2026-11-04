@@ -42,6 +42,19 @@ def _customer_visible(st: dict[str, Any], key: str, user: dict[str, Any]) -> boo
         if record_org == org_id:
             return True
 
+    group_key = ya.customer_group_for_key(st, org_id, key)
+    if group_key:
+        for call in st.get("calls", []):
+            if call.get("org_id") != org_id:
+                continue
+            call_group = ya.resolve_customer_group(
+                st,
+                org_id,
+                ya._customer_group_key(call),
+            )
+            if call_group == group_key:
+                return True
+
     for call in st.get("calls", []):
         if call.get("customer_name") == key or call.get("customer_phone") == key:
             if call.get("org_id") == org_id:
@@ -55,6 +68,13 @@ def _customer_store_key(key: str, user: dict[str, Any]) -> str:
     if org_id and org_id != store.KEECH_ORG_ID:
         return f"{org_id}:{key}"
     return key
+
+
+def _customer_context(st: dict[str, Any], org_id: Optional[str], key: str) -> tuple[str, list[dict[str, Any]], str]:
+    group_key = ya.customer_group_for_key(st, org_id, key)
+    calls = ya.customer_group_calls(st, org_id, group_key) if group_key else []
+    display_key = ya.customer_group_display_key(st, org_id, group_key, calls, fallback_key=key) if group_key else key
+    return group_key, calls, display_key
 
 
 DEFAULT_OVERVIEW: dict[str, Any] = {
@@ -708,11 +728,23 @@ def get_customer_profile(key: str, request: Request) -> dict[str, Any]:
     if not _customer_visible(st, key, u):
         raise HTTPException(status_code=404, detail="Customer not found")
     org_id = effective_org(u)
-    store_key = _customer_store_key(key, u)
-    profile = ya._customer_profile(st, org_id, key)
-    manual_tag = ya._manual_tag(st, org_id, key)
+    group_key = ya.customer_group_for_key(st, org_id, key)
+    calls = ya.customer_group_calls(st, org_id, group_key) if group_key else []
+    calls.sort(key=lambda c: c.get("created_at", ""), reverse=True)
+    display_key = ya.customer_group_display_key(st, org_id, group_key, calls, fallback_key=key) if group_key else key
+    profile = (
+        ya._customer_profile(st, org_id, display_key)
+        or ya._customer_profile(st, org_id, group_key)
+        or ya._customer_profile(st, org_id, key)
+    )
+    manual_tag = (
+        ya._manual_tag(st, org_id, display_key)
+        or ya._manual_tag(st, org_id, group_key)
+        or ya._manual_tag(st, org_id, key)
+    )
+    store_key = _customer_store_key(display_key, u)
     full_custs = st.get("full_customers", {})
-    full = full_custs.get(key)
+    full = full_custs.get(display_key) or full_custs.get(key)
     if isinstance(full, dict):
         record_org = (full.get("stat") or {}).get("org_id") or full.get("org_id")
         # Platform staff may read every yard.  A yard may only read its own
@@ -720,20 +752,17 @@ def get_customer_profile(key: str, request: Request) -> dict[str, Any]:
         if org_id is None or record_org == org_id or (not record_org and org_id == store.KEECH_ORG_ID):
             full_stat = full.setdefault("stat", {})
             if isinstance(full_stat, dict):
-                full_stat["name"] = profile.get("name") or full_stat.get("name") or key
+                full_stat["key"] = display_key
+                full_stat["name"] = profile.get("name") or full_stat.get("name") or display_key
                 full_stat["email"] = str(profile.get("email") or "")
+                full_stat["alt_phones"] = list(profile.get("alt_phones") or [])
+                full_stat["alt_emails"] = list(profile.get("alt_emails") or [])
                 full_stat["text_ok"] = profile.get("text_ok") if "text_ok" in profile else None
                 if manual_tag:
                     full_stat["tag"] = manual_tag
                     full_stat["tag_source"] = "manual"
             return full
 
-    calls = [
-        c for c in st.get("calls", [])
-        if (not org_id or c.get("org_id") == org_id)
-        and (c.get("customer_name") == key or c.get("customer_phone") == key)
-    ]
-    calls.sort(key=lambda c: c.get("created_at", ""), reverse=True)
     metric_calls = [
         c for c in calls
         if not c.get("delivery_call") and not ya.call_is_non_sales_customer(st, c)
@@ -743,10 +772,22 @@ def get_customer_profile(key: str, request: Request) -> dict[str, Any]:
         for topic in (c.get("topics") or []):
             if topic and topic not in topics:
                 topics.append(str(topic))
+    phone = ""
+    if group_key and group_key.startswith("p:"):
+        primary = group_key[2:]
+        primary_call = next(
+            (c for c in calls if ya.normalize_phone(c.get("customer_phone")) == primary),
+            None,
+        )
+        phone = str((primary_call or (calls[0] if calls else {})).get("customer_phone") or primary)
+    elif calls:
+        phone = str(calls[0].get("customer_phone") or "")
     stat = {
-        "key": key,
-        "name": profile.get("name") or (calls[0].get("customer_name") if calls else key) or key,
-        "phone": calls[0].get("customer_phone", "") if calls else "",
+        "key": display_key,
+        "name": profile.get("name") or (calls[0].get("customer_name") if calls else display_key) or display_key,
+        "phone": phone,
+        "alt_phones": list(profile.get("alt_phones") or []),
+        "alt_emails": list(profile.get("alt_emails") or []),
         "calls": len(calls),
         "orders": sum(1 for c in metric_calls if c.get("outcome") == "won"),
         "talk_sec": sum(int(c.get("duration_sec") or 0) for c in calls),
@@ -762,7 +803,10 @@ def get_customer_profile(key: str, request: Request) -> dict[str, Any]:
         "est_value": sum(float(c.get("order_value") or 0) for c in metric_calls) or 350.0,
         "value_basis": "ai",
     }
-    notes = st.get("customer_notes", {}).get(store_key, [])
+    notes = (
+        st.get("customer_notes", {}).get(store_key)
+        or st.get("customer_notes", {}).get(_customer_store_key(key, u), [])
+    )
     return {"stat": stat, "calls": calls[:20], "notes": notes}
 
 
@@ -778,9 +822,12 @@ def put_customer_tag(key: str, body: dict[str, Any], request: Request) -> dict[s
     if tag and tag not in CUSTOMER_TAGS:
         raise HTTPException(status_code=400, detail="Unknown customer type")
     org_id = effective_org(u)
-    for store_key in ya.customer_store_keys(org_id, key):
+    group_key = ya.customer_group_for_key(st, org_id, key)
+    calls = ya.customer_group_calls(st, org_id, group_key) if group_key else []
+    display_key = ya.customer_group_display_key(st, org_id, group_key, calls, fallback_key=key) if group_key else key
+    for store_key in ya.customer_store_keys(org_id, display_key):
         st.setdefault("customer_tags", {})[store_key] = tag
-    prof = get_customer_profile(key, request)
+    prof = get_customer_profile(display_key, request)
     prof["stat"]["tag"] = tag
     prof["stat"]["tag_source"] = "manual"
     store.save_state()
@@ -811,20 +858,95 @@ def put_customer_profile(key: str, body: dict[str, Any], request: Request) -> di
     if text_ok is not None and not isinstance(text_ok, bool):
         raise HTTPException(status_code=400, detail="text_ok must be true, false, or null")
     org_id = effective_org(u)
+    group_key = ya.customer_group_for_key(st, org_id, key)
+    calls = ya.customer_group_calls(st, org_id, group_key) if group_key else []
+    display_key = ya.customer_group_display_key(st, org_id, group_key, calls, fallback_key=key) if group_key else key
+    profile = (
+        ya._customer_profile(st, org_id, display_key)
+        or ya._customer_profile(st, org_id, group_key)
+        or {}
+    )
+
+    alt_phones_raw = body.get("alt_phones", profile.get("alt_phones") or [])
+    if not isinstance(alt_phones_raw, list):
+        raise HTTPException(status_code=400, detail="alt_phones must be a list")
+    if len(alt_phones_raw) > 20:
+        raise HTTPException(status_code=400, detail="Too many alternate phone numbers (max 20)")
+    alt_phones: list[str] = []
+    alt_groups: set[str] = set()
+    seen_phones: set[str] = set()
+    for value in alt_phones_raw:
+        if not isinstance(value, str):
+            raise HTTPException(status_code=400, detail="Alternate phone numbers must be strings")
+        clean = value.strip()
+        if not clean:
+            continue
+        normalized = ya.normalize_phone(clean)
+        if len(normalized) < 7:
+            raise HTTPException(status_code=400, detail=f"Not a valid alternate phone number: {clean}")
+        alt_group = f"p:{normalized}"
+        if alt_group == group_key:
+            continue
+        if normalized in seen_phones:
+            continue
+        seen_phones.add(normalized)
+        alias_key = ya.customer_alias_store_key(org_id, alt_group)
+        existing_alias = st.setdefault("customer_aliases", {}).get(alias_key)
+        if existing_alias and existing_alias != group_key:
+            raise HTTPException(status_code=400, detail=f"{clean} is already linked to another customer")
+        alt_phones.append(clean)
+        alt_groups.add(alt_group)
+
+    alt_emails_raw = body.get("alt_emails", profile.get("alt_emails") or [])
+    if not isinstance(alt_emails_raw, list):
+        raise HTTPException(status_code=400, detail="alt_emails must be a list")
+    if len(alt_emails_raw) > 20:
+        raise HTTPException(status_code=400, detail="Too many alternate emails (max 20)")
+    alt_emails: list[str] = []
+    seen_emails: set[str] = set()
+    for value in alt_emails_raw:
+        if not isinstance(value, str):
+            raise HTTPException(status_code=400, detail="Alternate emails must be strings")
+        clean = value.strip()
+        if not clean:
+            continue
+        clean = validate_email(clean)
+        if clean.lower() in seen_emails:
+            continue
+        seen_emails.add(clean.lower())
+        alt_emails.append(clean)
+
+    aliases = st.setdefault("customer_aliases", {})
+    for old in profile.get("alt_phones") or []:
+        old_group = f"p:{ya.normalize_phone(str(old))}"
+        alias_key = ya.customer_alias_store_key(org_id, old_group)
+        if old_group not in alt_groups and aliases.get(alias_key) == group_key:
+            aliases.pop(alias_key, None)
+    for alt_group in alt_groups:
+        aliases[ya.customer_alias_store_key(org_id, alt_group)] = group_key
+
+    primary_phone = ""
+    if group_key and group_key.startswith("p:"):
+        primary_phone = display_key if ya.normalize_phone(display_key) == group_key[2:] else group_key[2:]
     record = {
         "name": name,
         "email": email,
         "text_ok": text_ok,
+        "primary_phone": primary_phone,
+        "alt_phones": alt_phones,
+        "alt_emails": alt_emails,
         "updated_at": store.now_iso(),
         "updated_by": u.get("id", ""),
     }
-    for store_key in ya.customer_store_keys(org_id, key):
+    for store_key in ya.customer_store_keys(org_id, display_key):
         st.setdefault("customer_profiles", {})[store_key] = dict(record)
     store.save_state()
-    prof = get_customer_profile(key, request)
-    prof["stat"]["name"] = name or prof["stat"].get("name", key)
+    prof = get_customer_profile(display_key, request)
+    prof["stat"]["name"] = name or prof["stat"].get("name", display_key)
     prof["stat"]["email"] = email
     prof["stat"]["text_ok"] = text_ok
+    prof["stat"]["alt_phones"] = alt_phones
+    prof["stat"]["alt_emails"] = alt_emails
     return prof["stat"]
 
 
@@ -868,27 +990,18 @@ def post_customers_confirm_suggested(body: dict[str, Any], request: Request) -> 
     org_id = effective_org(u)
     updated = 0
     for key in keys:
-        if ya._manual_tag(st, org_id, key):
+        _group_key, group_calls, display_key = _customer_context(st, org_id, key)
+        if ya._manual_tag(st, org_id, display_key):
             continue
-        profile = ya._customer_profile(st, org_id, key)
+        profile = ya._customer_profile(st, org_id, display_key)
         name = str(profile.get("name") or "")
-        if not name:
-            phone = ya.normalize_phone(key)
-            matches = [
-                c for c in st.get("calls", [])
-                if (not org_id or c.get("org_id") == org_id)
-                and (
-                    c.get("customer_name") == key
-                    or (phone and ya.normalize_phone(c.get("customer_phone")) == phone)
-                )
-            ]
-            if matches:
-                latest = max(matches, key=lambda c: c.get("created_at") or "")
-                name = str(latest.get("customer_name") or "")
+        if not name and group_calls:
+            latest = max(group_calls, key=lambda c: c.get("created_at") or "")
+            name = str(latest.get("customer_name") or "")
         tag, _ = infer_customer_tag(name)
         if tag == "untagged":
             continue
-        for store_key in ya.customer_store_keys(org_id, key):
+        for store_key in ya.customer_store_keys(org_id, display_key):
             st.setdefault("customer_tags", {})[store_key] = tag
         updated += 1
     store.save_state()
@@ -909,14 +1022,16 @@ def post_customer_note(key: str, body: dict[str, Any], request: Request) -> dict
         raise HTTPException(status_code=400, detail="Note text is required")
     if len(text) > 4000:
         raise HTTPException(status_code=400, detail="Note text is too long (max 4000 characters)")
+    org_id = effective_org(u)
+    _group_key, _calls, display_key = _customer_context(st, org_id, key)
     note = {
         "id": str(uuid.uuid4()),
-        "customer_key": key,
+        "customer_key": display_key,
         "text": text,
         "author": u.get("name", "Rep"),
         "created_at": store.now_iso(),
     }
-    store_key = _customer_store_key(key, u)
+    store_key = _customer_store_key(display_key, u)
     st.setdefault("customer_notes", {}).setdefault(store_key, []).insert(0, note)
     store.save_state()
     return note
@@ -932,17 +1047,13 @@ def post_customer_winback(key: str, body: dict[str, Any], request: Request) -> d
     outcome = str(body.get("outcome") or "reached").strip().lower()
     if outcome not in ("reached", "ordered", "no_interest"):
         raise HTTPException(status_code=400, detail="outcome must be reached, ordered, or no_interest")
-    calls = [
-        c for c in st.get("calls", [])
-        if (org_id is None or c.get("org_id") == org_id)
-        and (c.get("customer_name") == key or c.get("customer_phone") == key)
-    ]
+    _group_key, calls, display_key = _customer_context(st, org_id, key)
     calls.sort(key=lambda c: c.get("created_at", ""), reverse=True)
     mark = {
         "id": str(uuid.uuid4()),
         "org_id": org_id,
-        "customer_key": key,
-        "customer_name": (calls[0].get("customer_name") if calls else "") or key,
+        "customer_key": display_key,
+        "customer_name": (calls[0].get("customer_name") if calls else "") or display_key,
         "customer_phone": (calls[0].get("customer_phone") if calls else "") or "",
         "outcome": outcome,
         "rep_id": u["id"],

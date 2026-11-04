@@ -643,6 +643,96 @@ def _customer_profile(state: dict[str, Any], org_id: Optional[str], key: str) ->
     return {}
 
 
+def customer_group_key_for_key(key: str) -> str:
+    """Map a profile URL key to the same key used by customer grouping."""
+    raw = str(key or "").strip()
+    if not raw:
+        return ""
+    if raw.startswith(("p:", "n:")):
+        return raw
+    phone = normalize_phone(raw)
+    if len(phone) >= 10:
+        return f"p:{phone}"
+    return f"n:{raw.lower()}"
+
+
+def customer_group_for_key(state: dict[str, Any], org_id: Optional[str], key: str) -> str:
+    """Resolve a profile URL key to its call-group key.
+
+    A name URL may point at a customer whose calls have phone numbers.  In that
+    case use the latest matching call's phone group so tags, notes, and the
+    profile stay attached to the same customer the list shows.
+    """
+    group_key = customer_group_key_for_key(key)
+    if group_key.startswith("n:"):
+        matches = [
+            c for c in state.get("calls", [])
+            if (not org_id or c.get("org_id") == org_id)
+            and str(c.get("customer_name") or "") == key
+        ]
+        if matches:
+            latest = max(matches, key=lambda c: c.get("created_at") or "")
+            group_key = _customer_group_key(latest) or group_key
+    return resolve_customer_group(state, org_id, group_key)
+
+
+def customer_alias_store_key(org_id: Optional[str], group_key: str) -> str:
+    return f"{org_id or ''}:{group_key}"
+
+
+def resolve_customer_group(state: dict[str, Any], org_id: Optional[str], group_key: str) -> str:
+    aliases = state.get("customer_aliases", {}) or {}
+    return str(aliases.get(customer_alias_store_key(org_id, group_key)) or group_key)
+
+
+def customer_group_calls(
+    state: dict[str, Any],
+    org_id: Optional[str],
+    group_key: str,
+    calls: Optional[list[dict[str, Any]]] = None,
+) -> list[dict[str, Any]]:
+    source = calls if calls is not None else state.get("calls", [])
+    related = []
+    for call in source:
+        call_org = call.get("org_id") or org_id
+        if org_id and call_org != org_id:
+            continue
+        call_group = resolve_customer_group(state, call_org, _customer_group_key(call))
+        if call_group == group_key:
+            related.append(call)
+    return related
+
+
+def customer_group_display_key(
+    state: dict[str, Any],
+    org_id: Optional[str],
+    group_key: str,
+    calls: Optional[list[dict[str, Any]]] = None,
+    fallback_key: str = "",
+) -> str:
+    related = calls if calls is not None else customer_group_calls(state, org_id, group_key)
+    profile = _customer_profile(state, org_id, group_key)
+    if group_key.startswith("p:"):
+        primary = normalize_phone(profile.get("primary_phone") or "")
+        if primary:
+            for call in related:
+                if normalize_phone(call.get("customer_phone")) == primary:
+                    return str(call.get("customer_phone") or primary)
+            return str(profile.get("primary_phone") or primary)
+        for call in related:
+            if normalize_phone(call.get("customer_phone")) == group_key[2:]:
+                return str(call.get("customer_phone") or group_key[2:])
+        return group_key[2:]
+    if group_key.startswith("n:"):
+        return str(
+            profile.get("name")
+            or (related[0].get("customer_name") if related else "")
+            or fallback_key
+            or group_key[2:]
+        )
+    return group_key
+
+
 NON_SALES_CUSTOMER_TAGS = {"driver", "other"}
 
 
@@ -723,7 +813,7 @@ def build_customer_insights(
 
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for call in calls:
-        key = _customer_group_key(call)
+        key = resolve_customer_group(state, call.get("org_id") or org_id, _customer_group_key(call))
         if key:
             grouped[key].append(call)
 
@@ -733,10 +823,18 @@ def build_customer_insights(
     for _group, group_calls in grouped.items():
         group_calls.sort(key=lambda c: c.get("created_at", ""), reverse=True)
         latest = group_calls[0]
-        key = str(latest.get("customer_phone") or latest.get("customer_name") or "")
+        key = customer_group_display_key(state, org_id, _group, group_calls)
         profile = _customer_profile(state, org_id, key) or _customer_profile(state, org_id, _group)
         name = str(profile.get("name") or latest.get("customer_name") or key)
-        phone = str(latest.get("customer_phone") or "")
+        if _group.startswith("p:"):
+            primary = _group[2:]
+            primary_call = next(
+                (c for c in group_calls if normalize_phone(c.get("customer_phone")) == primary),
+                None,
+            )
+            phone = str((primary_call or latest).get("customer_phone") or primary)
+        else:
+            phone = str(latest.get("customer_phone") or "")
         orders = [
             c for c in group_calls
             if _is_won(c) and not c.get("delivery_call") and not call_is_non_sales_customer(state, c)
@@ -767,11 +865,13 @@ def build_customer_insights(
         else:
             customer_tag, tag_source = infer_customer_tag(name)
 
-        mark = latest_mark.get(key) or {}
+        mark = latest_mark.get(key) or latest_mark.get(_group) or {}
         stat = {
             "key": key,
             "name": name,
             "phone": phone,
+            "alt_phones": list(profile.get("alt_phones") or []),
+            "alt_emails": list(profile.get("alt_emails") or []),
             "calls": len(group_calls),
             "orders": len(orders),
             "talk_sec": round(sum(int(c.get("duration_sec") or 0) for c in group_calls), 1),

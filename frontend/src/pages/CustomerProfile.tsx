@@ -27,7 +27,7 @@ export default function CustomerProfilePage() {
   const { data: me } = useMe();
   const canEdit = isManagerLike(me?.role);
   const [note, setNote] = useState("");
-  const [details, setDetails] = useState<CustomerProfileUpdate>({ name: "", email: "", text_ok: null });
+  const [details, setDetails] = useState<CustomerProfileUpdate>({ name: "", email: "", alt_phones: [], alt_emails: [], text_ok: null });
   const { data, isError } = useQuery({
     queryKey: ["customer", key],
     queryFn: () => apiGet<CustomerProfile>(`/customers/${encodeURIComponent(key)}`),
@@ -38,9 +38,18 @@ export default function CustomerProfilePage() {
     setDetails({
       name: data.stat.name ?? "",
       email: data.stat.email ?? "",
+      alt_phones: data.stat.alt_phones ?? [],
+      alt_emails: data.stat.alt_emails ?? [],
       text_ok: data.stat.text_ok ?? null,
     });
-  }, [data?.stat.key, data?.stat.name, data?.stat.email, data?.stat.text_ok]);
+  }, [
+    data?.stat.key,
+    data?.stat.name,
+    data?.stat.email,
+    data?.stat.alt_phones,
+    data?.stat.alt_emails,
+    data?.stat.text_ok,
+  ]);
 
   const addNote = useMutation({
     mutationFn: () => apiPost<CustomerNote>(`/customers/${encodeURIComponent(key)}/notes`, { text: note } satisfies CustomerNoteCreate),
@@ -104,6 +113,11 @@ export default function CustomerProfilePage() {
                   No text
                 </span>
               )}
+            </p>
+          )}
+          {((stat.alt_phones ?? []).length > 0 || (stat.alt_emails ?? []).length > 0) && (
+            <p data-testid="customer-profile-alternates" className="mt-1 text-sm text-slate-400">
+              Also: {[...(stat.alt_phones ?? []), ...(stat.alt_emails ?? [])].join(" · ")}
             </p>
           )}
           <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="customer-tag-picker">
@@ -197,6 +211,27 @@ export default function CustomerProfilePage() {
                     onChange={(e) => setDetails((d) => ({ ...d, email: e.target.value }))}
                     placeholder="name@company.com"
                     className="bg-surface"
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="mb-1 block text-slate-300">Alternate phone numbers</span>
+                  <Textarea
+                    data-testid="customer-detail-alt-phones"
+                    value={details.alt_phones.join("\n")}
+                    onChange={(e) => setDetails((d) => ({ ...d, alt_phones: e.target.value.split(/[\n,]+/) }))}
+                    placeholder={"One number per line\n(555) 123-4567"}
+                    className="min-h-[70px] bg-surface font-mono text-sm"
+                  />
+                  <span className="mt-1 block text-xs text-slate-500">Calls from these numbers will be grouped into this profile.</span>
+                </label>
+                <label className="block text-sm">
+                  <span className="mb-1 block text-slate-300">Alternate emails</span>
+                  <Textarea
+                    data-testid="customer-detail-alt-emails"
+                    value={details.alt_emails.join("\n")}
+                    onChange={(e) => setDetails((d) => ({ ...d, alt_emails: e.target.value.split(/[\n,]+/) }))}
+                    placeholder={"One email per line\nparts@company.com"}
+                    className="min-h-[70px] bg-surface font-mono text-sm"
                   />
                 </label>
                 <label className="block text-sm">

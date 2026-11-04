@@ -788,6 +788,8 @@ export interface CustomerStat {
   tag: string;
   tag_source: "manual" | "auto" | "";
   email: string;
+  alt_phones: string[];
+  alt_emails: string[];
   text_ok: boolean | null;
   est_value: number;
   value_basis: "ai" | "mixed" | "estimated" | "";
@@ -796,6 +798,8 @@ export interface CustomerStat {
 export interface CustomerProfileUpdate {
   name: string;
   email: string;
+  alt_phones: string[];
+  alt_emails: string[];
   text_ok: boolean | null;
 }
 

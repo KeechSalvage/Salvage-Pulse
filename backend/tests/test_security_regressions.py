@@ -103,10 +103,11 @@ class CustomerProfileTests(unittest.TestCase):
         created_at: str,
         outcome: str = "pending",
         order_value: float = 0.0,
-    ) -> None:
+    ) -> str:
+        call_id = f"call-{uuid.uuid4().hex}"
         st = store.get_state()
         st.setdefault("calls", []).append({
-            "id": f"call-{uuid.uuid4().hex}",
+            "id": call_id,
             "org_id": owner["org_id"],
             "rep_id": owner["id"],
             "rep_name": owner["name"],
@@ -123,6 +124,7 @@ class CustomerProfileTests(unittest.TestCase):
             "created_at": created_at,
         })
         store.save_state()
+        return call_id
 
     def test_profile_details_and_untagged_queue(self):
         client = _client()
@@ -155,6 +157,66 @@ class CustomerProfileTests(unittest.TestCase):
         self.assertEqual(row["name"], "Acme Fleet")
         self.assertEqual(row["email"], "ops@acme.test")
         self.assertFalse(row["text_ok"])
+
+    def test_alternate_phone_groups_existing_and_new_calls(self):
+        client = _client()
+        owner, _, _ = _signup(client, yard="Alternate Contact Yard")
+        primary = "15550007601"
+        alternate = "15550007602"
+        self._add_call(owner, phone=primary, name="Primary Customer", created_at="2026-05-10T12:00:00Z")
+        alt_call = self._add_call(owner, phone=alternate, name="Alternate Name", created_at="2026-05-11T12:00:00Z")
+
+        before = client.get("/api/analytics/customers?include_all=true").json()
+        self.assertEqual(before["total_customers"], 2)
+
+        saved = client.put(
+            f"/api/customers/{primary}/profile",
+            json={
+                "name": "Primary Customer",
+                "email": "",
+                "alt_phones": [alternate],
+                "alt_emails": ["alt@example.test"],
+                "text_ok": True,
+            },
+        )
+        self.assertEqual(saved.status_code, 200, saved.text)
+
+        profile = client.get(f"/api/customers/{primary}").json()
+        self.assertEqual(profile["stat"]["key"], primary)
+        self.assertEqual(profile["stat"]["calls"], 2)
+        self.assertEqual(profile["stat"]["alt_phones"], [alternate])
+        self.assertEqual(profile["stat"]["alt_emails"], ["alt@example.test"])
+
+        via_alt = client.get(f"/api/customers/{alternate}").json()
+        self.assertEqual(via_alt["stat"]["key"], primary)
+        self.assertEqual(via_alt["stat"]["calls"], 2)
+
+        insights = client.get("/api/analytics/customers?include_all=true").json()
+        self.assertEqual(insights["total_customers"], 1)
+        self.assertEqual(insights["all_customers"][0]["key"], primary)
+        self.assertEqual(insights["all_customers"][0]["calls"], 2)
+
+        related = client.get(f"/api/calls/{alt_call}/customer-calls").json()
+        self.assertEqual(related["key"], primary)
+        self.assertEqual(len(related["calls"]), 2)
+
+        self._add_call(owner, phone=alternate, name="Alternate Name", created_at="2026-05-12T12:00:00Z")
+        profile = client.get(f"/api/customers/{primary}").json()
+        self.assertEqual(profile["stat"]["calls"], 3)
+
+        cleared = client.put(
+            f"/api/customers/{primary}/profile",
+            json={
+                "name": "Primary Customer",
+                "email": "",
+                "alt_phones": [],
+                "alt_emails": [],
+                "text_ok": True,
+            },
+        )
+        self.assertEqual(cleared.status_code, 200, cleared.text)
+        after = client.get("/api/analytics/customers?include_all=true").json()
+        self.assertEqual(after["total_customers"], 2)
 
     def test_driver_and_other_are_excluded_from_sales_metrics(self):
         client = _client()

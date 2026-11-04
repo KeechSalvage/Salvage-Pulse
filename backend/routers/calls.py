@@ -305,15 +305,29 @@ def get_customer_calls(call_id: str, request: Request) -> dict[str, Any]:
     assert_call_access(actor, match)
 
     org_filter = effective_org(actor)
-    cust_name = match.get("customer_name")
-    phone = match.get("customer_phone")
+    group_key = ya.resolve_customer_group(
+        st,
+        match.get("org_id") or org_filter,
+        ya._customer_group_key(match),
+    )
+    related = ya.customer_group_calls(st, org_filter, group_key) if group_key else []
     related = [
         {**c, "parts_sold": c.get("parts_sold") or [], "topics": c.get("topics") or []}
-        for c in st.get("calls", [])
-        if (not org_filter or c.get("org_id") == org_filter)
-        and (c.get("customer_name") == cust_name or (phone and c.get("customer_phone") == phone))
+        for c in related
     ]
-    return {"key": cust_name, "calls": related[:20]}
+    related.sort(key=lambda c: c.get("created_at", ""), reverse=True)
+    key = (
+        ya.customer_group_display_key(
+            st,
+            org_filter,
+            group_key,
+            related,
+            fallback_key=str(match.get("customer_name") or ""),
+        )
+        if group_key
+        else match.get("customer_name") or ""
+    )
+    return {"key": key, "calls": related[:20]}
 
 
 @router.patch("/api/calls/{call_id}/vehicle")
