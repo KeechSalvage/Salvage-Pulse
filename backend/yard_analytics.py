@@ -704,7 +704,7 @@ def build_customer_insights(
             "talk_sec": round(sum(int(c.get("duration_sec") or 0) for c in group_calls), 1),
             "last_call_at": latest.get("created_at", ""),
             "last_call_id": latest.get("id", ""),
-            "last_category": latest.get("category", "Part Inquiry/Quote"),
+            "last_category": latest.get("category", "Sales Inquiry"),
             "top_topics": [t for t, _ in topics.most_common(5)] or ["Part Inquiry"],
             "rep_names": sorted({str(c.get("rep_name")) for c in group_calls if c.get("rep_name")}),
             "tag": customer_tag,
@@ -1797,7 +1797,7 @@ def build_report_summary(
 
     cat_map: dict[str, dict[str, int]] = defaultdict(lambda: {"calls": 0, "won": 0})
     for call in calls:
-        entry = cat_map[call.get("category") or "Other"]
+        entry = cat_map[call.get("category") or "Sales Inquiry"]
         entry["calls"] += 1
         if _is_won(call):
             entry["won"] += 1
@@ -1910,7 +1910,11 @@ def build_report_summary(
             "calls": len(calls),
             "inbound": inbound,
             "outbound": outbound,
-            "voicemails": sum(1 for c in calls if c.get("category") == "Voicemail"),
+            "voicemails": sum(
+                1
+                for c in calls
+                if c.get("direction") == "inbound" and int(c.get("duration_sec") or 0) < 30
+            ),
             "avg_score": avg_score,
             "avg_duration_sec": avg_dur,
             "sales_calls": len(sales_calls),

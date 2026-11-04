@@ -470,7 +470,11 @@ def post_call_reanalyze(call_id: str, request: Request) -> dict[str, Any]:
     # Re-analyze transcript with the yard's active weights
     if transcript:
         analyzed = analyzer.analyze_transcript(
-            transcript, customer_name=cust_name, rep_name=rep_name, custom_weights=custom_weights
+            transcript,
+            customer_name=cust_name,
+            rep_name=rep_name,
+            custom_weights=custom_weights,
+            direction=match.get("direction") or "inbound",
         )
         if analyzed:
             for k in [
@@ -496,6 +500,9 @@ def post_call_reanalyze(call_id: str, request: Request) -> dict[str, Any]:
                 if k in analyzed:
                     match[k] = analyzed[k]
                     full[k] = analyzed[k]
+            if analyzed.get("category") == "Delivery":
+                match["delivery_call"] = True
+                full["delivery_call"] = True
 
     # Recalculate score from metrics if metrics exist
     metrics = full.get("metrics") or match.get("metrics")
@@ -511,7 +518,7 @@ def post_call_reanalyze(call_id: str, request: Request) -> dict[str, Any]:
         with database.get_db() as conn:
             conn.execute(
                 "UPDATE calls SET overall_score = ?, category = ?, outcome = ? WHERE id = ?",
-                (match.get("overall_score", 70), match.get("category", "Part Inquiry/Quote"), match.get("outcome", "pending"), call_id),
+                (match.get("overall_score", 70), match.get("category", "Sales Inquiry"), match.get("outcome", "pending"), call_id),
             )
     except Exception:
         pass
@@ -574,7 +581,11 @@ def post_call_transcript(body: dict[str, Any], request: Request) -> dict[str, An
     custom_weights = yard_weights if has_custom else None
 
     analyzed = analyzer.analyze_transcript(
-        transcript, customer_name=cust_name, rep_name=rep_name, custom_weights=custom_weights
+        transcript,
+        customer_name=cust_name,
+        rep_name=rep_name,
+        custom_weights=custom_weights,
+        direction="inbound",
     )
 
     veh_str = analyzed.get("vehicle") or " ".join(
@@ -589,7 +600,7 @@ def post_call_transcript(body: dict[str, Any], request: Request) -> dict[str, An
         "customer_name": cust_name,
         "source": "transcript",
         "status": "analyzed",
-        "category": analyzed.get("category", "Part Inquiry/Quote"),
+        "category": analyzed.get("category", "Sales Inquiry"),
         "summary": analyzed.get("summary") or f"Scored transcript · {analyzed.get('part_requested', 'Part')} inquiry",
         "vehicle": veh_str,
         "part_requested": analyzed.get("part_requested", ""),
@@ -686,7 +697,11 @@ async def post_call_audio(
             f"Customer: Hi {rep_name}, I'm calling to check price and availability on parts for my vehicle."
         )
         analyzed = analyzer.analyze_transcript(
-            transcript, customer_name=cust_name, rep_name=rep_name, custom_weights=custom_weights
+            transcript,
+            customer_name=cust_name,
+            rep_name=rep_name,
+            custom_weights=custom_weights,
+            direction="inbound",
         )
         analyzed["transcript"] = transcript
 
@@ -709,7 +724,7 @@ async def post_call_audio(
         "customer_name": cust_name,
         "source": "audio",
         "status": "analyzed",
-        "category": analyzed.get("category", "Part Inquiry/Quote"),
+        "category": analyzed.get("category", "Sales Inquiry"),
         "summary": analyzed.get("summary") or f"Audio scored · {analyzed.get('part_requested', 'Part')} inquiry",
         "vehicle": veh_str,
         "part_requested": analyzed.get("part_requested", ""),
@@ -822,7 +837,11 @@ async def post_bulk_audio(
                     f"Customer: Calling to check availability on recycled OEM parts."
                 )
                 analyzed = analyzer.analyze_transcript(
-                    fallback_text, customer_name="Inbound Caller", rep_name=rep_name, custom_weights=b_custom_weights
+                    fallback_text,
+                    customer_name="Inbound Caller",
+                    rep_name=rep_name,
+                    custom_weights=b_custom_weights,
+                    direction="inbound",
                 )
                 analyzed["transcript"] = fallback_text
 
@@ -846,7 +865,7 @@ async def post_bulk_audio(
                 "customer_name": cust_name,
                 "source": "audio",
                 "status": "analyzed",
-                "category": analyzed.get("category", "Part Inquiry/Quote"),
+                "category": analyzed.get("category", "Sales Inquiry"),
                 "summary": analyzed.get("summary") or f"Audio scored · {analyzed.get('part_requested', 'Part')} inquiry",
                 "vehicle": veh_str,
                 "part_requested": analyzed.get("part_requested", ""),

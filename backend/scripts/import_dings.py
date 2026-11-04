@@ -21,6 +21,7 @@ sys.path.insert(0, backend_dir)
 
 import database
 import store
+from call_categories import classify_call, delivery_kind
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("import_dings")
@@ -260,25 +261,19 @@ def run_import():
         created_at = raw_dt if raw_dt else store.now_iso()
         month_bucket = created_at[:7]
 
-        # Category mapping
+        # Outcome mapping.  The category itself is assigned below from the
+        # direction, topics, trackers, and summary so vendor/other calls are
+        # sorted into the five actionable buckets.
         cat_raw = (row.get("Interaction Category") or "").strip()
         if "order" in cat_raw.lower():
-            category = "Order/Sale"
             outcome = "won"
-        elif "sales enquiry" in cat_raw.lower():
-            category = "Part Inquiry/Quote"
-            outcome = "pending"
         elif "support" in cat_raw.lower():
-            category = "Warranty/Return"
             outcome = "n/a"
         elif "supplier" in cat_raw.lower() or "vendor" in cat_raw.lower():
-            category = "Vendor/Scrap Seller"
             outcome = "n/a"
         elif "voicemail" in cat_raw.lower():
-            category = "Other"
             outcome = "lost"
         else:
-            category = "Part Inquiry/Quote"
             outcome = "pending"
 
         # Score (RingSense 0-10 -> Salvage Pulse 0-100)
@@ -300,6 +295,15 @@ def run_import():
         # Part requested & Summary from topics
         part_requested = topics_list[0] if topics_list else ""
         summary = f"{interaction_name}. Topics discussed: {', '.join(topics_list)}." if topics_list else interaction_name
+
+        category = classify_call(
+            direction=direction,
+            category=cat_raw,
+            topics=topics_list,
+            trackers=trackers_list,
+            summary=summary,
+            interaction_name=interaction_name,
+        )
 
         turns = [
             {"speaker": "Rep", "text": f"Ding's Auto Parts, this is {rep_name}. How can I help you?"},
@@ -372,6 +376,11 @@ def run_import():
             "external_url": interaction_url,
             "topics": topics_list,
             "trackers": trackers_list,
+            "delivery_call": category == "Delivery",
+            "delivery_kind": (
+                delivery_kind(summary=summary) if category == "Delivery" else None
+            ),
+            "source_category": cat_raw,
             "created_at": created_at,
         }
         state_calls_to_insert.append(state_call)
@@ -398,6 +407,11 @@ def run_import():
             "metrics": metrics,
             "external_id": interaction_id,
             "external_url": interaction_url,
+            "delivery_call": category == "Delivery",
+            "delivery_kind": (
+                delivery_kind(summary=summary) if category == "Delivery" else None
+            ),
+            "source_category": cat_raw,
             "created_at": created_at,
         }
 

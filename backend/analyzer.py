@@ -1,6 +1,7 @@
 import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
+from call_categories import classify_call
 from database import (
     CATEGORIES,
     COMMON_PARTS,
@@ -83,7 +84,12 @@ def extract_vehicle_and_part(text: str, topics: Optional[List[str]] = None) -> D
     }
 
 
-def _analyze_transcript_heuristic(transcript: str, customer_name: str = "", custom_weights: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
+def _analyze_transcript_heuristic(
+    transcript: str,
+    customer_name: str = "",
+    custom_weights: Optional[Dict[str, float]] = None,
+    direction: str = "inbound",
+) -> Dict[str, Any]:
     turns = parse_turns(transcript)
     low = (transcript or "").lower()
     rep_text = " ".join(t["text"] for t in turns if t["speaker"] == "Rep").lower() or low
@@ -98,41 +104,32 @@ def _analyze_transcript_heuristic(transcript: str, customer_name: str = "", cust
     ]
     quoted_value = max(amounts) if amounts else 0.0
 
-    # Category & outcome detection
-    if any(w in low for w in ["core return", "core credit", "bringing the core"]):
-        category = "Core Return"
+    # Category & outcome detection.  The category is direction-aware: inbound
+    # calls are customer inquiries/warranty/orders, outbound calls are delivery
+    # or return calls.  Outcome still comes from the conversation itself.
+    won_signals = [
+        "hold it", "i'll take it", "put it on my card", "send it over",
+        "pick up today", "ship it", "sold", "invoice me", "set it aside",
+        "let's do it", "sounds great let's do it", "deal"
+    ]
+    lost_signals = ["i'll pass", "too high", "no thanks", "out of stock", "don't have one", "call around", "already bought"]
+
+    is_won = any(s in low for s in won_signals)
+    is_lost = not is_won and any(s in low for s in lost_signals)
+
+    category = classify_call(
+        direction=direction,
+        transcript=transcript,
+    )
+    if category == "Sales Inquiry" and is_won:
+        category = "Order/Sale"
+
+    if category in ("Warranty/Return", "Delivery"):
         outcome = "n/a"
-    elif any(w in low for w in ["warranty claim", "defective", "send it back", "return policy"]):
-        category = "Warranty/Return"
-        outcome = "n/a"
-    elif any(w in low for w in ["sell my car", "junk car", "scrap", "catalytic buyer"]):
-        category = "Vendor/Scrap Seller"
-        outcome = "n/a"
-    elif any(w in low for w in ["tracking number", "freight status", "where is the driver", "delivery eta"]):
-        category = "Shipping/Delivery"
-        outcome = "n/a"
+    elif category == "Return Call":
+        outcome = "won" if is_won else ("lost" if is_lost else "n/a")
     else:
-        won_signals = [
-            "hold it", "i'll take it", "put it on my card", "send it over",
-            "pick up today", "ship it", "sold", "invoice me", "set it aside",
-            "let's do it", "sounds great let's do it", "deal"
-        ]
-        lost_signals = ["i'll pass", "too high", "no thanks", "out of stock", "don't have one", "call around", "already bought"]
-        price_signals = ["cheaper", "aftermarket", "lkq", "too high", "do better on price", "discount", "knock off"]
-
-        is_won = any(s in low for s in won_signals)
-        is_lost = not is_won and any(s in low for s in lost_signals)
-        has_price_push = any(s in low for s in price_signals)
-
-        if is_won:
-            category = "Order/Sale"
-            outcome = "won"
-        elif has_price_push:
-            category = "Price Negotiation"
-            outcome = "lost" if is_lost else "pending"
-        else:
-            category = "Part Inquiry/Quote"
-            outcome = "lost" if is_lost else "pending"
+        outcome = "won" if is_won else ("lost" if is_lost else "pending")
 
     order_value = quoted_value if outcome == "won" else 0.0
     if outcome == "won" and order_value == 0:
@@ -161,7 +158,7 @@ def _analyze_transcript_heuristic(transcript: str, customer_name: str = "", cust
     overall_score = compute_weighted_overall_score(metrics, custom_weights=custom_weights)
 
     loss_reason = ""
-    if outcome in ("lost", "pending") and category in ("Part Inquiry/Quote", "Price Negotiation"):
+    if outcome in ("lost", "pending") and category in ("Sales Inquiry", "Order/Sale"):
         if any(w in low for w in ["out of stock", "don't have", "sold the", "crushed"]):
             loss_reason = "out_of_stock"
         elif any(w in low for w in ["price", "too high", "aftermarket", "lkq", "cheaper"]):
@@ -248,6 +245,7 @@ def analyze_transcript(
     customer_name: str = "",
     rep_name: str = "",
     custom_weights: Optional[Dict[str, float]] = None,
+    direction: str = "inbound",
 ) -> Dict[str, Any]:
     """Primary entry point for call scoring.
     Attempts Google Gemini 2.5 Flash analysis when configured,
@@ -287,6 +285,15 @@ def analyze_transcript(
                 llm_result["quoted_value"] = float(llm_result.get("quoted_value") or 0.0)
                 llm_result["order_value"] = float(llm_result.get("order_value") or 0.0)
                 llm_result["parts_sold"] = llm_result.get("parts_sold") or []
+                # The LLM does not always know the call direction, so normalize
+                # its category into the direction-aware five-bucket taxonomy.
+                llm_result["category"] = classify_call(
+                    direction=direction,
+                    category=llm_result.get("category") or "",
+                    topics=llm_result.get("topics"),
+                    transcript=transcript,
+                    summary=llm_result.get("summary") or "",
+                )
                 llm_result["analysis_engine"] = "gemini"
                 logger.info("Successfully analyzed call transcript using Google Gemini Flash")
                 return llm_result
@@ -294,7 +301,10 @@ def analyze_transcript(
             logger.warning(f"Gemini analysis exception: {e}, falling back to heuristics")
 
     heuristic_result = _analyze_transcript_heuristic(
-        transcript, customer_name=customer_name, custom_weights=custom_weights
+        transcript,
+        customer_name=customer_name,
+        custom_weights=custom_weights,
+        direction=direction,
     )
     heuristic_result["analysis_engine"] = "heuristic"
     return heuristic_result

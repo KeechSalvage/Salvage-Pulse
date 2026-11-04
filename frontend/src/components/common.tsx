@@ -4,12 +4,18 @@ import { cn } from "@/lib/utils";
 import type { MetricDef, Outcome } from "@/lib/types";
 
 export const CATEGORY_COLORS: Record<string, string> = {
+  "Sales Inquiry": "#38BDF8",
+  "Warranty/Return": "#F472B6",
+  "Order/Sale": "#34D399",
+  Delivery: "#A78BFA",
+  "Return Call": "#FBBF24",
+  // Legacy names are kept so older saved calls still render while the
+  // taxonomy migration catches up.
   "Part Inquiry/Quote": "#38BDF8",
   "Price Negotiation": "#FBBF24",
-  "Order/Sale": "#34D399",
   "Shipping/Delivery": "#A78BFA",
-  "Warranty/Return": "#F472B6",
   "Core Return": "#818CF8",
+  "Vendor/Scrap Seller": "#94A3B8",
   Other: "#94A3B8",
 };
 

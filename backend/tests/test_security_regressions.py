@@ -36,6 +36,7 @@ os.environ["SMTP_PASSWORD"] = ""
 os.environ["APP_URL"] = "https://app.example.test"
 
 import store  # noqa: E402  (environment must be configured first)
+from call_categories import CATEGORIES  # noqa: E402
 
 # Seed a fresh state file so get_state() does not fall back to a developer's
 # local preview_state.json.
@@ -596,6 +597,13 @@ if __name__ == "__main__":
 
 class AttributionTests(unittest.TestCase):
     """Metrics must describe the caller's own yard, rep and calls."""
+
+    def test_meta_exposes_only_actionable_call_categories(self):
+        client = _client()
+        _login(client, "owner@keechauto.com", "owner")
+        response = client.get("/api/meta")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["categories"], CATEGORIES)
 
     def test_manager_and_owner_can_open_a_rep_radar_without_credentials(self):
         """The rep profile (and its 7-metric radar) must work for managers and owners."""

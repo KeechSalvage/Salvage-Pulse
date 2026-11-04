@@ -17,6 +17,7 @@ from collections import Counter, defaultdict
 from typing import Any
 
 import passwords
+from call_categories import CATEGORIES, migrate_call_taxonomy
 
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("DATA_DIR") or os.path.join(BACKEND_DIR, "data")
@@ -228,16 +229,7 @@ def _fallback_seed() -> dict[str, Any]:
     """Minimal seed used on fresh installs where preview_seed.json is absent."""
     return {
         "/meta": {
-            "categories": [
-                "Part Inquiry/Quote",
-                "Price Negotiation",
-                "Order/Sale",
-                "Shipping/Delivery",
-                "Warranty/Return",
-                "Core Return",
-                "Vendor/Scrap Seller",
-                "Other",
-            ],
+            "categories": list(CATEGORIES),
             "metrics": [],
         },
         "/billing/plans": [],
@@ -292,7 +284,7 @@ def synthesize_call_details(call_summary: dict[str, Any], full_existing: dict[st
     vehicle = merged.get("vehicle") or "2018 Ford F-150"
     part = merged.get("part_requested") or "Assembly"
     outcome = merged.get("outcome") or "n/a"
-    cat = merged.get("category") or "Part Inquiry/Quote"
+    cat = merged.get("category") or "Sales Inquiry"
 
     if not merged.get("customer_phone"):
         # Deterministic phone from customer name (stable across processes)
@@ -1044,6 +1036,10 @@ def get_state() -> dict[str, Any]:
             changed = _ensure_configured_masters(_STATE) or changed
             changed = _ensure_master_password(_STATE) or changed
             changed = _enforce_demo_password_rotation(_STATE) or changed
+            if _STATE.get("call_taxonomy_version") != 2:
+                migrate_call_taxonomy(_STATE)
+                _STATE["call_taxonomy_version"] = 2
+                changed = True
             if SEED_DEMO_DATA:
                 _ensure_demo_users(_STATE)
             if changed:

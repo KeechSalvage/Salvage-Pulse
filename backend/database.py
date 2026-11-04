@@ -10,23 +10,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import passwords
+from call_categories import CATEGORIES
 
 logger = logging.getLogger(__name__)
 
 _DATA_DIR = os.environ.get("DATA_DIR") or os.path.join(os.path.dirname(__file__), "data")
 os.makedirs(_DATA_DIR, exist_ok=True)
 DB_PATH = os.path.join(_DATA_DIR, "salvage_pulse.db")
-
-CATEGORIES = [
-    "Part Inquiry/Quote",
-    "Price Negotiation",
-    "Order/Sale",
-    "Shipping/Delivery",
-    "Warranty/Return",
-    "Core Return",
-    "Vendor/Scrap Seller",
-    "Other",
-]
 
 METRICS = [
     {
@@ -153,7 +143,7 @@ PLAN_COMPARE_ROWS = [
     },
     {
         "group": "Team & Call Ingestion",
-        "label": "AI call scoring (7 metrics) & 8 categories",
+        "label": "AI call scoring (7 metrics) & 5 categories",
         "values": {"starter": True, "pro": True, "pro_unlimited": True, "enterprise": True},
     },
     {
@@ -576,7 +566,7 @@ def init_schema():
                 source_category TEXT NOT NULL DEFAULT '',
                 external_id TEXT,
                 external_url TEXT,
-                category TEXT NOT NULL DEFAULT 'Part Inquiry/Quote',
+                category TEXT NOT NULL DEFAULT 'Sales Inquiry',
                 outcome TEXT NOT NULL DEFAULT 'pending',
                 overall_score INTEGER NOT NULL DEFAULT 0,
                 order_value REAL NOT NULL DEFAULT 0,

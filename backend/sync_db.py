@@ -114,7 +114,7 @@ def sync_store_to_sql():
                 int(c.get("duration_sec") or 0),
                 c.get("status") or "analyzed",
                 c.get("source") or "transcript",
-                c.get("category") or "Part Inquiry/Quote",
+                c.get("category") or "Sales Inquiry",
                 c.get("outcome") or "pending",
                 int(c.get("overall_score") or 0),
                 float(c.get("order_value") or 0.0),

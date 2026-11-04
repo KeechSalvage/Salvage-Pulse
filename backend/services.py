@@ -315,7 +315,7 @@ def build_customer_analytics(
             "value_basis": val_basis,
             "talk_sec": sum(int(c["duration_sec"] or 0) for c in clist),
             "last_call_at": latest["created_at"],
-            "last_category": latest["category"] or "Part Inquiry/Quote",
+            "last_category": latest["category"] or "Sales Inquiry",
             "top_topics": [k for k, _ in topics_counter.most_common(4)],
             "rep_names": rep_names_seen,
             "days_quiet": days_quiet,
@@ -507,7 +507,7 @@ def build_overview_analytics(conn: Any, org_id: str, rep_id: Optional[str] = Non
     # Category breakdown
     cat_groups: Dict[str, List[int]] = defaultdict(list)
     for c in calls:
-        cat = c["category"] or "Other"
+        cat = c["category"] or "Sales Inquiry"
         cat_groups[cat].append(int(c["overall_score"] or 0))
     category_breakdown = [
         {

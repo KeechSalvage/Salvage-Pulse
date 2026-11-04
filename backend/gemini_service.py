@@ -58,9 +58,14 @@ Auto Recycling Domain Context:
 - Delivery trucks run on schedules (morning/afternoon runs) or counter pickup.
 - Competitors include aftermarket suppliers (Keystone/LKQ aftermarket) and other salvage yards. Reps should defend OEM fit & finish against cheap aftermarket replicas.
 
+Category rules:
+- Inbound customer calls are "Sales Inquiry" (part, availability, or price question), "Warranty/Return" (warranty claim, return, refund, exchange, or core return), or "Order/Sale" (placing, confirming, or checking an order or payment).
+- Outbound calls are "Delivery" (delivery scheduling, confirmation, or status) or "Return Call" (callbacks, quote follow-ups, and other outbound calls).
+- Never use "Other" or "Vendor/Scrap Seller"; classify those customer calls by their content.
+
 Analyze the transcript thoroughly and output a valid JSON object matching this exact schema:
 {
-  "category": "Part Inquiry/Quote" | "Price Negotiation" | "Order/Sale" | "Shipping/Delivery" | "Warranty/Return" | "Core Return" | "Vendor/Scrap Seller" | "Other",
+  "category": "Sales Inquiry" | "Warranty/Return" | "Order/Sale" | "Delivery" | "Return Call",
   "outcome": "won" | "lost" | "pending" | "n/a",
   "sentiment": "positive" | "neutral" | "negative",
   "quoted_value": float (dollar amount quoted, or 0.0),
@@ -112,6 +117,7 @@ Listen carefully to this phone call recording. You must perform two tasks:
    - Identify vehicle year, make, model, and body.
    - Identify requested part and parts sold.
    - Determine category, outcome (won/lost/pending/n/a), and dollar amounts.
+   - Category rules: inbound calls are "Sales Inquiry", "Warranty/Return", or "Order/Sale"; outbound calls are "Delivery" or "Return Call". Never use "Other" or "Vendor/Scrap Seller".
    - Score all 8 sales metrics from 0 to 100: greeting, needs_discovery, product_knowledge, upsell_crosssell, objection_handling, closing, compliance_warranty, tone_empathy.
    - Provide overall score, strengths, improvements, coaching feedback, and key insights.
 
@@ -121,7 +127,7 @@ Output a valid JSON object matching this schema:
   "turns": [
     {"speaker": "Rep" or "Customer", "text": string}
   ],
-  "category": "Part Inquiry/Quote" | "Price Negotiation" | "Order/Sale" | "Shipping/Delivery" | "Warranty/Return" | "Core Return" | "Vendor/Scrap Seller" | "Other",
+  "category": "Sales Inquiry" | "Warranty/Return" | "Order/Sale" | "Delivery" | "Return Call",
   "outcome": "won" | "lost" | "pending" | "n/a",
   "sentiment": "positive" | "neutral" | "negative",
   "quoted_value": float (dollar amount, or 0.0),

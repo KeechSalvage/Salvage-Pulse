@@ -10,7 +10,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from auth_utils import get_current_user
 import store
-from database import METRICS, get_db, get_org_scoring_config, compute_weighted_overall_score
+from database import CATEGORIES, METRICS, get_db, get_org_scoring_config, compute_weighted_overall_score
 from security import (
     ALLOWED_IMAGE_EXTENSIONS,
     assert_same_org,
@@ -110,6 +110,7 @@ def _get_yard_scoring(org_id: str) -> dict[str, Any]:
 def get_meta(request: Request = None) -> dict[str, Any]:
     st = store.get_state()
     base_meta = dict(st["seed"]["/meta"])
+    base_meta["categories"] = list(CATEGORIES)
     metrics_list = [dict(m) for m in METRICS]
 
     org_id = None

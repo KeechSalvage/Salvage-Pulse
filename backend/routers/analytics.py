@@ -181,7 +181,7 @@ def get_analytics_overview(
     metric_vals: dict[str, list[float]] = {k: [] for k, _ in METRIC_NAMES}
     for c in yard_calls:
         score = c.get("overall_score") or 0
-        cat_counts.setdefault(c.get("category", "Other"), []).append(score)
+        cat_counts.setdefault(c.get("category", "Sales Inquiry"), []).append(score)
         date_map.setdefault((c.get("created_at") or store.today_str())[:10], []).append(score)
         for t in c.get("topics", []):
             topic_counts[t] = topic_counts.get(t, 0) + 1
@@ -551,7 +551,7 @@ def _build_customer_insights(st: dict[str, Any], org_id: Optional[str]) -> dict[
             "talk_sec": round(talk_sec, 1),
             "last_call_at": c0.get("created_at", ""),
             "last_call_id": c0.get("id", ""),
-            "last_category": c0.get("category", "Part Inquiry/Quote"),
+            "last_category": c0.get("category", "Sales Inquiry"),
             "top_topics": top_topics,
             "rep_names": rep_names,
             "tag": tag,
@@ -721,7 +721,7 @@ def get_customer_profile(key: str, request: Request) -> dict[str, Any]:
         "talk_sec": sum(int(c.get("duration_sec") or 0) for c in calls),
         "last_call_at": calls[0].get("created_at", store.now_iso()) if calls else store.now_iso(),
         "last_call_id": calls[0].get("id", "") if calls else "",
-        "last_category": calls[0].get("category", "Part Inquiry/Quote") if calls else "Part Inquiry/Quote",
+        "last_category": calls[0].get("category", "Sales Inquiry") if calls else "Sales Inquiry",
         "top_topics": topics or ["Part Inquiry"],
         "rep_names": list({c.get("rep_name") for c in calls if c.get("rep_name")}),
         "tag": st.get("customer_tags", {}).get(store_key, ""),
