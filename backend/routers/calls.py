@@ -289,6 +289,12 @@ def patch_call_vehicle(call_id: str, body: dict[str, Any], request: Request) -> 
             if "part_requested" in body:
                 c["part_requested"] = body["part_requested"]
             c["vehicle"] = f"{c.get('vehicle_year') or ''} {c.get('vehicle_make', '')} {c.get('vehicle_model', '')}".strip()
+            # Credit the rep who tagged the vehicle so the weekly tagging
+            # leaderboard reflects real saves, not a seeded roster.
+            if c.get("vehicle_make") or c.get("vehicle_model"):
+                c["tagged_by_id"] = actor.get("id", "")
+                c["tagged_at"] = store.now_iso()
+                c.pop("tag_skipped", None)
             store.save_state()
             return c
     raise HTTPException(status_code=404, detail="Call not found")
@@ -1128,7 +1134,10 @@ def post_tagging_action(cid: str, request: Request, site_id: Optional[str] = Que
     if request.url.path.endswith("/skip"):
         target["tag_skipped"] = True
     else:
+        # A delivery call has no vehicle to tag; count it as a "no vehicle"
+        # mark rather than a vehicle save.
         target["delivery_call"] = True
+        target["tag_skipped"] = True
     target["tagged_by_id"] = u.get("id", "")
     target["tagged_at"] = store.now_iso()
     store.save_state()

@@ -1502,11 +1502,21 @@ def build_keyword_calls(state: dict[str, Any], org_id: Optional[str], keyword: d
 
 def build_tagging_queue(state: dict[str, Any], org_id: Optional[str], *, site_id: Optional[str] = None) -> dict[str, Any]:
     calls = org_calls(state, org_id, site_id=site_id)
+    # Resolve every vehicle once; the old per-call rescan made a large yard
+    # quadratic and timed out the tagging page.
+    vehicles = [vehicle_for_call(state, call) for call in calls]
+    by_phone: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {}
+    for call, vehicle in zip(calls, vehicles):
+        if not (vehicle["make"] and vehicle["model"]):
+            continue
+        phone = normalize_phone(call.get("customer_phone"))
+        if phone and phone not in by_phone:
+            by_phone[phone] = (call, vehicle)
+
     queue = []
-    for call in calls:
+    for call, vehicle in zip(calls, vehicles):
         if call.get("tag_skipped") or call.get("delivery_call"):
             continue
-        vehicle = vehicle_for_call(state, call)
         if vehicle["make"] and vehicle["model"]:
             continue
         suggestion = None
@@ -1520,19 +1530,15 @@ def build_tagging_queue(state: dict[str, Any], org_id: Optional[str], *, site_id
         else:
             # Look for another call from the same customer that already has a vehicle.
             phone = normalize_phone(call.get("customer_phone"))
-            if phone:
-                for other in calls:
-                    if other is call or normalize_phone(other.get("customer_phone")) != phone:
-                        continue
-                    other_vehicle = vehicle_for_call(state, other)
-                    if other_vehicle["make"] and other_vehicle["model"]:
-                        suggestion = {
-                            "vehicle_year": other_vehicle["year"],
-                            "vehicle_make": other_vehicle["make"],
-                            "vehicle_model": other_vehicle["model"],
-                            "from_call_at": other.get("created_at", ""),
-                        }
-                        break
+            match = by_phone.get(phone) if phone else None
+            if match:
+                other, other_vehicle = match
+                suggestion = {
+                    "vehicle_year": other_vehicle["year"],
+                    "vehicle_make": other_vehicle["make"],
+                    "vehicle_model": other_vehicle["model"],
+                    "from_call_at": other.get("created_at", ""),
+                }
         topics = _call_topics(call, _call_full(state, call))
         hint = ""
         if any(word in " ".join(topics).lower() for word in ("delivery", "shipping", "freight", "address")):

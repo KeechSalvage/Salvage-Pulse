@@ -106,9 +106,11 @@ def _call_has_warranty(st: dict[str, Any], c: dict[str, Any]) -> bool:
 
 def _stats(st: dict[str, Any], calls: list[dict[str, Any]]) -> dict[str, Any]:
     scored = [c for c in calls if c.get("overall_score") is not None]
-    won = sum(1 for c in calls if c.get("outcome") == "won")
-    lost = sum(1 for c in calls if c.get("outcome") == "lost")
-    pending = sum(1 for c in calls if c.get("outcome") == "pending")
+    # Delivery calls are logged for the delivery board but are never sales.
+    sales_calls = [c for c in calls if not c.get("delivery_call")]
+    won = sum(1 for c in sales_calls if c.get("outcome") == "won")
+    lost = sum(1 for c in sales_calls if c.get("outcome") == "lost")
+    pending = sum(1 for c in sales_calls if c.get("outcome") == "pending")
     sales = won + lost + pending
     warr = sum(1 for c in calls if _call_has_warranty(st, c))
     return {
@@ -341,8 +343,9 @@ def get_analytics_monthly(
 
     for m in all_months:
         mcalls = months_map[m]
-        m_sales = [c for c in mcalls if c.get("outcome") in ("won", "lost", "pending")]
-        m_won = [c for c in mcalls if c.get("outcome") == "won"]
+        metric_calls = [c for c in mcalls if not c.get("delivery_call")]
+        m_sales = [c for c in metric_calls if c.get("outcome") in ("won", "lost", "pending")]
+        m_won = [c for c in metric_calls if c.get("outcome") == "won"]
         sales_calls_cnt = len(m_sales)
         won_cnt = len(m_won)
         close_rate = round(won_cnt / max(sales_calls_cnt, 1) * 100, 1) if sales_calls_cnt else 0.0
@@ -395,8 +398,9 @@ def _build_monthly_reps(st: dict[str, Any], org_id: Optional[str], site_id: Opti
         total_sales = 0
         for m in all_months:
             mcalls = month_map.get(m, [])
-            m_won = sum(1 for c in mcalls if c.get("outcome") == "won")
-            m_sales = sum(1 for c in mcalls if c.get("outcome") in ("won", "lost", "pending"))
+            metric_calls = [c for c in mcalls if not c.get("delivery_call")]
+            m_won = sum(1 for c in metric_calls if c.get("outcome") == "won")
+            m_sales = sum(1 for c in metric_calls if c.get("outcome") in ("won", "lost", "pending"))
             total_won += m_won
             total_sales += m_sales
             points.append({
@@ -405,7 +409,7 @@ def _build_monthly_reps(st: dict[str, Any], org_id: Optional[str], site_id: Opti
                 "sales_calls": m_sales,
                 "won": m_won,
                 "close_rate": round(m_won / max(m_sales, 1) * 100, 1) if m_sales else 0.0,
-                "est_value": float(sum(c.get("order_value") or 0.0 for c in mcalls if c.get("outcome") == "won")),
+                "est_value": float(sum(c.get("order_value") or 0.0 for c in metric_calls if c.get("outcome") == "won")),
             })
         cr = round(total_won / max(total_sales, 1) * 100, 1) if total_sales else 0.0
         reps_data.append({
@@ -874,7 +878,11 @@ def get_watchlist(request: Request) -> list[dict[str, Any]]:
     org_id = effective_org(u)
     items = st.get("watchlist", [])
     if org_id:
-        return [w for w in items if w.get("org_id") == org_id]
+        return [
+            w for w in items
+            if w.get("org_id") == org_id
+            or (org_id == store.KEECH_ORG_ID and not w.get("org_id"))
+        ]
     return items
 
 
@@ -1175,13 +1183,14 @@ def post_arrival(body: dict[str, Any], request: Request) -> dict[str, Any]:
     matching_callers = []
     yard_calls = [c for c in st.get("calls", []) if not org_id or c.get("org_id") == org_id]
     for c in yard_calls[:40]:
-        if make.lower() in (c.get("vehicle_make") or "").lower():
+        vehicle = ya.vehicle_for_call(st, c)
+        if make.lower() in (vehicle.get("make") or "").lower():
             matching_callers.append({
                 "key": c.get("customer_name", "Caller"),
                 "customer_name": c.get("customer_name", "Caller"),
                 "customer_phone": c.get("customer_phone", "+15551234567"),
                 "vehicle": f"{year} {make} {model}".strip(),
-                "parts": [c.get("part_requested") or "Part"],
+                "parts": [vehicle.get("part") or c.get("part_requested") or "Part"],
                 "exact_year": True,
                 "last_asked": c.get("created_at", store.now_iso()),
                 "times_asked": 1,
