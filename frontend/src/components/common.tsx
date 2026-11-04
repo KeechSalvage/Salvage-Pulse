@@ -215,6 +215,7 @@ export const TAG_LABELS: Record<string, string> = {
   retail: "Retail",
   dealership: "Dealership",
   driver: "Driver",
+  adjuster: "Adjuster",
   other: "Other",
   untagged: "Untagged",
 };
@@ -225,6 +226,7 @@ const TAG_COLORS: Record<string, string> = {
   retail: "#34D399",
   dealership: "#FBBF24",
   driver: "#2DD4BF",
+  adjuster: "#F97316",
   other: "#94A3B8",
   untagged: "#94A3B8",
 };

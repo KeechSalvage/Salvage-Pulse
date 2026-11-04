@@ -103,6 +103,11 @@ class CustomerProfileTests(unittest.TestCase):
         created_at: str,
         outcome: str = "pending",
         order_value: float = 0.0,
+        topics: list[str] | None = None,
+        vehicle_year: int | None = None,
+        vehicle_make: str = "",
+        vehicle_model: str = "",
+        part_requested: str = "",
     ) -> str:
         call_id = f"call-{uuid.uuid4().hex}"
         st = store.get_state()
@@ -121,6 +126,11 @@ class CustomerProfileTests(unittest.TestCase):
             "outcome": outcome,
             "order_value": order_value,
             "overall_score": 70,
+            "topics": topics or [],
+            "vehicle_year": vehicle_year,
+            "vehicle_make": vehicle_make,
+            "vehicle_model": vehicle_model,
+            "part_requested": part_requested,
             "created_at": created_at,
         })
         store.save_state()
@@ -239,6 +249,43 @@ class CustomerProfileTests(unittest.TestCase):
         breakdown = {row["tag"]: row for row in insights["type_breakdown"]}
         self.assertIn("driver", breakdown)
         self.assertIn("other", breakdown)
+
+    def test_adjuster_is_non_sales_but_still_counts_as_vehicle_and_parts_request(self):
+        client = _client()
+        owner, _, _ = _signup(client, yard="Adjuster Yard")
+        phone = "15550007701"
+        self._add_call(
+            owner,
+            phone=phone,
+            name="Progressive Claims",
+            created_at=store.now_iso(),
+            outcome="won",
+            order_value=500,
+            topics=["Jeep Grand Cherokee", "Front Door"],
+            vehicle_year=2018,
+            vehicle_make="Jeep",
+            vehicle_model="Grand Cherokee",
+            part_requested="Front Door",
+        )
+
+        overview = client.get("/api/analytics/overview").json()
+        self.assertEqual(overview["total_calls"], 1)
+        self.assertEqual(overview["won"], 0)
+        self.assertEqual(overview["conversion_rate"], 0.0)
+
+        customers = client.get("/api/analytics/customers?include_all=true").json()
+        row = next(c for c in customers["all_customers"] if c["key"] == phone)
+        self.assertEqual(row["tag"], "adjuster")
+
+        vehicles = client.get("/api/analytics/vehicles?rank=calls").json()
+        self.assertEqual(vehicles["total_calls"], 1)
+        self.assertEqual(vehicles["tracked_calls"], 1)
+        self.assertIn("Jeep Grand Cherokee", {f"{m['make']} {m['model']}".strip() for m in vehicles["models"]})
+
+        parts = client.get("/api/analytics/parts-seasonal").json()
+        door = next(p for p in parts["parts"] if p["part"] == "door")
+        self.assertGreaterEqual(door["asked"], 1)
+        self.assertEqual(door["sold"], 0)
 
     def test_bulk_confirm_suggested_tags(self):
         client = _client()

@@ -733,7 +733,7 @@ def customer_group_display_key(
     return group_key
 
 
-NON_SALES_CUSTOMER_TAGS = {"driver", "other"}
+NON_SALES_CUSTOMER_TAGS = {"driver", "adjuster", "other"}
 
 
 def call_is_non_sales_customer(state: dict[str, Any], call: dict[str, Any]) -> bool:
@@ -893,7 +893,7 @@ def build_customer_insights(
         }
         all_customers.append(stat)
 
-        bucket = customer_tag if customer_tag in {"body_shop", "mechanic", "fleet", "retail", "dealership", "driver", "other", "regular"} else "untagged"
+        bucket = customer_tag if customer_tag in {"body_shop", "mechanic", "fleet", "retail", "dealership", "driver", "adjuster", "other", "regular"} else "untagged"
         type_counts[bucket]["customers"] += 1
         type_counts[bucket]["calls"] += len(group_calls)
         type_counts[bucket]["orders"] += len(orders)

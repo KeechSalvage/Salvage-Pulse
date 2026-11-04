@@ -341,6 +341,7 @@ CUSTOMER_TAGS = {
     "retail",
     "dealership",
     "driver",
+    "adjuster",
     "other",
 }
 
@@ -351,6 +352,8 @@ def infer_customer_tag(name: Optional[str]) -> Tuple[str, str]:
     low = name.lower()
     if any(w in low for w in ["collision", "body", "paint", "autobody", "fender", "restoration"]):
         return ("body_shop", "auto")
+    if any(w in low for w in ["adjuster", "insurance", "claims", "progressive", "state farm", "allstate", "geico", "farmers", "usaa", "liberty mutual", "travelers", "nationwide", "safeco", "kemper", "mercury insurance"]):
+        return ("adjuster", "auto")
     if any(w in low for w in ["dealer", "dealership", "auto sales", "car sales", "used car", "new car", "auto group"]):
         return ("dealership", "auto")
     if any(w in low for w in ["driver", "courier", "transporter", "tow truck", "pickup driver"]):
