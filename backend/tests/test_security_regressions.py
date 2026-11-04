@@ -470,6 +470,64 @@ class CoachingFieldTests(unittest.TestCase):
         self.assertTrue(persisted.get("insights"))
 
 
+class RepQueueTests(unittest.TestCase):
+    """Assigned callbacks must render as a known queue kind, once per call."""
+
+    def test_assigned_callbacks_use_a_known_kind_and_do_not_duplicate(self):
+        client = _client()
+        owner, _, _ = _signup(client, yard="Queue Crash Yard")
+        rep = client.post(
+            "/api/users/reps",
+            json={
+                "name": "Queue Rep",
+                "email": f"queue-{uuid.uuid4().hex[:8]}@example.test",
+                "password": "RepPass!234",
+            },
+        ).json()
+
+        cid = f"call-{uuid.uuid4().hex}"
+        st = store.get_state()
+        st.setdefault("calls", []).append({
+            "id": cid,
+            "org_id": owner["org_id"],
+            "rep_id": owner["id"],
+            "rep_name": owner["name"],
+            "customer_name": "Queue Customer",
+            "customer_phone": "15550009501",
+            "direction": "inbound",
+            "duration_sec": 20,
+            "status": "analyzed",
+            "source": "test",
+            "category": "Sales Inquiry",
+            "outcome": "pending",
+            "overall_score": 70,
+            "created_at": store.now_iso(),
+        })
+        store.save_state()
+
+        for _ in range(2):
+            assigned = client.post(
+                "/api/callbacks/assign",
+                json={"call_ids": [cid], "rep_id": rep["id"], "note": "Please call back"},
+            )
+            self.assertEqual(assigned.status_code, 200, assigned.text)
+
+        login = client.post(
+            "/api/auth/login",
+            json={"email": rep["email"], "password": "RepPass!234"},
+        )
+        self.assertEqual(login.status_code, 200, login.text)
+
+        queue = client.get("/api/queue").json()
+        callback_items = [item for item in queue["items"] if item["kind"] == "callback"]
+        self.assertEqual(len(callback_items), 1)
+        self.assertEqual(queue["counts"]["missed"], 1)
+        self.assertTrue(
+            {item["kind"] for item in queue["items"]}
+            <= {"arrival", "missed", "callback", "roleplay"}
+        )
+
+
 class ScoringScopeTests(unittest.TestCase):
     """Custom AI evaluation is isolated to one location."""
 

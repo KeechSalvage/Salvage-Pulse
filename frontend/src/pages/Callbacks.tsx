@@ -22,8 +22,9 @@ import { Input } from "@/components/ui/input";
 type Tab = "open" | "resolved";
 
 function fmtPhone(p: string) {
-  const d = p.replace(/\D/g, "").slice(-10);
-  return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : p || "No number";
+  const raw = String(p ?? "");
+  const d = raw.replace(/\D/g, "").slice(-10);
+  return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : raw || "No number";
 }
 
 export default function Callbacks() {
@@ -245,7 +246,7 @@ export default function Callbacks() {
                 </p>
               </div>
               <a
-                href={c.customer_phone ? `tel:+1${c.customer_phone.replace(/\D/g, "").slice(-10)}` : undefined}
+                href={c.customer_phone ? `tel:+1${String(c.customer_phone).replace(/\D/g, "").slice(-10)}` : undefined}
                 data-testid={`callback-phone-${c.id}`}
                 className="flex items-center gap-2 font-mono text-sm text-amber-300 hover:text-amber-200"
               >

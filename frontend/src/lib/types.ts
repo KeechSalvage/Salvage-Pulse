@@ -1743,7 +1743,7 @@ export interface TextBlast {
   template: string;
 }
 export interface QueueItem {
-  kind: "arrival" | "missed" | "roleplay";
+  kind: "arrival" | "missed" | "callback" | "roleplay";
   id: string;
   title: string;
   detail: string;

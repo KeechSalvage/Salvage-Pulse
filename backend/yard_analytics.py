@@ -1371,9 +1371,16 @@ def build_queue(state: dict[str, Any], org_id: Optional[str], *, user: dict[str,
     open_callbacks = [c for c in (state.get("callbacks_open", []) or []) if org_id is None or c.get("org_id") == org_id]
     if site_id:
         open_callbacks = filter_calls_by_site(state, open_callbacks, site_id)
+    seen_callbacks: set[str] = set()
     for call in open_callbacks:
         if call.get("rep_id") not in (None, "", user.get("id")) and user.get("role") in REP_ROLES:
             continue
+        # A manager can assign the same call more than once (or into two lists).
+        # Show it once per queue instead of duplicating the row and count.
+        callback_id = str(call.get("id") or "")
+        if callback_id in seen_callbacks:
+            continue
+        seen_callbacks.add(callback_id)
         items.append({
             "kind": "callback",
             "id": call.get("id", ""),

@@ -10,11 +10,13 @@ import type { CallQueue as Queue, QueueItem } from "@/lib/types";
 const KIND: Record<QueueItem["kind"], { icon: typeof Truck; label: string; tone: string }> = {
   arrival: { icon: Truck, label: "Vehicle in", tone: "text-amber-300" },
   missed: { icon: PhoneMissed, label: "Missed caller", tone: "text-red-300" },
+  callback: { icon: PhoneCall, label: "Assigned callback", tone: "text-amber-300" },
   roleplay: { icon: Bot, label: "Role-play", tone: "text-sky-300" },
 };
 const fmtPhone = (p: string) => {
-  const d = p.replace(/\D/g, "").slice(-10);
-  return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : p;
+  const raw = String(p ?? "");
+  const d = raw.replace(/\D/g, "").slice(-10);
+  return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : raw;
 };
 
 /** Rep dashboard: one morning list — vehicle-arrival callers, missed callers and assigned role-plays (urgent first). */
@@ -62,7 +64,7 @@ export default function CallQueue() {
       ) : (
         <ul className="mt-4 divide-y divide-border">
           {items.map((i) => {
-            const k = KIND[i.kind];
+            const k = KIND[i.kind] ?? { icon: PhoneCall, label: "Follow-up", tone: "text-slate-300" };
             return (
               <li key={`${i.kind}-${i.id}`} data-testid={`queue-item-${i.kind}-${i.id}`} className="flex flex-wrap items-center gap-3 py-2.5">
                 <k.icon className={cn("size-4 shrink-0", k.tone)} />
