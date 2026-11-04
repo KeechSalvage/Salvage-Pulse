@@ -1,8 +1,9 @@
-import { Fragment, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, FileAudio, GraduationCap, Lightbulb, Loader2, Radio, RefreshCw, ThumbsUp, Trash2, TrendingUp } from "lucide-react";
+import { ArrowLeft, ExternalLink, FileAudio, GraduationCap, Lightbulb, Loader2, Radio, RefreshCw, Save, ThumbsUp, Trash2, TrendingUp } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,7 +18,7 @@ import {
   fmtDuration,
   scoreTier,
 } from "@/components/common";
-import { apiDelete, apiGet, apiPost, apiUpload, errorMessage } from "@/lib/api";
+import { apiDelete, apiGet, apiPatch, apiPost, apiUpload, errorMessage } from "@/lib/api";
 import { useKeywords, useMe, useMeta } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 import VehicleEditor from "@/components/VehicleEditor";
@@ -26,7 +27,7 @@ import AddToCallbacks from "@/components/AddToCallbacks";
 import { isManagerLike } from "@/lib/types";
 import DeliveryScoreCard from "@/components/DeliveryScoreCard";
 import { PriceMissingBadge, priceMissing } from "@/components/PriceMissing";
-import type { Call, CallSummary } from "@/lib/types";
+import type { Call, CallSummary, Outcome } from "@/lib/types";
 
 function AttachPanel({ callId }: { callId: string }) {
   const qc = useQueryClient();
@@ -152,6 +153,78 @@ function Highlighted({ text, rx }: { text: string; rx: RegExp | null }) {
   );
 }
 
+function CategoryEditor({ call }: { call: Call }) {
+  const qc = useQueryClient();
+  const meta = useMeta();
+  const [category, setCategory] = useState(call.category);
+  const [outcome, setOutcome] = useState<Outcome>(call.outcome);
+
+  useEffect(() => {
+    setCategory(call.category);
+    setOutcome(call.outcome);
+  }, [call.id, call.category, call.outcome]);
+
+  const save = useMutation({
+    mutationFn: () => apiPatch<Call>(`/calls/${call.id}/category`, { category, outcome }),
+    onSuccess: () => {
+      toast.success("Call classification saved");
+      qc.invalidateQueries({ queryKey: ["call", call.id] });
+      qc.invalidateQueries({ queryKey: ["calls"] });
+      qc.invalidateQueries({ queryKey: ["overview"] });
+    },
+    onError: (e) => toast.error(errorMessage(e, "Could not save classification")),
+  });
+
+  return (
+    <Panel testId="call-category-editor" className="mb-6">
+      <div className="flex flex-wrap items-end gap-4">
+        <div>
+          <Overline>Call classification</Overline>
+          <p className="mt-1 text-sm text-slate-400">
+            Correct the AI/import bucket. Manual changes are marked as confirmed and leave the needs-review queue.
+          </p>
+        </div>
+        <div className="ml-auto flex flex-wrap items-end gap-3">
+          <label className="text-xs text-slate-400">
+            <span className="mb-1 block font-mono uppercase tracking-wider">Category</span>
+            <Select value={category} onValueChange={setCategory}>
+              <SelectTrigger data-testid="call-category-select" className="h-9 w-52 bg-surface">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(meta.data?.categories ?? []).map((c) => (
+                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+          <label className="text-xs text-slate-400">
+            <span className="mb-1 block font-mono uppercase tracking-wider">Outcome</span>
+            <Select value={outcome} onValueChange={(v) => setOutcome(v as Outcome)}>
+              <SelectTrigger data-testid="call-outcome-select" className="h-9 w-36 bg-surface">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(["won", "lost", "pending", "n/a"] as Outcome[]).map((o) => (
+                  <SelectItem key={o} value={o}>{o}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+          <Button data-testid="call-category-save" size="sm" disabled={save.isPending || (category === call.category && outcome === call.outcome)} onClick={() => save.mutate()}>
+            {save.isPending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} Save
+          </Button>
+        </div>
+      </div>
+      <p className="mt-3 font-mono text-[11px] text-slate-500">
+        Source: {call.category_source === "manual" ? "manual" : call.category_source || "auto"}
+        {typeof call.category_confidence === "number" ? ` · confidence ${Math.round(call.category_confidence * 100)}%` : ""}
+        {call.caller_intent ? ` · intent ${call.caller_intent.replace("_", " ")}` : ""}
+      </p>
+    </Panel>
+  );
+}
+
 export default function CallDetail() {
   const { id } = useParams();
   const nav = useNavigate();
@@ -269,6 +342,7 @@ export default function CallDetail() {
         </Panel>
       )}
 
+      {isManagerLike(me?.role) && (call.status === "analyzed" || call.status === "imported" || call.status === "completed") && <CategoryEditor call={call} />}
       {(call.status === "analyzed" || call.status === "imported" || call.status === "completed") && <SaleBox call={call} />}
       {!!call.delivery_kind && <DeliveryScoreCard call={call} />}
       <CustomerCallsPanel call={call} />

@@ -1036,9 +1036,9 @@ def get_state() -> dict[str, Any]:
             changed = _ensure_configured_masters(_STATE) or changed
             changed = _ensure_master_password(_STATE) or changed
             changed = _enforce_demo_password_rotation(_STATE) or changed
-            if _STATE.get("call_taxonomy_version") != 2:
+            if _STATE.get("call_taxonomy_version") != 3:
                 migrate_call_taxonomy(_STATE)
-                _STATE["call_taxonomy_version"] = 2
+                _STATE["call_taxonomy_version"] = 3
                 changed = True
             if SEED_DEMO_DATA:
                 _ensure_demo_users(_STATE)

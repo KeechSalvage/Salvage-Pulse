@@ -106,6 +106,15 @@ function RowIdentity({ c, rank, tab, team }: Omit<RowProps, "selected" | "onTogg
         )}
       </div>
       <p className="mt-1 text-sm text-slate-400">{s ? s.reason : c.top_topics.slice(0, 3).join(", ") || "—"}</p>
+      {c.email && (
+        <a
+          href={`mailto:${c.email}`}
+          data-testid={`customer-email-${tab}-${rank}`}
+          className="mt-0.5 inline-block text-xs text-sky-300 hover:underline"
+        >
+          {c.email}
+        </a>
+      )}
       {s?.opener && <OpenerLine opener={s.opener} testId={`customer-opener-${tab}-${rank}`} />}
       {s && tab === "winback" && <WinBackActions c={s} rank={rank} />}
       {team && (c.rep_names ?? []).length > 0 && (
@@ -390,6 +399,16 @@ function BulkTagBar({ tab, list, picked, setPicked }: { tab: Tab; list: Contact[
     },
     onError: (e) => toast.error(errorMessage(e, "Bulk tag failed")),
   });
+  const accept = useMutation({
+    mutationFn: () => apiPost<BulkTagResult>("/customers/confirm-suggested", { keys: [...picked] }),
+    onSuccess: (r) => {
+      toast.success(`Confirmed the suggested type for ${r.updated} customer${r.updated === 1 ? "" : "s"}`);
+      setPicked(new Set());
+      qc.invalidateQueries({ queryKey: ["customers"], refetchType: "all" });
+      qc.invalidateQueries({ queryKey: ["customer"] });
+    },
+    onError: (e) => toast.error(errorMessage(e, "Could not confirm suggestions")),
+  });
   const allPicked = picked.size === (list ?? []).length && (list ?? []).length > 0;
   return (
     <div data-testid="bulk-tag-bar" className="sticky top-0 z-10 mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface/95 px-3 py-2 backdrop-blur">
@@ -415,6 +434,14 @@ function BulkTagBar({ tab, list, picked, setPicked }: { tab: Tab; list: Contact[
               {TAG_LABELS[t]}
             </button>
           ))}
+          <button
+            data-testid="bulk-tag-accept"
+            disabled={accept.isPending}
+            onClick={() => accept.mutate()}
+            className="rounded-full border border-emerald-500/50 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300 transition-colors duration-150 hover:border-emerald-400"
+          >
+            Accept suggestions
+          </button>
           <button data-testid="bulk-tag-clear" disabled={bulk.isPending} onClick={() => bulk.mutate(null)} className="text-xs text-slate-500 hover:text-red-300">
             Clear tags
           </button>

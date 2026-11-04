@@ -146,6 +146,25 @@ class CustomerProfileTests(unittest.TestCase):
         self.assertEqual(row["email"], "ops@acme.test")
         self.assertFalse(row["text_ok"])
 
+    def test_bulk_confirm_suggested_tags(self):
+        client = _client()
+        owner, _, _ = _signup(client, yard="Suggested Tag Yard")
+        phone = "15550007201"
+        self._add_call(owner, phone=phone, name="Acme Collision", created_at="2026-05-10T12:00:00Z")
+
+        untagged = client.get("/api/analytics/customers?include_all=true&tag=untagged").json()
+        self.assertIn(phone, {c["key"] for c in untagged["all_customers"]})
+
+        confirmed = client.post("/api/customers/confirm-suggested", json={"keys": [phone]})
+        self.assertEqual(confirmed.status_code, 200, confirmed.text)
+        self.assertEqual(confirmed.json()["updated"], 1)
+        profile = client.get(f"/api/customers/{phone}").json()["stat"]
+        self.assertEqual(profile["tag"], "body_shop")
+        self.assertEqual(profile["tag_source"], "manual")
+
+        untagged = client.get("/api/analytics/customers?include_all=true&tag=untagged").json()
+        self.assertNotIn(phone, {c["key"] for c in untagged["all_customers"]})
+
     def test_customer_date_range_filters_calls(self):
         client = _client()
         owner, _, _ = _signup(client, yard="Customer Date Yard")
@@ -165,6 +184,95 @@ class CustomerProfileTests(unittest.TestCase):
         keys = {c["key"] for c in june["all_customers"]}
         self.assertIn("15550007102", keys)
         self.assertNotIn("15550007101", keys)
+
+
+class ClassificationAndTextTests(unittest.TestCase):
+    """Manual category correction, review queue, and text permission."""
+
+    def test_manual_category_override_clears_needs_review(self):
+        client = _client()
+        owner, _, _ = _signup(client, yard="Category Review Yard")
+        call_id = f"call-{uuid.uuid4().hex}"
+        st = store.get_state()
+        st.setdefault("calls", []).append({
+            "id": call_id,
+            "org_id": owner["org_id"],
+            "rep_id": owner["id"],
+            "rep_name": owner["name"],
+            "customer_name": "Review Customer",
+            "customer_phone": "15550007301",
+            "direction": "inbound",
+            "duration_sec": 60,
+            "status": "analyzed",
+            "source": "ringcentral",
+            "category": "Sales Inquiry",
+            "category_source": "auto",
+            "category_confidence": 0.4,
+            "caller_intent": "buyer",
+            "outcome": "pending",
+            "overall_score": 70,
+            "created_at": "2026-05-10T12:00:00Z",
+        })
+        store.save_state()
+
+        review = client.get("/api/calls?needs_review=true")
+        self.assertEqual(review.status_code, 200, review.text)
+        self.assertIn(call_id, {c["id"] for c in review.json()})
+
+        saved = client.patch(
+            f"/api/calls/{call_id}/category",
+            json={"category": "Warranty/Return", "outcome": "n/a"},
+        )
+        self.assertEqual(saved.status_code, 200, saved.text)
+        body = saved.json()
+        self.assertEqual(body["category"], "Warranty/Return")
+        self.assertEqual(body["outcome"], "n/a")
+        self.assertEqual(body["category_source"], "manual")
+        self.assertEqual(body["category_confidence"], 1.0)
+        self.assertEqual(body["caller_intent"], "warranty")
+
+        review = client.get("/api/calls?needs_review=true").json()
+        self.assertNotIn(call_id, {c["id"] for c in review})
+        audit = client.get("/api/calls/category-audit").json()
+        self.assertGreaterEqual(
+            next((s["count"] for s in audit["by_source"] if s["source"] == "manual"), 0),
+            1,
+        )
+
+    def test_text_blast_only_includes_approved_callers(self):
+        client = _client()
+        owner, _, _ = _signup(client, yard="Text Permission Yard")
+        created = client.post(
+            "/api/arrivals",
+            json={"vehicle_year": 2020, "vehicle_make": "Ford", "vehicle_model": "F-150"},
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        arrival = created.json()
+        aid = arrival["id"]
+
+        st = store.get_state()
+        target = next(a for a in st.get("arrivals", []) if a.get("id") == aid)
+        target["callers"] = [
+            {"key": "caller-a", "customer_name": "Caller A", "customer_phone": "15550007401", "status": "to_call", "text_ok": None, "sms_reply": ""},
+            {"key": "caller-b", "customer_name": "Caller B", "customer_phone": "15550007402", "status": "to_call", "text_ok": True, "sms_reply": ""},
+        ]
+        store.save_state()
+
+        sent = client.post(f"/api/arrivals/{aid}/text", json={"template": "Hello {name}"})
+        self.assertEqual(sent.status_code, 200, sent.text)
+        body = sent.json()
+        self.assertEqual(body["blasts"][-1]["count"], 1)
+        self.assertEqual(body["blasts"][-1]["skipped"], 1)
+        self.assertTrue(body["callers"][1]["texted_at"])
+        self.assertFalse(body["callers"][0].get("texted_at"))
+
+        target = next(a for a in store.get_state().get("arrivals", []) if a.get("id") == aid)
+        for caller in target["callers"]:
+            caller["text_ok"] = None
+            caller["texted_at"] = None
+        store.save_state()
+        blocked = client.post(f"/api/arrivals/{aid}/text", json={"template": "Hello again"})
+        self.assertEqual(blocked.status_code, 400)
 
 
 class AuthenticationTests(unittest.TestCase):

@@ -9,6 +9,7 @@ import { ListPlus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { EmptyState, PageHeader, fmtDate } from "@/components/common";
+import { DateRangeFilter } from "@/components/DateRange";
 import { apiDelete, apiGet, apiPatch, apiPost, errorMessage } from "@/lib/api";
 
 const fmtDue = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -32,11 +33,18 @@ export default function Callbacks() {
   const [selling, setSelling] = useState<string | null>(null);
   const [source, setSource] = useState("");
   const [newList, setNewList] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const isManager = isManagerLike(me?.role);
   const lists = useCallbackLists();
   const { data, isError } = useQuery({
-    queryKey: ["callbacks", tab, source],
-    queryFn: () => apiGet<CallbackItem[]>(`/callbacks?status=${tab}&source=${encodeURIComponent(source)}`),
+    queryKey: ["callbacks", tab, source, dateFrom, dateTo],
+    queryFn: () => {
+      const params = new URLSearchParams({ status: tab, source });
+      if (dateFrom) params.set("date_from", dateFrom);
+      if (dateTo) params.set("date_to", dateTo);
+      return apiGet<CallbackItem[]>(`/callbacks?${params.toString()}`);
+    },
   });
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["callbacks"] });
@@ -119,6 +127,18 @@ export default function Callbacks() {
         Inbound voicemails and calls under 30 seconds. A call auto-resolves when anyone connects with that number again (30s+, in or out);
         otherwise call them back and mark it done.
       </p>
+
+      <div className="mb-4">
+        <DateRangeFilter
+          from={dateFrom}
+          to={dateTo}
+          onChange={([f, t]) => {
+            setDateFrom(f);
+            setDateTo(t);
+          }}
+          testId="callbacks-date-range"
+        />
+      </div>
 
       <div id="callbacks-sources-bar" className="mb-5 flex flex-wrap items-center gap-2 scroll-mt-6" data-testid="callbacks-sources">
         {[

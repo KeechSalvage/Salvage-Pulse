@@ -21,7 +21,7 @@ sys.path.insert(0, backend_dir)
 
 import database
 import store
-from call_categories import classify_call, delivery_kind
+from call_categories import classify_call_details, delivery_kind
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("import_dings")
@@ -296,7 +296,7 @@ def run_import():
         part_requested = topics_list[0] if topics_list else ""
         summary = f"{interaction_name}. Topics discussed: {', '.join(topics_list)}." if topics_list else interaction_name
 
-        category = classify_call(
+        category, category_confidence, caller_intent = classify_call_details(
             direction=direction,
             category=cat_raw,
             topics=topics_list,
@@ -381,6 +381,9 @@ def run_import():
                 delivery_kind(summary=summary) if category == "Delivery" else None
             ),
             "source_category": cat_raw,
+            "category_source": "import",
+            "category_confidence": category_confidence,
+            "caller_intent": caller_intent,
             "created_at": created_at,
         }
         state_calls_to_insert.append(state_call)
@@ -412,6 +415,9 @@ def run_import():
                 delivery_kind(summary=summary) if category == "Delivery" else None
             ),
             "source_category": cat_raw,
+            "category_source": "import",
+            "category_confidence": category_confidence,
+            "caller_intent": caller_intent,
             "created_at": created_at,
         }
 

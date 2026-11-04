@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Loader2, PhoneCall, PhoneIncoming, PhoneOutgoing, Save, StickyNote } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { CategoryBadge, Overline, Panel, ScoreBadge, StatCard, TAG_LABELS, TagBadge, fmtDate, fmtDuration, fmtMoney } from "@/components/common";
@@ -28,7 +27,7 @@ export default function CustomerProfilePage() {
   const { data: me } = useMe();
   const canEdit = isManagerLike(me?.role);
   const [note, setNote] = useState("");
-  const [details, setDetails] = useState<CustomerProfileUpdate>({ name: "", email: "", text_ok: true });
+  const [details, setDetails] = useState<CustomerProfileUpdate>({ name: "", email: "", text_ok: null });
   const { data, isError } = useQuery({
     queryKey: ["customer", key],
     queryFn: () => apiGet<CustomerProfile>(`/customers/${encodeURIComponent(key)}`),
@@ -39,7 +38,7 @@ export default function CustomerProfilePage() {
     setDetails({
       name: data.stat.name ?? "",
       email: data.stat.email ?? "",
-      text_ok: data.stat.text_ok !== false,
+      text_ok: data.stat.text_ok ?? null,
     });
   }, [data?.stat.key, data?.stat.name, data?.stat.email, data?.stat.text_ok]);
 
@@ -200,13 +199,23 @@ export default function CustomerProfilePage() {
                     className="bg-surface"
                   />
                 </label>
-                <label className="flex items-center gap-2 text-sm text-slate-300">
-                  <Checkbox
+                <label className="block text-sm">
+                  <span className="mb-1 block text-slate-300">Texting</span>
+                  <select
                     data-testid="customer-detail-text-ok"
-                    checked={details.text_ok}
-                    onCheckedChange={(v) => setDetails((d) => ({ ...d, text_ok: v === true }))}
-                  />
-                  Can text this number
+                    value={details.text_ok === null ? "unknown" : details.text_ok ? "yes" : "no"}
+                    onChange={(e) =>
+                      setDetails((d) => ({
+                        ...d,
+                        text_ok: e.target.value === "unknown" ? null : e.target.value === "yes",
+                      }))
+                    }
+                    className="h-9 w-full rounded-md border border-border bg-surface px-2 text-sm text-slate-200"
+                  >
+                    <option value="unknown">Not set — do not text</option>
+                    <option value="yes">Can text this number</option>
+                    <option value="no">Cannot text this number</option>
+                  </select>
                 </label>
               </div>
               <div className="mt-4 flex justify-end">

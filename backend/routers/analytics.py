@@ -10,6 +10,7 @@ from auth_utils import get_current_user
 import database
 import store
 import yard_analytics as ya
+from database import infer_customer_tag
 from security import (
     assert_same_org,
     effective_org,
@@ -709,7 +710,7 @@ def get_customer_profile(key: str, request: Request) -> dict[str, Any]:
             if isinstance(full_stat, dict):
                 full_stat["name"] = profile.get("name") or full_stat.get("name") or key
                 full_stat["email"] = str(profile.get("email") or "")
-                full_stat["text_ok"] = profile.get("text_ok", True) is not False
+                full_stat["text_ok"] = profile.get("text_ok") if "text_ok" in profile else None
                 if manual_tag:
                     full_stat["tag"] = manual_tag
                     full_stat["tag_source"] = "manual"
@@ -742,7 +743,7 @@ def get_customer_profile(key: str, request: Request) -> dict[str, Any]:
         "tag": manual_tag,
         "tag_source": "manual" if manual_tag else "",
         "email": str(profile.get("email") or ""),
-        "text_ok": profile.get("text_ok", True) is not False,
+        "text_ok": profile.get("text_ok") if "text_ok" in profile else None,
         "est_value": sum(float(c.get("order_value") or 0) for c in metric_calls) or 350.0,
         "value_basis": "ai",
     }
@@ -789,9 +790,9 @@ def put_customer_profile(key: str, body: dict[str, Any], request: Request) -> di
     email = email.strip()
     if email:
         email = validate_email(email)
-    text_ok = body.get("text_ok", True)
-    if not isinstance(text_ok, bool):
-        raise HTTPException(status_code=400, detail="text_ok must be true or false")
+    text_ok = body.get("text_ok", None)
+    if text_ok is not None and not isinstance(text_ok, bool):
+        raise HTTPException(status_code=400, detail="text_ok must be true, false, or null")
     org_id = effective_org(u)
     record = {
         "name": name,
@@ -831,6 +832,48 @@ def post_customers_bulk_tag(body: dict[str, Any], request: Request) -> dict[str,
             st.setdefault("customer_tags", {})[store_key] = tag
     store.save_state()
     return {"updated": len(keys)}
+
+
+@router.post("/api/customers/confirm-suggested")
+def post_customers_confirm_suggested(body: dict[str, Any], request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    u = get_current_user(request)
+    keys = body.get("keys", [])
+    if not isinstance(keys, list):
+        raise HTTPException(status_code=400, detail="keys must be a list")
+    if len(keys) > 500:
+        raise HTTPException(status_code=400, detail="Too many customers in one request (max 500)")
+    blocked = [k for k in keys if not isinstance(k, str) or not _customer_visible(st, k, u)]
+    if blocked:
+        raise HTTPException(status_code=403, detail="You cannot tag another yard's customers")
+    org_id = effective_org(u)
+    updated = 0
+    for key in keys:
+        if ya._manual_tag(st, org_id, key):
+            continue
+        profile = ya._customer_profile(st, org_id, key)
+        name = str(profile.get("name") or "")
+        if not name:
+            phone = ya.normalize_phone(key)
+            matches = [
+                c for c in st.get("calls", [])
+                if (not org_id or c.get("org_id") == org_id)
+                and (
+                    c.get("customer_name") == key
+                    or (phone and ya.normalize_phone(c.get("customer_phone")) == phone)
+                )
+            ]
+            if matches:
+                latest = max(matches, key=lambda c: c.get("created_at") or "")
+                name = str(latest.get("customer_name") or "")
+        tag, _ = infer_customer_tag(name)
+        if tag == "untagged":
+            continue
+        for store_key in ya.customer_store_keys(org_id, key):
+            st.setdefault("customer_tags", {})[store_key] = tag
+        updated += 1
+    store.save_state()
+    return {"updated": updated}
 
 
 @router.post("/api/customers/{key}/notes")
@@ -1175,6 +1218,13 @@ def get_arrivals(request: Request) -> list[dict[str, Any]]:
     for a in items:
         status = a.get("inventory_status") or "newly_arrived"
         a["inventory_status"] = status
+        for caller in a.get("callers", []):
+            profile = ya._customer_profile(
+                st,
+                a.get("org_id") or org_id,
+                caller.get("customer_phone") or caller.get("customer_name") or "",
+            )
+            caller["text_ok"] = profile.get("text_ok") if "text_ok" in profile else None
 
         if not a.get("body_type"):
             m = (a.get("vehicle_model") or "").strip().lower()
@@ -1247,10 +1297,16 @@ def post_arrival(body: dict[str, Any], request: Request) -> dict[str, Any]:
     for c in yard_calls[:40]:
         vehicle = ya.vehicle_for_call(st, c)
         if make.lower() in (vehicle.get("make") or "").lower():
+            profile = ya._customer_profile(
+                st,
+                org_id,
+                c.get("customer_phone") or c.get("customer_name") or "",
+            )
             matching_callers.append({
                 "key": c.get("customer_name", "Caller"),
                 "customer_name": c.get("customer_name", "Caller"),
                 "customer_phone": c.get("customer_phone", "+15551234567"),
+                "text_ok": profile.get("text_ok") if "text_ok" in profile else None,
                 "vehicle": f"{year} {make} {model}".strip(),
                 "parts": [vehicle.get("part") or c.get("part_requested") or "Part"],
                 "exact_year": True,
@@ -1501,14 +1557,36 @@ def post_arrival_text(aid: str, body: dict[str, Any], request: Request) -> dict[
         if a.get("id") == aid:
             assert_same_org(u, a.get("org_id"))
             template = body.get("template", "")
-            for c in a.get("callers", []):
+            callers = a.get("callers", [])
+            org_id = a.get("org_id") or effective_org(u)
+            for caller in callers:
+                profile = ya._customer_profile(
+                    st,
+                    org_id,
+                    caller.get("customer_phone") or caller.get("customer_name") or "",
+                )
+                caller["text_ok"] = profile.get("text_ok") if "text_ok" in profile else caller.get("text_ok")
+            eligible = [
+                c for c in callers
+                if c.get("status") in ("to_call", "called")
+                and c.get("customer_phone")
+                and c.get("text_ok") is True
+                and "stop" not in (c.get("sms_reply") or "").lower()
+            ]
+            if not eligible:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No callers on this list are approved for texting. Set 'Can text' on each customer profile first.",
+                )
+            for c in eligible:
                 c["texted_at"] = store.now_iso()
                 c["text"] = template
             a.setdefault("blasts", []).append({
                 "at": store.now_iso(),
                 "by": u.get("name", "Manager"),
                 "template": template,
-                "count": len(a.get("callers", [])),
+                "count": len(eligible),
+                "skipped": len(callers) - len(eligible),
                 "mode": "practice",
                 "failed": 0,
             })
@@ -1662,6 +1740,8 @@ def get_callbacks(
     request: Request,
     status: str = Query("open"),
     source: str = Query(""),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
 ) -> list[dict[str, Any]]:
     st = store.get_state()
     u = get_current_user(request)
@@ -1672,6 +1752,10 @@ def get_callbacks(
         items = st.get("callbacks_open", [])
     if org_id:
         items = [i for i in items if i.get("org_id") == org_id]
+    if date_from:
+        items = [i for i in items if (i.get("created_at") or i.get("call_at") or "")[:10] >= date_from]
+    if date_to:
+        items = [i for i in items if (i.get("created_at") or i.get("call_at") or "")[:10] <= date_to]
     if source:
         if source == "inventory_manager":
             items = [

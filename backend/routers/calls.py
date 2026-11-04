@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from collections import Counter
 from typing import Any, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
@@ -10,7 +11,7 @@ from auth_utils import get_current_user, get_uploads_dir
 from gemini_service import analyze_audio_call_llm, is_gemini_configured, normalize_audio_mime
 import store
 import yard_analytics as ya
-from database import VEHICLE_CATALOG, get_org_scoring_config, compute_weighted_overall_score
+from database import CATEGORIES, VEHICLE_CATALOG, get_org_scoring_config, compute_weighted_overall_score
 from security import (
     ALLOWED_AUDIO_EXTENSIONS,
     assert_call_access,
@@ -52,6 +53,8 @@ def get_calls(
     q: Optional[str] = Query(None),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    caller_intent: Optional[str] = Query(None),
+    needs_review: bool = Query(False),
     site_id: Optional[str] = Query(None),
     org_id: Optional[str] = Query(None),
 ) -> list[dict[str, Any]]:
@@ -81,6 +84,14 @@ def get_calls(
             continue
         if status and c.get("status") != status:
             continue
+        if caller_intent and c.get("caller_intent") != caller_intent:
+            continue
+        if needs_review:
+            if c.get("category_source") == "manual":
+                continue
+            confidence = c.get("category_confidence")
+            if confidence is not None and float(confidence) >= 0.6:
+                continue
         if date_from and (c.get("created_at") or "")[:10] < date_from:
             continue
         if date_to and (c.get("created_at") or "")[:10] > date_to:
@@ -93,6 +104,37 @@ def get_calls(
         filtered.append({**c, "parts_sold": c.get("parts_sold") or [], "topics": c.get("topics") or []})
 
     return filtered
+
+
+@router.get("/api/calls/category-audit")
+def get_category_audit(request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    u = get_current_user(request)
+    org_id = effective_org(u)
+    calls = [c for c in st.get("calls", []) if not org_id or c.get("org_id") == org_id]
+    by_source = Counter(c.get("category_source") or "auto" for c in calls)
+    by_intent = Counter(c.get("caller_intent") or "buyer" for c in calls)
+    needs_review = sum(
+        1
+        for c in calls
+        if c.get("category_source") != "manual"
+        and (c.get("category_confidence") is None or float(c.get("category_confidence") or 0) < 0.6)
+    )
+    changes = Counter(
+        (c.get("category_before_migration"), c.get("category"))
+        for c in calls
+        if c.get("category_before_migration") and c.get("category_before_migration") != c.get("category")
+    )
+    return {
+        "total": len(calls),
+        "by_source": [{"source": k, "count": v} for k, v in by_source.most_common()],
+        "by_intent": [{"intent": k, "count": v} for k, v in by_intent.most_common()],
+        "needs_review": needs_review,
+        "migration_changes": [
+            {"from": old, "to": new, "count": count}
+            for (old, new), count in changes.most_common(20)
+        ],
+    }
 
 
 @router.get("/api/calls/coverage")
@@ -319,6 +361,62 @@ def patch_call_sale(call_id: str, body: dict[str, Any], request: Request) -> dic
     raise HTTPException(status_code=404, detail="Call not found")
 
 
+@router.patch("/api/calls/{call_id}/category")
+def patch_call_category(call_id: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
+    st = store.get_state()
+    actor = get_current_user(request)
+    if not is_manager(actor):
+        raise HTTPException(status_code=403, detail="Manager access required to change call categories")
+    category = body.get("category")
+    if category not in CATEGORIES:
+        raise HTTPException(status_code=400, detail="Unknown call category")
+    outcome = body.get("outcome")
+    if outcome is not None and outcome not in ("won", "lost", "pending", "n/a"):
+        raise HTTPException(status_code=400, detail="Unknown call outcome")
+    target = next((c for c in st.get("calls", []) if c.get("id") == call_id), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Call not found")
+    assert_call_access(actor, target)
+    full = (st.get("full_calls") or {}).get(call_id)
+    old_category = target.get("category") or ""
+    new_outcome = outcome if outcome is not None else target.get("outcome") or "pending"
+    intent = target.get("caller_intent") or "buyer"
+    if intent != "seller":
+        intent = {
+            "Warranty/Return": "warranty",
+            "Order/Sale": "order",
+            "Delivery": "delivery",
+            "Return Call": "return_call",
+        }.get(category, "buyer")
+    for item in (target, full):
+        if not item:
+            continue
+        if old_category and not item.get("category_before_manual"):
+            item["category_before_manual"] = old_category
+        item["category"] = category
+        item["outcome"] = new_outcome
+        item["category_source"] = "manual"
+        item["category_confidence"] = 1.0
+        item["caller_intent"] = intent
+        item["category_updated_by"] = actor.get("id", "")
+        item["category_updated_at"] = store.now_iso()
+        if category == "Delivery":
+            item["delivery_call"] = True
+            item.setdefault("delivery_kind", "question")
+        elif old_category == "Delivery":
+            item["delivery_call"] = False
+    store.save_state()
+    try:
+        with database.get_db() as conn:
+            conn.execute(
+                "UPDATE calls SET category = ?, outcome = ? WHERE id = ?",
+                (category, new_outcome, call_id),
+            )
+    except Exception:
+        pass
+    return full or target
+
+
 @router.patch("/api/calls/{call_id}/delivery")
 def patch_call_delivery(call_id: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
@@ -477,9 +575,13 @@ def post_call_reanalyze(call_id: str, request: Request) -> dict[str, Any]:
             direction=match.get("direction") or "inbound",
         )
         if analyzed:
+            preserve_manual = match.get("category_source") == "manual"
             for k in [
                 "overall_score",
                 "category",
+                "category_source",
+                "category_confidence",
+                "caller_intent",
                 "outcome",
                 "sentiment",
                 "order_value",
@@ -497,10 +599,12 @@ def post_call_reanalyze(call_id: str, request: Request) -> dict[str, Any]:
                 "topics",
                 "metrics",
             ]:
+                if preserve_manual and k in ("category", "category_source", "category_confidence", "caller_intent", "outcome"):
+                    continue
                 if k in analyzed:
                     match[k] = analyzed[k]
                     full[k] = analyzed[k]
-            if analyzed.get("category") == "Delivery":
+            if not preserve_manual and analyzed.get("category") == "Delivery":
                 match["delivery_call"] = True
                 full["delivery_call"] = True
 
@@ -601,6 +705,9 @@ def post_call_transcript(body: dict[str, Any], request: Request) -> dict[str, An
         "source": "transcript",
         "status": "analyzed",
         "category": analyzed.get("category", "Sales Inquiry"),
+        "category_source": analyzed.get("category_source", "auto"),
+        "category_confidence": analyzed.get("category_confidence", 0.5),
+        "caller_intent": analyzed.get("caller_intent", "buyer"),
         "summary": analyzed.get("summary") or f"Scored transcript · {analyzed.get('part_requested', 'Part')} inquiry",
         "vehicle": veh_str,
         "part_requested": analyzed.get("part_requested", ""),
@@ -725,6 +832,9 @@ async def post_call_audio(
         "source": "audio",
         "status": "analyzed",
         "category": analyzed.get("category", "Sales Inquiry"),
+        "category_source": analyzed.get("category_source", "auto"),
+        "category_confidence": analyzed.get("category_confidence", 0.5),
+        "caller_intent": analyzed.get("caller_intent", "buyer"),
         "summary": analyzed.get("summary") or f"Audio scored · {analyzed.get('part_requested', 'Part')} inquiry",
         "vehicle": veh_str,
         "part_requested": analyzed.get("part_requested", ""),

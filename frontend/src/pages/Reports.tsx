@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -18,7 +18,7 @@ import { apiGet, apiPost, errorMessage } from "@/lib/api";
 import { useMe } from "@/lib/hooks";
 import { SiteFilter } from "@/components/Sites";
 import { cn } from "@/lib/utils";
-import type { DrillQuery, MonthlyReportResult, Report, ReportCount } from "@/lib/types";
+import type { CategoryAudit, DrillQuery, MonthlyReportResult, Report, ReportCount } from "@/lib/types";
 import { isManagerLike } from "@/lib/types";
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -106,6 +106,11 @@ export default function Reports() {
     queryKey: ["report", from, to, siteId],
     queryFn: () => apiGet<Report>(`/reports/summary?date_from=${from}&date_to=${to}${siteId ? `&site_id=${siteId}` : ""}`),
     enabled: !!from && !!to && from <= to,
+  });
+  const audit = useQuery({
+    queryKey: ["category-audit"],
+    queryFn: () => apiGet<CategoryAudit>("/calls/category-audit"),
+    enabled: isManager,
   });
   const range: DrillQuery = { from_day: from, to_day: to };
   const emailMe = useMutation({
@@ -246,6 +251,45 @@ export default function Reports() {
         )}
         <span className="ml-auto font-mono text-xs text-slate-500" data-testid="report-range-label">{from} → {to}{isFetching ? " · loading…" : ""}</span>
       </div>
+      {isManager && audit.data && (
+        <Panel testId="category-audit-panel" className="mb-6 print:hidden">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <Overline>Call classification</Overline>
+              <p className="mt-1 text-sm text-slate-400">
+                {audit.data.total.toLocaleString()} calls · {audit.data.needs_review.toLocaleString()} need review ·{" "}
+                {audit.data.by_source.find((s) => s.source === "manual")?.count ?? 0} manually confirmed
+              </p>
+            </div>
+            <Link
+              to="/calls?needs_review=1"
+              data-testid="category-audit-review-link"
+              className="rounded-full border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-300 transition-colors duration-150 hover:border-amber-400"
+            >
+              Review calls
+            </Link>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-4 font-mono text-[11px] text-slate-400">
+            {audit.data.by_source.map((s) => (
+              <span key={s.source}>
+                {s.source}: <span className="text-slate-200">{s.count.toLocaleString()}</span>
+              </span>
+            ))}
+            {audit.data.by_intent.map((i) => (
+              <span key={i.intent}>
+                {i.intent.replace("_", " ")}: <span className="text-slate-200">{i.count.toLocaleString()}</span>
+              </span>
+            ))}
+          </div>
+          {audit.data.migration_changes.length > 0 && (
+            <p className="mt-3 text-xs text-slate-500" data-testid="category-audit-changes">
+              Recent migration:{" "}
+              {audit.data.migration_changes.slice(0, 4).map((c) => `${c.from} → ${c.to} (${c.count})`).join(" · ")}
+            </p>
+          )}
+        </Panel>
+      )}
+
       {isError && <p className="mb-4 text-sm text-red-300">Couldn't build this report — check the dates.</p>}
       <div id="report-summary-stats" className="grid grid-cols-2 gap-4 lg:grid-cols-5 scroll-mt-6">
         <StatCard label="Calls" value={t?.calls ?? "—"} sub={t ? `${t.inbound} in · ${t.outbound} out · ${t.voicemails} vm` : ""} testId="report-stat-calls" />

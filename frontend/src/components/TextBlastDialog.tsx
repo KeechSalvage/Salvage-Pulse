@@ -19,7 +19,9 @@ export default function TextBlastDialog({ arrival }: { arrival: Arrival }) {
   const [template, setTemplate] = useState(DEFAULT);
   const { data: smsStatus } = useQuery({ queryKey: ["sms-status"], queryFn: () => apiGet<SmsStatus>("/sms/status") });
   const live = !!smsStatus?.live;
-  const eligible = arrival.callers.filter((c) => (c.status === "to_call" || c.status === "called") && c.customer_phone);
+  const eligible = arrival.callers.filter(
+    (c) => (c.status === "to_call" || c.status === "called") && c.customer_phone && c.text_ok === true,
+  );
   const first = eligible[0];
   const preview = first
     ? template
@@ -56,7 +58,7 @@ export default function TextBlastDialog({ arrival }: { arrival: Arrival }) {
               ) : (
                 <span className="font-semibold text-amber-300" data-testid="text-blast-practice">Practice mode — no real texts are sent (Twilio not connected).</span>
               )}{" "}
-              Each text is personalised and logged on the list. Skips callers marked Sold or No{live ? " and anyone who texted STOP" : ""}. Replies show on the list automatically.
+              Each text is personalised and logged on the list. Only callers whose customer profile says <strong>Can text</strong> are included; sold/no, unapproved, and STOP callers are skipped. Replies show on the list automatically.
             </DialogDescription>
           </DialogHeader>
           <Textarea data-testid="text-blast-template" rows={4} value={template} onChange={(e) => setTemplate(e.target.value)} maxLength={320} />

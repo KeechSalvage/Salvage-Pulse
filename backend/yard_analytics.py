@@ -758,7 +758,7 @@ def build_customer_insights(
             "tag": customer_tag,
             "tag_source": tag_source,
             "email": str(profile.get("email") or ""),
-            "text_ok": profile.get("text_ok", True) is not False,
+            "text_ok": profile.get("text_ok") if "text_ok" in profile else None,
             "est_value": round(est_value, 2),
             "value_basis": value_basis,
             "reason": f"Quoted {topics.most_common(1)[0][0] if topics else 'parts'} on {latest.get('created_at', '')[:10]} — follow up recommended",

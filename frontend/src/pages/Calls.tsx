@@ -59,6 +59,8 @@ export default function Calls() {
   const [yearTo, setYearTo] = useState(urlParams.get("year_to") ?? "");
   const [dateFrom, setDateFrom] = useState(urlParams.get("date_from") ?? "");
   const [dateTo, setDateTo] = useState(urlParams.get("date_to") ?? "");
+  const [needsReview, setNeedsReview] = useState(urlParams.get("needs_review") === "1");
+  const [callerIntent, setCallerIntent] = useState(urlParams.get("caller_intent") ?? "all");
   const vopts = useQuery({ queryKey: ["vehicle-options"], queryFn: () => apiGet<VehicleOptions>("/calls/vehicle-options") });
   const models = (vopts.data?.makes ?? []).find((m) => m.make === make)?.models ?? [];
   const vehicleOn = make !== "all" || !!yearFrom || !!yearTo;
@@ -76,6 +78,8 @@ export default function Calls() {
   if (yearTo.length === 4) params.set("year_to", yearTo);
   if (dateFrom) params.set("date_from", dateFrom);
   if (dateTo) params.set("date_to", dateTo);
+  if (needsReview) params.set("needs_review", "true");
+  if (callerIntent !== "all") params.set("caller_intent", callerIntent);
   const qs = params.toString();
   const [prevQs, setPrevQs] = useState(qs);
   if (qs !== prevQs) {
@@ -181,6 +185,28 @@ export default function Calls() {
             ))}
           </SelectContent>
         </Select>
+        <button
+          type="button"
+          data-testid="calls-needs-review"
+          onClick={() => setNeedsReview((v) => !v)}
+          className={cn(
+            "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-150",
+            needsReview ? "border-amber-500 bg-amber-500/15 text-amber-300" : "border-border text-slate-400 hover:text-white",
+          )}
+        >
+          Needs review
+        </button>
+        <button
+          type="button"
+          data-testid="calls-seller-intent"
+          onClick={() => setCallerIntent((v) => (v === "seller" ? "all" : "seller"))}
+          className={cn(
+            "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-150",
+            callerIntent === "seller" ? "border-sky-500 bg-sky-500/15 text-sky-300" : "border-border text-slate-400 hover:text-white",
+          )}
+        >
+          Seller/vendor
+        </button>
         <span data-testid="calls-count" className="px-2 font-mono text-xs text-slate-500">
           {calls?.length ?? 0} calls
         </span>

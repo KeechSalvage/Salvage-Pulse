@@ -203,6 +203,11 @@ export interface CallSummary {
   source: "audio" | "transcript" | "ringcentral";
   status: CallStatus;
   category: string;
+  category_source?: "manual" | "auto" | "import";
+  category_confidence?: number;
+  caller_intent?: "buyer" | "seller" | "warranty" | "order" | "delivery" | "return_call";
+  category_updated_by?: string;
+  category_updated_at?: string;
   summary: string;
   vehicle: string;
   part_requested: string;
@@ -262,6 +267,14 @@ export interface CategoryStat {
   category: string;
   count: number;
   avg_score: number;
+}
+
+export interface CategoryAudit {
+  total: number;
+  by_source: { source: string; count: number }[];
+  by_intent: { intent: string; count: number }[];
+  needs_review: number;
+  migration_changes: { from: string; to: string; count: number }[];
 }
 export interface MetricStat {
   key: string;
@@ -775,7 +788,7 @@ export interface CustomerStat {
   tag: string;
   tag_source: "manual" | "auto" | "";
   email: string;
-  text_ok: boolean;
+  text_ok: boolean | null;
   est_value: number;
   value_basis: "ai" | "mixed" | "estimated" | "";
 }
@@ -783,7 +796,7 @@ export interface CustomerStat {
 export interface CustomerProfileUpdate {
   name: string;
   email: string;
-  text_ok: boolean;
+  text_ok: boolean | null;
 }
 
 export type CustomerTag = "body_shop" | "mechanic" | "fleet" | "retail";
@@ -1535,6 +1548,7 @@ export interface ArrivalCaller {
   key: string;
   customer_name: string;
   customer_phone: string;
+  text_ok: boolean | null;
   vehicle: string;
   parts: string[];
   exact_year: boolean;
@@ -1576,6 +1590,7 @@ export interface ArrivalBlast {
   by: string;
   template: string;
   count: number;
+  skipped?: number;
   mode: "practice" | "live";
   failed: number;
 }

@@ -1,7 +1,7 @@
 import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
-from call_categories import classify_call
+from call_categories import classify_call_details
 from database import (
     CATEGORIES,
     COMMON_PARTS,
@@ -117,12 +117,14 @@ def _analyze_transcript_heuristic(
     is_won = any(s in low for s in won_signals)
     is_lost = not is_won and any(s in low for s in lost_signals)
 
-    category = classify_call(
+    category, category_confidence, caller_intent = classify_call_details(
         direction=direction,
         transcript=transcript,
     )
     if category == "Sales Inquiry" and is_won:
         category = "Order/Sale"
+        category_confidence = max(category_confidence, 0.8)
+        caller_intent = "order"
 
     if category in ("Warranty/Return", "Delivery"):
         outcome = "n/a"
@@ -223,6 +225,9 @@ def _analyze_transcript_heuristic(
         "turns": turns,
         "vehicle": veh_str,
         "category": category,
+        "category_source": "auto",
+        "category_confidence": category_confidence,
+        "caller_intent": caller_intent,
         "outcome": outcome,
         "overall_score": overall_score,
         "order_value": order_value,
@@ -287,13 +292,14 @@ def analyze_transcript(
                 llm_result["parts_sold"] = llm_result.get("parts_sold") or []
                 # The LLM does not always know the call direction, so normalize
                 # its category into the direction-aware five-bucket taxonomy.
-                llm_result["category"] = classify_call(
+                llm_result["category"], llm_result["category_confidence"], llm_result["caller_intent"] = classify_call_details(
                     direction=direction,
                     category=llm_result.get("category") or "",
                     topics=llm_result.get("topics"),
                     transcript=transcript,
                     summary=llm_result.get("summary") or "",
                 )
+                llm_result["category_source"] = "auto"
                 llm_result["analysis_engine"] = "gemini"
                 logger.info("Successfully analyzed call transcript using Google Gemini Flash")
                 return llm_result
