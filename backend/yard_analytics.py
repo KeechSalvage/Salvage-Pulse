@@ -282,6 +282,39 @@ def _part_from_topics(call: dict[str, Any], full: dict[str, Any]) -> str:
     return ""
 
 
+def parts_for_call(state: dict[str, Any], call: dict[str, Any]) -> set[str]:
+    """Every canonical part a call mentions, not just the first one.
+
+    A caller can ask about a door and a fender in the same conversation, so the
+    seasonal chart and its drill-down both count that call under both parts.
+    """
+    full = _call_full(state, call)
+    texts: list[str] = []
+    explicit = call.get("part_requested") or full.get("part_requested") or ""
+    if explicit:
+        texts.append(str(explicit))
+    texts.extend(_call_topics(call, full))
+    summary = str(call.get("summary") or full.get("summary") or "")
+    match = re.search(r"topics discussed:\s*(.+)$", summary, re.I)
+    if match:
+        texts.append(match.group(1))
+
+    parts: set[str] = set()
+    for text in texts:
+        low = str(text or "").lower()
+        for alias, canonical in _PART_ALIASES.items():
+            if re.search(r"\b" + re.escape(alias) + r"\b", low):
+                parts.add(canonical)
+    return parts
+
+
+def call_matches_part(state: dict[str, Any], call: dict[str, Any], part: str) -> bool:
+    target = canonical_part(part)
+    if not target:
+        return False
+    return target in parts_for_call(state, call)
+
+
 def vehicle_for_call(state: dict[str, Any], call: dict[str, Any]) -> dict[str, Any]:
     """Best-effort year/make/model/body/part for a call.
 

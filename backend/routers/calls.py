@@ -1025,7 +1025,7 @@ def get_drill_calls(
                 continue
             elif outcome != "sales" and c.get("outcome") != outcome:
                 continue
-        if vehicle_make or vehicle_model or part:
+        if vehicle_make or vehicle_model:
             vehicle = ya.vehicle_for_call(st, c)
         else:
             vehicle = {}
@@ -1033,8 +1033,11 @@ def get_drill_calls(
             continue
         if vehicle_model and (vehicle.get("model") or "").lower() != vehicle_model.lower():
             continue
-        if part and (vehicle.get("part") or "").lower() != part.lower():
-            continue
+        if part:
+            # Delivery calls never count as parts demand, and the predicate is
+            # shared with the seasonal chart so its box counts match this list.
+            if c.get("delivery_call") or not ya.call_matches_part(st, c, part):
+                continue
         if part_sold and part_sold not in (c.get("parts_sold") or []):
             continue
         if price_missing and (c.get("outcome") != "won" or (c.get("order_value") or 0) > 0):
@@ -1054,7 +1057,11 @@ def get_drill_calls(
 
         res.append({**c, "parts_sold": c.get("parts_sold") or []})
 
-    return {"total": len(res), "calls": res[:200]}
+    # Seasonal part cells display an exact count, so a part+month drill returns
+    # the whole list instead of the generic 200-row preview cap.  That keeps the
+    # number in the cell equal to the calls the dialog actually shows.
+    cap = len(res) if (part and month) else 200
+    return {"total": len(res), "calls": res[:cap]}
 
 
 def _scope_cleanup(items: list[dict[str, Any]], org_id: Optional[str]) -> list[dict[str, Any]]:

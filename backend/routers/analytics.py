@@ -448,14 +448,13 @@ def _build_parts_seasonal(st: dict[str, Any], org_id: Optional[str]) -> dict[str
     total_sales_calls = sum(1 for c in calls if c.get("outcome") in ("won", "lost", "pending"))
     yard_close_rate = round(total_sales_won / max(1, total_sales_calls) * 100, 1)
 
+    # Resolve each call's parts once with the same predicate the drill-down
+    # uses, so the number in a seasonal cell always equals the calls it opens.
+    call_parts = {id(c): ya.parts_for_call(st, c) for c in calls}
     parts_data = []
     for p_name in part_names:
-        p_lower = p_name.lower()
-        matched = [
-            c for c in calls
-            if p_lower in (c.get("part_requested") or "").lower()
-            or any(p_lower in (t or "").lower() for t in (c.get("topics") or []))
-        ]
+        target = ya.canonical_part(p_name)
+        matched = [c for c in calls if target in call_parts[id(c)]]
         asked = len(matched)
         sold = sum(1 for c in matched if c.get("outcome") == "won")
         scalls = sum(1 for c in matched if c.get("outcome") in ("won", "lost", "pending"))
@@ -598,8 +597,9 @@ def get_parts_seasonal(request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
     org_id = effective_org(u)
-    if org_id == store.KEECH_ORG_ID:
-        return st["seed"].get("/analytics/parts-seasonal", {"months": [], "parts": [], "yard_close_rate": 0})
+    # Computed from each yard's own calls.  The old Keech seed carried demo
+    # counts that did not correspond to any real call, so its cells opened a
+    # different number of calls than they displayed.
     return _build_parts_seasonal(st, org_id)
 
 

@@ -746,3 +746,79 @@ class AttributionTests(unittest.TestCase):
         row = next(r for r in confirmed["recent"] if r["customer_key"] == "15550002002")
         self.assertTrue(row["confirmed"])
         self.assertEqual(row["confirmed_value"], 250.0)
+
+    def test_seasonal_part_cells_match_drill_down_exactly(self):
+        """Every seasonal cell must equal the calls its dialog shows.
+
+        A call that mentions several parts counts under each one, delivery
+        calls never count as parts demand, and the drill-down must return the
+        full list rather than the generic 200-row preview cap.
+        """
+        yard = _client()
+        owner, _, _ = _signup(yard, yard="Attribution Parts Yard")
+        now = store.now_iso()
+        month = now[:7]
+        base = {
+            "org_id": owner["org_id"],
+            "rep_id": owner["id"],
+            "rep_name": owner["name"],
+            "created_at": now,
+            "duration_sec": 30,
+            "category": "Part Inquiry/Quote",
+        }
+        st = store.get_state()
+        st.setdefault("calls", []).extend([
+            {
+                **base,
+                "id": f"call-{uuid.uuid4().hex}",
+                "customer_name": "One",
+                "customer_phone": "15550003001",
+                "outcome": "won",
+                "topics": ["Ford F-150", "Front Door", "Bumper"],
+            },
+            {
+                **base,
+                "id": f"call-{uuid.uuid4().hex}",
+                "customer_name": "Two",
+                "customer_phone": "15550003002",
+                "outcome": "lost",
+                "topics": ["Chevy Silverado", "door"],
+            },
+            {
+                **base,
+                "id": f"call-{uuid.uuid4().hex}",
+                "customer_name": "Three",
+                "customer_phone": "15550003003",
+                "outcome": "won",
+                "delivery_call": True,
+                "topics": ["Front Door"],
+            },
+            {
+                **base,
+                "id": f"call-{uuid.uuid4().hex}",
+                "customer_name": "Four",
+                "customer_phone": "15550003004",
+                "outcome": "won",
+                "topics": ["Engine"],
+            },
+        ])
+        store.save_state()
+
+        seasonal = yard.get("/api/analytics/parts-seasonal").json()
+        self.assertIn(month, seasonal["months"])
+        by_part = {p["part"]: p for p in seasonal["parts"]}
+        self.assertEqual(by_part["door"]["asked"], 2)  # delivery call excluded
+        self.assertEqual(by_part["door"]["sold"], 1)
+        self.assertEqual(by_part["bumper"]["asked"], 1)
+        self.assertEqual(by_part["engine"]["asked"], 1)
+
+        for part, row in by_part.items():
+            for index, cell_month in enumerate(seasonal["months"]):
+                for mode, outcome in (("asked", None), ("sold", "won")):
+                    expected = row[f"{mode}_by_month"][index]
+                    query = f"/api/drill/calls?part={part}&month={cell_month}"
+                    if outcome:
+                        query += f"&outcome={outcome}"
+                    data = yard.get(query).json()
+                    self.assertEqual(expected, data["total"], query)
+                    self.assertEqual(expected, len(data["calls"]), query)
