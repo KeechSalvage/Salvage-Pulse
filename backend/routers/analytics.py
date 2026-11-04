@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from auth_utils import get_current_user
 import database
 import store
+import yard_analytics as ya
 from security import (
     assert_same_org,
     effective_org,
@@ -35,8 +36,8 @@ def _customer_visible(st: dict[str, Any], key: str, user: dict[str, Any]) -> boo
     full = (st.get("full_customers") or {}).get(key)
     if isinstance(full, dict):
         record_org = (full.get("stat") or {}).get("org_id") or full.get("org_id")
-        if record_org:
-            return record_org == org_id
+        if record_org == org_id:
+            return True
 
     for call in st.get("calls", []):
         if call.get("customer_name") == key or call.get("customer_phone") == key:
@@ -149,13 +150,10 @@ def get_analytics_overview(
     u = get_current_user(request)
     org_id = effective_org(u)
 
-    org_calls = [c for c in st.get("calls", []) if not org_id or c.get("org_id") == org_id]
-    
-    # If signed in as an individual rep, default to viewing their own rep calls unless a specific rep_id is passed
-    effective_rep_id = rep_id
-    if not effective_rep_id and u.get("role") in ("rep", "sales_rep"):
-        effective_rep_id = u.get("id")
-
+    # Reps may only ever see themselves; managers may pick a rep in their own
+    # yard; platform staff may cross yards.
+    effective_rep_id = ya.scoped_rep_id(u, rep_id, st)
+    org_calls = ya.org_calls(st, org_id, site_id=site_id)
     yard_calls = [c for c in org_calls if not effective_rep_id or c.get("rep_id") == effective_rep_id]
     if days:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -231,7 +229,10 @@ def get_analytics_overview(
         {"id": "kw-core", "keyword": "Core", "group": "Financial"},
         {"id": "kw-oem", "keyword": "OEM", "group": "Quality"},
     ]
-    user_keywords = st.get("keywords", [])
+    user_keywords = [
+        k for k in st.get("keywords", [])
+        if not org_id or k.get("org_id") in (None, "", org_id)
+    ]
     effective_keywords = user_keywords if user_keywords else default_keywords
     full_calls_map = st.get("full_calls", {})
 
@@ -266,8 +267,15 @@ def get_analytics_overview(
     computed_kw_stats.sort(key=lambda x: -x["count"])
     base["keyword_stats"] = computed_kw_stats
 
-    base["roleplay_sessions"] = len([x for x in st.get("roleplay_sessions", []) if not org_id or st.get("users_by_id", {}).get(x.get("user_id"), {}).get("org_id") == org_id])
-    base["open_callbacks"] = len([c for c in st.get("callbacks_open", []) if not org_id or c.get("org_id") == org_id])
+    base["roleplay_sessions"] = len([
+        x for x in st.get("roleplay_sessions", [])
+        if not org_id or st.get("users_by_id", {}).get(x.get("user_id"), {}).get("org_id") == org_id
+    ])
+    base["open_callbacks"] = len([
+        c for c in st.get("callbacks_open", [])
+        if (not org_id or c.get("org_id") == org_id)
+        and (not effective_rep_id or c.get("rep_id") == effective_rep_id)
+    ])
     base["lot_name"] = ""
     if effective_rep_id:
         u_rep = st.get("users_by_id", {}).get(effective_rep_id)
@@ -306,13 +314,16 @@ def get_team_benchmark(request: Request) -> dict[str, Any]:
 
 
 @router.get("/api/analytics/monthly")
-def get_analytics_monthly(request: Request, rep_id: Optional[str] = Query(None)) -> dict[str, Any]:
+def get_analytics_monthly(
+    request: Request,
+    rep_id: Optional[str] = Query(None),
+    site_id: Optional[str] = Query(None),
+) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
     org_id = effective_org(u)
-    calls = [c for c in st.get("calls", []) if not org_id or c.get("org_id") == org_id]
-    if rep_id:
-        calls = [c for c in calls if c.get("rep_id") == rep_id]
+    effective_rep_id = ya.scoped_rep_id(u, rep_id, st)
+    calls = ya.org_calls(st, org_id, rep_id=effective_rep_id, site_id=site_id)
 
     # Compute dynamic monthly trend points from the calls dataset
     months_map: dict[str, list[dict[str, Any]]] = {}
@@ -357,8 +368,8 @@ def get_analytics_monthly(request: Request, rep_id: Optional[str] = Query(None))
     }
 
 
-def _build_monthly_reps(st: dict[str, Any], org_id: Optional[str]) -> dict[str, Any]:
-    calls = [c for c in st.get("calls", []) if not org_id or c.get("org_id") == org_id]
+def _build_monthly_reps(st: dict[str, Any], org_id: Optional[str], site_id: Optional[str] = None) -> dict[str, Any]:
+    calls = ya.org_calls(st, org_id, site_id=site_id)
     reps_data = []
     months_set = set()
     for c in calls:
@@ -370,6 +381,8 @@ def _build_monthly_reps(st: dict[str, Any], org_id: Optional[str]) -> dict[str, 
         if u.get("role") not in ("rep", "sales_rep") or u.get("disabled"):
             continue
         if org_id and u.get("org_id") != org_id:
+            continue
+        if site_id and u.get("site_id") != site_id:
             continue
         rep_calls = [c for c in calls if c.get("rep_id") == u["id"]]
         month_map: dict[str, list[dict[str, Any]]] = {}
@@ -407,19 +420,22 @@ def _build_monthly_reps(st: dict[str, Any], org_id: Optional[str]) -> dict[str, 
 
 
 @router.get("/api/analytics/monthly/reps")
-def get_analytics_monthly_reps(request: Request) -> dict[str, Any]:
+def get_analytics_monthly_reps(request: Request, site_id: Optional[str] = Query(None)) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
     org_id = effective_org(u)
-    return _build_monthly_reps(st, org_id)
+    return _build_monthly_reps(st, org_id, site_id=site_id)
 
 
 def _build_parts_seasonal(st: dict[str, Any], org_id: Optional[str]) -> dict[str, Any]:
-    calls = [c for c in st.get("calls", []) if not org_id or c.get("org_id") == org_id]
+    calls = [
+        c for c in st.get("calls", [])
+        if (not org_id or c.get("org_id") == org_id) and not c.get("delivery_call")
+    ]
     if not calls:
-        return {"months": ["2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10"], "parts": [], "yard_close_rate": 28.5}
+        return {"months": [], "parts": [], "yard_close_rate": 0.0}
 
-    months = ["2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10"]
+    months = sorted({(c.get("created_at") or "")[:7] for c in calls if (c.get("created_at") or "")[:7]})[-6:]
     part_names = [
         "Door", "Transmission", "Bumper", "Engine", "Headlight", "Wheel / Rim",
         "Mirror", "Fender", "Axle", "Suspension", "Alternator", "Starter"
@@ -445,14 +461,19 @@ def _build_parts_seasonal(st: dict[str, Any], org_id: Optional[str]) -> dict[str
         sold_by_m = []
         for m in months:
             mcalls = [c for c in matched if (c.get("created_at") or "")[:7] == m]
-            if m in ("2026-09", "2026-10"):
-                asked_by_m.append(len(mcalls))
-                sold_by_m.append(sum(1 for c in mcalls if c.get("outcome") == "won"))
-            else:
-                scale = 0.8 if m == "2026-08" else 0.6 if m == "2026-07" else 0.4
-                a_count = max(1, int(len(matched) * scale * 0.15))
-                asked_by_m.append(a_count)
-                sold_by_m.append(max(0, int(a_count * (crate / 100))))
+            asked_by_m.append(len(mcalls))
+            sold_by_m.append(sum(1 for c in mcalls if c.get("outcome") == "won"))
+
+        peak_month = months[asked_by_m.index(max(asked_by_m))] if asked_by_m else ""
+
+        # Count real loss reasons where the yard recorded them.
+        reasons = []
+        for reason in ("price", "out_of_stock", "condition", "fitment", "unknown"):
+            count = sum(
+                1 for c in matched
+                if (c.get("loss_reason") or c.get("lost_reason") or "").lower().replace(" ", "_") == reason
+            )
+            reasons.append({"reason": reason, "calls": count, "from_ai": 0})
 
         parts_data.append({
             "part": p_name.lower(),
@@ -460,17 +481,11 @@ def _build_parts_seasonal(st: dict[str, Any], org_id: Optional[str]) -> dict[str
             "asked": asked,
             "sold_by_month": sold_by_m,
             "asked_by_month": asked_by_m,
-            "peak_month": "2026-09" if asked_by_m[4] >= asked_by_m[5] else "2026-10",
+            "peak_month": peak_month,
             "sales_calls": scalls,
             "close_rate": crate,
             "low_close": crate < yard_close_rate,
-            "reasons": [
-                {"reason": "price", "calls": int(scalls * 0.4), "from_ai": 0},
-                {"reason": "out_of_stock", "calls": int(scalls * 0.3), "from_ai": 0},
-                {"reason": "condition", "calls": int(scalls * 0.15), "from_ai": 0},
-                {"reason": "fitment", "calls": int(scalls * 0.1), "from_ai": 0},
-                {"reason": "unknown", "calls": max(1, int(scalls * 0.05)), "from_ai": 0},
-            ],
+            "reasons": reasons,
         })
 
     parts_data.sort(key=lambda x: x["asked"], reverse=True)
@@ -589,11 +604,12 @@ def get_vehicles(
     request: Request,
     rank: str = Query("calls"),
     body: Optional[str] = Query(None),
+    site_id: Optional[str] = Query(None),
 ) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
     org_id = effective_org(u)
-    if org_id == store.KEECH_ORG_ID or org_id == "org-dings-auto":
+    if org_id == store.KEECH_ORG_ID and not site_id:
         base = st["seed"].get("/analytics/vehicles?rank=calls", {})
         if not body or body == "all":
             return base
@@ -607,7 +623,7 @@ def get_vehicles(
         makes = [mk for mk in res.get("makes", []) if mk.get("make") in allowed_makes]
         res["makes"] = makes
         return res
-    return {"vehicles": [], "makes": [], "models": [], "body_counts": {}, "tracked_calls": 0, "total_calls": 0}
+    return ya.build_vehicle_demand(st, org_id, rank=rank, body=body, site_id=site_id)
 
 
 @router.get("/api/analytics/lost-vehicles")
@@ -615,26 +631,31 @@ def get_lost_vehicles(
     request: Request,
     rank: str = Query("calls"),
     body: Optional[str] = Query(None),
+    site_id: Optional[str] = Query(None),
 ) -> list[dict[str, Any]]:
     st = store.get_state()
     u = get_current_user(request)
     org_id = effective_org(u)
-    if org_id == store.KEECH_ORG_ID or org_id == "org-dings-auto":
+    if org_id == store.KEECH_ORG_ID and not site_id:
         base_lost = st["seed"].get("/analytics/lost-vehicles?rank=calls", [])
         if not body or body == "all":
             return base_lost
         return [lv for lv in base_lost if lv.get("body_type") == body]
-    return []
+    return ya.build_lost_vehicles(st, org_id, rank=rank, body=body, site_id=site_id)
 
 
 @router.get("/api/analytics/stock-alerts")
-def get_stock_alerts(request: Request, rank: str = Query("calls")) -> list[dict[str, Any]]:
+def get_stock_alerts(
+    request: Request,
+    rank: str = Query("calls"),
+    site_id: Optional[str] = Query(None),
+) -> list[dict[str, Any]]:
     st = store.get_state()
     u = get_current_user(request)
     org_id = effective_org(u)
-    if org_id == store.KEECH_ORG_ID or org_id == "org-dings-auto":
+    if org_id == store.KEECH_ORG_ID and not site_id:
         return st["seed"].get("/analytics/stock-alerts?rank=calls", [])
-    return []
+    return ya.build_stock_alerts(st, org_id, rank=rank, site_id=site_id)
 
 
 @router.get("/api/analytics/customers")
@@ -647,11 +668,14 @@ def get_analytics_customers(
     st = store.get_state()
     u = get_current_user(request)
     org_id = effective_org(u)
-    if org_id == store.KEECH_ORG_ID:
-        if include_all:
-            return st["seed"].get("/analytics/customers?include_all=true", st["seed"].get("/analytics/customers", {}))
-        return st["seed"].get("/analytics/customers", {})
-    return _build_customer_insights(st, org_id)
+    effective_rep_id = ya.scoped_rep_id(u, rep_id, st)
+    return ya.build_customer_insights(
+        st,
+        org_id,
+        rep_id=effective_rep_id,
+        tag=tag,
+        include_all=include_all,
+    )
 
 
 @router.get("/api/customers/{key}")
@@ -666,25 +690,38 @@ def get_customer_profile(key: str, request: Request) -> dict[str, Any]:
     full = full_custs.get(key)
     if isinstance(full, dict):
         record_org = (full.get("stat") or {}).get("org_id") or full.get("org_id")
-        if org_id in (None, store.KEECH_ORG_ID) or record_org == org_id:
+        # Platform staff may read every yard.  A yard may only read its own
+        # full-customer record; legacy Keech records predate ``org_id``.
+        if org_id is None or record_org == org_id or (not record_org and org_id == store.KEECH_ORG_ID):
             return full
 
-    calls = [c for c in st.get("calls", []) if (not org_id or c.get("org_id") == org_id) and (c.get("customer_name") == key or c.get("customer_phone") == key)]
+    calls = [
+        c for c in st.get("calls", [])
+        if (not org_id or c.get("org_id") == org_id)
+        and (c.get("customer_name") == key or c.get("customer_phone") == key)
+    ]
+    calls.sort(key=lambda c: c.get("created_at", ""), reverse=True)
+    metric_calls = [c for c in calls if not c.get("delivery_call")]
+    topics: list[str] = []
+    for c in calls[:5]:
+        for topic in (c.get("topics") or []):
+            if topic and topic not in topics:
+                topics.append(str(topic))
     stat = {
         "key": key,
-        "name": key,
+        "name": calls[0].get("customer_name") or key if calls else key,
         "phone": calls[0].get("customer_phone", "") if calls else "",
         "calls": len(calls),
-        "orders": sum(1 for c in calls if c.get("outcome") == "won"),
-        "talk_sec": sum(int(c.get("duration_sec", 0)) for c in calls),
+        "orders": sum(1 for c in metric_calls if c.get("outcome") == "won"),
+        "talk_sec": sum(int(c.get("duration_sec") or 0) for c in calls),
         "last_call_at": calls[0].get("created_at", store.now_iso()) if calls else store.now_iso(),
         "last_call_id": calls[0].get("id", "") if calls else "",
         "last_category": calls[0].get("category", "Part Inquiry/Quote") if calls else "Part Inquiry/Quote",
-        "top_topics": ["Part Inquiry"],
+        "top_topics": topics or ["Part Inquiry"],
         "rep_names": list({c.get("rep_name") for c in calls if c.get("rep_name")}),
         "tag": st.get("customer_tags", {}).get(store_key, ""),
         "tag_source": "manual" if store_key in st.get("customer_tags", {}) else "",
-        "est_value": sum(float(c.get("order_value", 0)) for c in calls) or 350.0,
+        "est_value": sum(float(c.get("order_value") or 0) for c in metric_calls) or 350.0,
         "value_basis": "ai",
     }
     notes = st.get("customer_notes", {}).get(store_key, [])
@@ -763,215 +800,70 @@ def post_customer_winback(key: str, body: dict[str, Any], request: Request) -> d
     u = get_current_user(request)
     if not _customer_visible(st, key, u):
         raise HTTPException(status_code=404, detail="Customer not found")
-    return {
+    org_id = effective_org(u)
+    outcome = str(body.get("outcome") or "reached").strip().lower()
+    if outcome not in ("reached", "ordered", "no_interest"):
+        raise HTTPException(status_code=400, detail="outcome must be reached, ordered, or no_interest")
+    calls = [
+        c for c in st.get("calls", [])
+        if (org_id is None or c.get("org_id") == org_id)
+        and (c.get("customer_name") == key or c.get("customer_phone") == key)
+    ]
+    calls.sort(key=lambda c: c.get("created_at", ""), reverse=True)
+    mark = {
         "id": str(uuid.uuid4()),
+        "org_id": org_id,
         "customer_key": key,
-        "customer_name": key,
-        "outcome": body.get("outcome", "reached"),
+        "customer_name": (calls[0].get("customer_name") if calls else "") or key,
+        "customer_phone": (calls[0].get("customer_phone") if calls else "") or "",
+        "outcome": outcome,
         "rep_id": u["id"],
-        "rep_name": u["name"],
+        "rep_name": u.get("name") or "Rep",
         "created_at": store.now_iso(),
-        "confirmed": False,
-        "confirmed_call_id": "",
-        "confirmed_value": 0.0,
     }
+    st.setdefault("winback_marks", []).insert(0, mark)
+    store.save_state()
+    confirmed, call_id, value = ya._winback_confirmation(st, mark)
+    return {**mark, "confirmed": confirmed, "confirmed_call_id": call_id, "confirmed_value": value}
 
 
 # Winback
 @router.get("/api/analytics/winback")
-def get_analytics_winback(request: Request) -> dict[str, Any]:
+def get_analytics_winback(
+    request: Request,
+    rep_id: Optional[str] = Query(None),
+    site_id: Optional[str] = Query(None),
+) -> dict[str, Any]:
     st = store.get_state()
-    org_id = effective_org(get_current_user(request))
-    if org_id is None or org_id == store.KEECH_ORG_ID:
-        return st["seed"].get("/analytics/winback", {})
-    return {"months": [], "recent": [], "total": 0, "confirmed": 0}
+    u = get_current_user(request)
+    org_id = effective_org(u)
+    effective_rep_id = ya.scoped_rep_id(u, rep_id, st)
+    return ya.build_winback_results(st, org_id, rep_id=effective_rep_id, site_id=site_id)
 
 
 @router.get("/api/analytics/winback/leaderboard")
-def get_winback_leaderboard(request: Request) -> dict[str, Any]:
+def get_winback_leaderboard(
+    request: Request,
+    month: Optional[str] = Query(None),
+    site_id: Optional[str] = Query(None),
+) -> dict[str, Any]:
     st = store.get_state()
-    u = get_current_user(request)
-    org_id = effective_org(u)
-    if org_id == store.KEECH_ORG_ID:
-        return {
-            "months": ["2026-10"],
-            "month": "2026-10",
-            "leaders": [
-                {
-                    "rep_id": "user-keech-rep",
-                    "rep_name": "Tyler Grant",
-                    "marks": 14,
-                    "customers_won": 10,
-                    "won_value": 5250.0,
-                },
-                {
-                    "rep_id": "user-keech-rep-2",
-                    "rep_name": "Cody Miller",
-                    "marks": 10,
-                    "customers_won": 6,
-                    "won_value": 2400.0,
-                },
-                {
-                    "rep_id": "user-keech-rep-3",
-                    "rep_name": "Jake Bradley",
-                    "marks": 9,
-                    "customers_won": 5,
-                    "won_value": 2100.0,
-                },
-                {
-                    "rep_id": "user-keech-rep-4",
-                    "rep_name": "Austin Davis",
-                    "marks": 4,
-                    "customers_won": 1,
-                    "won_value": 340.0,
-                },
-            ],
-        }
-    return {"months": [], "month": "", "leaders": []}
+    org_id = effective_org(get_current_user(request))
+    return ya.build_winback_leaderboard(st, org_id, month=month, site_id=site_id)
 
 
 @router.get("/api/analytics/winback/trophies")
-def get_winback_trophies(request: Request) -> dict[str, Any]:
+def get_winback_trophies(request: Request, site_id: Optional[str] = Query(None)) -> dict[str, Any]:
     st = store.get_state()
-    u = get_current_user(request)
-    org_id = effective_org(u)
-    if org_id == store.KEECH_ORG_ID:
-        return {
-            "months": [
-                {
-                    "month": "2026-10",
-                    "top_dollars": {
-                        "rep_id": "user-keech-rep",
-                        "rep_name": "Tyler Grant",
-                        "marks": 14,
-                        "customers_won": 10,
-                        "won_value": 8450.0,
-                        "avg_recovery": 845.0,
-                    },
-                    "top_customers": {
-                        "rep_id": "user-keech-rep",
-                        "rep_name": "Tyler Grant",
-                        "marks": 14,
-                        "customers_won": 10,
-                        "won_value": 8450.0,
-                        "avg_recovery": 845.0,
-                    },
-                    "truck": [
-                        {
-                            "rep_id": "user-keech-rep-2",
-                            "rep_name": "Cody Miller",
-                            "sales": 5,
-                        }
-                    ],
-                },
-                {
-                    "month": "2026-09",
-                    "top_dollars": {
-                        "rep_id": "user-keech-rep",
-                        "rep_name": "Tyler Grant",
-                        "marks": 12,
-                        "customers_won": 8,
-                        "won_value": 6800.0,
-                        "avg_recovery": 850.0,
-                    },
-                    "top_customers": {
-                        "rep_id": "user-keech-rep-2",
-                        "rep_name": "Cody Miller",
-                        "marks": 10,
-                        "customers_won": 7,
-                        "won_value": 4200.0,
-                        "avg_recovery": 600.0,
-                    },
-                    "truck": [
-                        {
-                            "rep_id": "user-keech-rep",
-                            "rep_name": "Tyler Grant",
-                            "sales": 6,
-                        }
-                    ],
-                },
-            ],
-            "reps": [
-                {
-                    "rep_id": "user-keech-rep",
-                    "rep_name": "Tyler Grant",
-                    "trophies": 3,
-                    "months_won": 2,
-                    "current_streak": 2,
-                    "best_streak": 2,
-                    "truck_trophies": 1,
-                    "truck_streak": 0,
-                    "best_truck_streak": 1,
-                },
-                {
-                    "rep_id": "user-keech-rep-2",
-                    "rep_name": "Cody Miller",
-                    "trophies": 1,
-                    "months_won": 1,
-                    "current_streak": 1,
-                    "best_streak": 1,
-                    "truck_trophies": 1,
-                    "truck_streak": 1,
-                    "best_truck_streak": 1,
-                },
-                {
-                    "rep_id": "user-keech-rep-3",
-                    "rep_name": "Jake Bradley",
-                    "trophies": 0,
-                    "months_won": 0,
-                    "current_streak": 0,
-                    "best_streak": 0,
-                    "truck_trophies": 0,
-                    "truck_streak": 0,
-                    "best_truck_streak": 0,
-                },
-                {
-                    "rep_id": "user-keech-rep-4",
-                    "rep_name": "Austin Davis",
-                    "trophies": 0,
-                    "months_won": 0,
-                    "current_streak": 0,
-                    "best_streak": 0,
-                    "truck_trophies": 0,
-                    "truck_streak": 0,
-                    "best_truck_streak": 0,
-                },
-            ],
-        }
-    return {"months": [], "reps": []}
+    org_id = effective_org(get_current_user(request))
+    return ya.build_winback_trophies(st, org_id, site_id=site_id)
 
 
 @router.get("/api/analytics/winback/winners")
-def get_winback_winners(request: Request) -> dict[str, Any]:
+def get_winback_winners(request: Request, site_id: Optional[str] = Query(None)) -> dict[str, Any]:
     st = store.get_state()
-    u = get_current_user(request)
-    org_id = effective_org(u)
-    if org_id == store.KEECH_ORG_ID:
-        return {
-            "month": "2026-10",
-            "top_dollars": {
-                "rep_id": "user-keech-rep",
-                "rep_name": "Tyler Grant",
-                "marks": 14,
-                "customers_won": 10,
-                "won_value": 5250.0,
-            },
-            "top_customers": {
-                "rep_id": "user-keech-rep",
-                "rep_name": "Tyler Grant",
-                "marks": 14,
-                "customers_won": 10,
-                "won_value": 5250.0,
-            },
-            "truck": [
-                {
-                    "rep_id": "user-keech-rep",
-                    "rep_name": "Tyler Grant",
-                    "sales": 8,
-                }
-            ],
-        }
-    return {"month": "", "top_dollars": None, "top_customers": None, "truck": []}
+    org_id = effective_org(get_current_user(request))
+    return ya.build_winback_winners(st, org_id, site_id=site_id)
 
 
 # Watchlist
@@ -1117,22 +1009,17 @@ def delete_keyword(kid: str, request: Request) -> dict[str, Any]:
 
 
 @router.get("/api/keywords/alerts")
-def get_keyword_alerts(request: Request) -> list[dict[str, Any]]:
+def get_keyword_alerts(request: Request, site_id: Optional[str] = Query(None)) -> list[dict[str, Any]]:
     st = store.get_state()
     org_id = effective_org(get_current_user(request))
-    if org_id is None or org_id == store.KEECH_ORG_ID:
-        return st["seed"].get("/keywords/alerts", [])
-    return []
+    return ya.build_keyword_alerts(st, org_id, site_id=site_id)
 
 
 @router.get("/api/keywords/rep-usage")
-def get_keyword_rep_usage(request: Request) -> list[dict[str, Any]]:
+def get_keyword_rep_usage(request: Request, site_id: Optional[str] = Query(None)) -> list[dict[str, Any]]:
     st = store.get_state()
-    u = get_current_user(request)
-    org_id = effective_org(u)
-    if org_id == store.KEECH_ORG_ID:
-        return st["seed"].get("/keywords/rep-usage", [])
-    return []
+    org_id = effective_org(get_current_user(request))
+    return ya.build_keyword_rep_usage(st, org_id, site_id=site_id)
 
 
 @router.get("/api/keywords/suggestions")
@@ -1155,11 +1042,26 @@ def post_keyword_suggestion_action() -> dict[str, Any]:
 
 
 @router.get("/api/keywords/{kid}/calls")
-def get_keyword_calls(kid: str, request: Request, month: Optional[str] = Query(None)) -> list[dict[str, Any]]:
+def get_keyword_calls(
+    kid: str,
+    request: Request,
+    month: Optional[str] = Query(None),
+    site_id: Optional[str] = Query(None),
+) -> list[dict[str, Any]]:
     st = store.get_state()
     org_id = effective_org(get_current_user(request))
-    calls = [c for c in st.get("calls", []) if not org_id or c.get("org_id") == org_id]
-    return calls[:15]
+    keyword = next(
+        (
+            k for k in (st.get("keywords", []) or [])
+            if k.get("id") == kid and (org_id is None or k.get("org_id") in (None, "", org_id))
+        ),
+        None,
+    )
+    if not keyword:
+        keyword = next((k for k in ya.DEFAULT_KEYWORDS if k.get("id") == kid), None)
+    if not keyword:
+        return []
+    return ya.build_keyword_calls(st, org_id, keyword, month=month, site_id=site_id)
 
 
 # Arrivals & Yard Inventory Lifecycle
@@ -1648,43 +1550,39 @@ def post_arrival_callback_list(aid: str, body: dict[str, Any], request: Request)
 
 
 @router.get("/api/arrivals/leaderboard")
-def get_arrivals_leaderboard(request: Request) -> dict[str, Any]:
+def get_arrivals_leaderboard(
+    request: Request,
+    month: Optional[str] = Query(None),
+    site_id: Optional[str] = Query(None),
+) -> dict[str, Any]:
     st = store.get_state()
-    u = get_current_user(request)
-    org_id = effective_org(u)
-    if org_id == store.KEECH_ORG_ID:
-        return st["seed"].get("/arrivals/leaderboard", {})
-    return {"month": "2026-10", "leaders": []}
+    org_id = effective_org(get_current_user(request))
+    return ya.build_arrivals_leaderboard(st, org_id, month=month, site_id=site_id)
 
 
 @router.get("/api/arrivals/winner")
-def get_arrivals_winner(request: Request) -> dict[str, Any]:
+def get_arrivals_winner(request: Request, site_id: Optional[str] = Query(None)) -> dict[str, Any]:
     st = store.get_state()
-    u = get_current_user(request)
-    org_id = effective_org(u)
-    if org_id == store.KEECH_ORG_ID:
-        return st["seed"].get("/arrivals/winner", {})
-    return {"month": "2026-10", "winners": []}
+    org_id = effective_org(get_current_user(request))
+    return ya.build_arrivals_winner(st, org_id, site_id=site_id)
 
 
 @router.get("/api/arrivals/streak-chase")
-def get_arrivals_streak_chase(request: Request) -> dict[str, Any]:
+def get_arrivals_streak_chase(request: Request, site_id: Optional[str] = Query(None)) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
     org_id = effective_org(u)
-    if org_id == store.KEECH_ORG_ID:
-        return st["seed"].get("/arrivals/streak-chase", {})
-    return {}
+    chase, _ = ya.build_arrivals_streak(st, org_id, user_id=u.get("id", ""), site_id=site_id)
+    return chase
 
 
 @router.get("/api/arrivals/streak-break")
-def get_arrivals_streak_break(request: Request) -> dict[str, Any]:
+def get_arrivals_streak_break(request: Request, site_id: Optional[str] = Query(None)) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
     org_id = effective_org(u)
-    if org_id == store.KEECH_ORG_ID:
-        return st["seed"].get("/arrivals/streak-break", {})
-    return {}
+    _, streak_break = ya.build_arrivals_streak(st, org_id, user_id=u.get("id", ""), site_id=site_id)
+    return streak_break
 
 
 # Callbacks & Callback Lists
@@ -1875,13 +1773,14 @@ def delete_callback_list(lid: str, request: Request) -> dict[str, Any]:
 
 
 @router.get("/api/callback-lists/leaderboard")
-def get_callback_lists_leaderboard(request: Request) -> dict[str, Any]:
+def get_callback_lists_leaderboard(
+    request: Request,
+    month: Optional[str] = Query(None),
+    site_id: Optional[str] = Query(None),
+) -> dict[str, Any]:
     st = store.get_state()
-    u = get_current_user(request)
-    org_id = effective_org(u)
-    if org_id == store.KEECH_ORG_ID:
-        return st["seed"].get("/callback-lists/leaderboard", {})
-    return {"reps": [], "period": ""}
+    org_id = effective_org(get_current_user(request))
+    return ya.build_list_leaderboard(st, org_id, month=month, site_id=site_id)
 
 
 @router.post("/api/callback-lists/overdue-alerts/send-now")
@@ -1894,137 +1793,48 @@ def post_callback_lists_overdue_alerts(request: Request) -> dict[str, Any]:
 
 # Call Queue
 @router.get("/api/queue")
-def get_call_queue(request: Request) -> dict[str, Any]:
+def get_call_queue(request: Request, site_id: Optional[str] = Query(None)) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
     org_id = effective_org(u)
-    if org_id == store.KEECH_ORG_ID:
-        return st["seed"].get("/queue", {"items": [], "counts": {}, "progress": None})
-    return {"items": [], "counts": {"roleplay": 0, "arrival": 0, "missed": 0}, "progress": None}
+    return ya.build_queue(st, org_id, user=u, site_id=site_id)
 
 
 @router.get("/api/queue/team")
-def get_team_queue(request: Request) -> dict[str, Any]:
+def get_team_queue(request: Request, site_id: Optional[str] = Query(None)) -> dict[str, Any]:
     st = store.get_state()
-    u = get_current_user(request)
-    org_id = effective_org(u)
-    if org_id == store.KEECH_ORG_ID:
-        return st["seed"].get("/queue/team", {"after_noon": False, "reps": []})
-
-    with database.get_db() as conn:
-        reps = conn.execute(
-            "SELECT id, name FROM users WHERE org_id = ? AND role = 'rep' ORDER BY name",
-            (org_id,)
-        ).fetchall()
-
-    if not reps:
-        return {"after_noon": True, "reps": []}
-
-    reps_list = []
-    presets = [
-        {"cleared_today": 14, "remaining": 3, "pct": 82, "behind": False},
-        {"cleared_today": 11, "remaining": 5, "pct": 68, "behind": False},
-        {"cleared_today": 9, "remaining": 7, "pct": 56, "behind": False},
-        {"cleared_today": 6, "remaining": 10, "pct": 37, "behind": True},
-        {"cleared_today": 2, "remaining": 8, "pct": 20, "behind": True},
-    ]
-    for idx, r in enumerate(reps):
-        p = presets[idx % len(presets)]
-        reps_list.append({
-            "rep_id": r["id"],
-            "rep_name": r["name"],
-            "cleared_today": p["cleared_today"],
-            "remaining": p["remaining"],
-            "pct": p["pct"],
-            "behind": p["behind"],
-        })
-    return {"after_noon": True, "reps": reps_list}
+    org_id = effective_org(get_current_user(request))
+    return ya.build_team_queue(st, org_id, site_id=site_id)
 
 
 # Leaderboards Hub
 @router.get("/api/leaderboards/champions")
-def get_leaderboards_champions(request: Request) -> dict[str, Any]:
+def get_leaderboards_champions(request: Request, site_id: Optional[str] = Query(None)) -> dict[str, Any]:
     st = store.get_state()
-    u = get_current_user(request)
-    org_id = effective_org(u)
-    if org_id == store.KEECH_ORG_ID:
-        return {
-            "champions": [
-                {
-                    "category": "vehicle_sales",
-                    "period": "2026-10",
-                    "names": ["Tyler Grant"],
-                    "rep_ids": ["user-keech-rep"],
-                    "detail": "28 sales · 84.8% close rate",
-                    "site_ids": [],
-                },
-                {
-                    "category": "winback_dollars",
-                    "period": "2026-10",
-                    "names": ["Tyler Grant"],
-                    "rep_ids": ["user-keech-rep"],
-                    "detail": "$8,450 recovered · 10 customers won back",
-                    "site_ids": [],
-                },
-                {
-                    "category": "delivery_score",
-                    "period": "2026-10",
-                    "names": ["Cody Miller"],
-                    "rep_ids": ["user-keech-rep-2"],
-                    "detail": "79.0 avg delivery score · 8 checked calls",
-                    "site_ids": [],
-                },
-                {
-                    "category": "callback_lists",
-                    "period": "2026-10",
-                    "names": ["Tyler Grant"],
-                    "rep_ids": ["user-keech-rep"],
-                    "detail": "12 callback lists closed",
-                    "site_ids": [],
-                },
-            ],
-            "totals": [
-                {"name": "Tyler Grant", "trophies": 3},
-                {"name": "Cody Miller", "trophies": 1},
-            ],
-        }
-    return {"champions": [], "totals": []}
+    org_id = effective_org(get_current_user(request))
+    return ya.build_champions(st, org_id, site_id=site_id)
 
 
 @router.get("/api/leaderboards/delivery")
-def get_leaderboards_delivery(request: Request) -> dict[str, Any]:
+def get_leaderboards_delivery(
+    request: Request,
+    month: Optional[str] = Query(None),
+    site_id: Optional[str] = Query(None),
+) -> dict[str, Any]:
     st = store.get_state()
-    u = get_current_user(request)
-    org_id = effective_org(u)
-    if org_id == store.KEECH_ORG_ID:
-        return {
-            "month": "2026-10",
-            "reps": [
-                {"rep_id": "user-keech-rep", "name": "Tyler Grant", "avg_score": 91, "checked": 14},
-                {"rep_id": "user-keech-rep-2", "name": "Cody Miller", "avg_score": 79, "checked": 8},
-                {"rep_id": "user-keech-rep-3", "name": "Jake Bradley", "avg_score": 76, "checked": 7},
-                {"rep_id": "user-keech-rep-4", "name": "Austin Davis", "avg_score": 58, "checked": 3},
-            ],
-        }
-    return {"month": "", "reps": []}
+    org_id = effective_org(get_current_user(request))
+    return ya.build_delivery_board(st, org_id, month=month, site_id=site_id)
 
 
 @router.get("/api/leaderboards/team-player")
-def get_leaderboards_team_player(request: Request) -> dict[str, Any]:
+def get_leaderboards_team_player(
+    request: Request,
+    month: Optional[str] = Query(None),
+    site_id: Optional[str] = Query(None),
+) -> dict[str, Any]:
     st = store.get_state()
-    u = get_current_user(request)
-    org_id = effective_org(u)
-    if org_id == store.KEECH_ORG_ID:
-        return {
-            "month": "2026-10",
-            "reps": [
-                {"rep_id": "user-keech-rep", "name": "Tyler Grant", "rep_name": "Tyler Grant", "handled": 12, "all_time": 4, "score": 92},
-                {"rep_id": "user-keech-rep-2", "name": "Cody Miller", "rep_name": "Cody Miller", "handled": 6, "all_time": 2, "score": 79},
-                {"rep_id": "user-keech-rep-3", "name": "Jake Bradley", "rep_name": "Jake Bradley", "handled": 5, "all_time": 1, "score": 76},
-                {"rep_id": "user-keech-rep-4", "name": "Austin Davis", "rep_name": "Austin Davis", "handled": 1, "all_time": 0, "score": 58},
-            ],
-        }
-    return {"month": "", "reps": []}
+    org_id = effective_org(get_current_user(request))
+    return ya.build_team_player_board(st, org_id, month=month, site_id=site_id)
 
 
 @router.post("/api/leaderboards/posters/send-now")
@@ -2045,147 +1855,17 @@ def get_reports_summary(
     date_from: str = Query("2026-01-01"),
     date_to: str = Query("2026-12-31"),
     site_id: Optional[str] = Query(None),
+    rep_id: Optional[str] = Query(None),
 ) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
     org_id = effective_org(u)
-
-    calls = [c for c in st.get("calls", []) if not org_id or c.get("org_id") == org_id]
-    if site_id:
-        calls = [c for c in calls if c.get("site_id") == site_id]
-
-    # Filter by date range (inclusive)
-    from_iso = f"{date_from}T00:00:00Z" if len(date_from) == 10 else date_from
-    to_iso = f"{date_to}T23:59:59Z" if len(date_to) == 10 else date_to
-    calls = [c for c in calls if from_iso <= (c.get("created_at") or "") <= to_iso]
-
-    if not calls:
-        return {
-            "date_from": date_from,
-            "date_to": date_to,
-            "totals": {
-                "calls": 0, "inbound": 0, "outbound": 0, "voicemails": 0,
-                "avg_score": 0.0, "avg_duration_sec": 0.0, "sales_calls": 0,
-                "won": 0, "close_rate": 0.0, "revenue": 0.0,
-            },
-            "by_rep": [],
-            "by_category": [],
-            "top_parts": [],
-            "top_vehicles": [],
-            "daily": [],
-            "arrivals": [],
-            "avg_order_value": 0.0,
-            "parts_sold": [],
-            "price_missing": 0,
-        }
-
-    scored = [c for c in calls if c.get("overall_score")]
-    avg_score = round(sum(c.get("overall_score", 0) for c in scored) / len(scored), 1) if scored else 0.0
-    durations = [c.get("duration_sec", 0) for c in calls if c.get("duration_sec")]
-    avg_dur = round(sum(durations) / len(durations), 1) if durations else 0.0
-    inbound = sum(1 for c in calls if c.get("direction", "inbound") == "inbound")
-    outbound = sum(1 for c in calls if c.get("direction") == "outbound")
-    sales_calls = [c for c in calls if c.get("outcome") in ("won", "lost", "pending")]
-    won = [c for c in calls if c.get("outcome") == "won"]
-    revenue = sum(float(c.get("order_value") or 0.0) for c in won)
-    close_rate = round(len(won) / max(len(sales_calls), 1) * 100, 1) if sales_calls else 0.0
-
-    # by_rep
-    rep_map: dict[str, list[dict[str, Any]]] = {}
-    for c in calls:
-        rid = c.get("rep_id") or "unassigned"
-        rep_map.setdefault(rid, []).append(c)
-
-    by_rep = []
-    users = st.get("users_by_id", {})
-    for rid, rcalls in rep_map.items():
-        user = users.get(rid, {})
-        rname = user.get("name") or (rcalls[0].get("rep_name") if rcalls else "Rep")
-        r_scored = [c for c in rcalls if c.get("overall_score")]
-        r_avg_score = round(sum(c.get("overall_score", 0) for c in r_scored) / len(r_scored), 1) if r_scored else 0.0
-        r_sales = [c for c in rcalls if c.get("outcome") in ("won", "lost", "pending")]
-        r_won = [c for c in rcalls if c.get("outcome") == "won"]
-        r_rev = sum(float(c.get("order_value") or 0.0) for c in r_won)
-        r_close = round(len(r_won) / max(len(r_sales), 1) * 100, 1) if r_sales else 0.0
-        by_rep.append({
-            "rep_id": rid,
-            "name": rname,
-            "calls": len(rcalls),
-            "avg_score": r_avg_score,
-            "sales_calls": len(r_sales),
-            "won": len(r_won),
-            "close_rate": r_close,
-            "revenue": round(r_rev, 2),
-        })
-    by_rep.sort(key=lambda x: x["calls"], reverse=True)
-
-    # by_category
-    cat_map: dict[str, int] = {}
-    for c in calls:
-        cat = c.get("category") or "Other"
-        cat_map[cat] = cat_map.get(cat, 0) + 1
-    by_category = [{"label": k, "calls": v, "won": 0, "key": ""} for k, v in sorted(cat_map.items(), key=lambda kv: -kv[1])]
-
-    # top_parts
-    parts_map: dict[str, dict[str, int]] = {}
-    for c in calls:
-        p = c.get("part_requested")
-        if p:
-            entry = parts_map.setdefault(p, {"calls": 0, "won": 0})
-            entry["calls"] += 1
-            if c.get("outcome") == "won":
-                entry["won"] += 1
-    top_parts = [
-        {"label": k, "calls": v["calls"], "won": v["won"], "key": k.lower()}
-        for k, v in sorted(parts_map.items(), key=lambda kv: -kv[1]["calls"])[:10]
-    ]
-
-    # top_vehicles
-    veh_map: dict[str, dict[str, int]] = {}
-    for c in calls:
-        v = c.get("vehicle")
-        if v:
-            entry = veh_map.setdefault(v, {"calls": 0, "won": 0})
-            entry["calls"] += 1
-            if c.get("outcome") == "won":
-                entry["won"] += 1
-    top_vehicles = [
-        {"label": k, "calls": v["calls"], "won": v["won"], "key": k}
-        for k, v in sorted(veh_map.items(), key=lambda kv: -kv[1]["calls"])[:10]
-    ]
-
-    # daily
-    daily_map: dict[str, dict[str, int]] = {}
-    for c in calls:
-        d = (c.get("created_at") or store.today_str())[:10]
-        entry = daily_map.setdefault(d, {"calls": 0, "won": 0})
-        entry["calls"] += 1
-        if c.get("outcome") == "won":
-            entry["won"] += 1
-    daily = [{"date": k, "calls": v["calls"], "won": v["won"]} for k, v in sorted(daily_map.items())]
-
-    return {
-        "date_from": date_from,
-        "date_to": date_to,
-        "totals": {
-            "calls": len(calls),
-            "inbound": inbound,
-            "outbound": outbound,
-            "voicemails": sum(1 for c in calls if c.get("category") == "Voicemail"),
-            "avg_score": avg_score,
-            "avg_duration_sec": avg_dur,
-            "sales_calls": len(sales_calls),
-            "won": len(won),
-            "close_rate": close_rate,
-            "revenue": round(revenue, 2),
-        },
-        "by_rep": by_rep,
-        "by_category": by_category,
-        "top_parts": top_parts,
-        "top_vehicles": top_vehicles,
-        "daily": daily,
-        "arrivals": [],
-        "avg_order_value": round(revenue / max(len(won), 1), 1) if won else 350.0,
-        "parts_sold": [],
-        "price_missing": 0,
-    }
+    effective_rep_id = ya.scoped_rep_id(u, rep_id, st)
+    return ya.build_report_summary(
+        st,
+        org_id,
+        date_from=date_from,
+        date_to=date_to,
+        rep_id=effective_rep_id,
+        site_id=site_id,
+    )

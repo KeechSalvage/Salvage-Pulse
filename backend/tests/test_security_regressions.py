@@ -592,3 +592,157 @@ class TransportSecurityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class AttributionTests(unittest.TestCase):
+    """Metrics must describe the caller's own yard, rep and calls."""
+
+    def test_vehicle_demand_is_computed_from_own_call_topics(self):
+        yard_a = _client()
+        user_a, _, _ = _signup(yard_a, yard="Attribution Yard A")
+        yard_b = _client()
+        user_b, _, _ = _signup(yard_b, yard="Attribution Yard B")
+        st = store.get_state()
+        st.setdefault("calls", []).extend([
+            {
+                "id": f"call-{uuid.uuid4().hex}",
+                "org_id": user_a["org_id"],
+                "rep_id": user_a["id"],
+                "rep_name": user_a["name"],
+                "customer_name": "A Customer",
+                "customer_phone": "15550001001",
+                "created_at": store.now_iso(),
+                "duration_sec": 60,
+                "outcome": "lost",
+                "category": "Part Inquiry/Quote",
+                "topics": ["Jeep Grand Cherokee", "Front Door"],
+                "summary": "Inbound call with A Customer. Topics discussed: Jeep Grand Cherokee, Front Door.",
+            },
+            {
+                "id": f"call-{uuid.uuid4().hex}",
+                "org_id": user_b["org_id"],
+                "rep_id": user_b["id"],
+                "rep_name": user_b["name"],
+                "customer_name": "B Customer",
+                "customer_phone": "15550001002",
+                "created_at": store.now_iso(),
+                "duration_sec": 60,
+                "outcome": "won",
+                "category": "Part Inquiry/Quote",
+                "topics": ["nissan rogue"],
+                "summary": "Inbound call with B Customer. Topics discussed: nissan rogue.",
+            },
+        ])
+        store.save_state()
+
+        data_a = yard_a.get("/api/analytics/vehicles?rank=calls").json()
+        labels_a = {f"{m['make']} {m['model']}".strip() for m in data_a["models"]}
+        self.assertIn("Jeep Grand Cherokee", labels_a)
+        self.assertNotIn("Nissan Rogue", labels_a)
+        self.assertEqual(data_a["total_calls"], 1)
+        self.assertEqual(data_a["tracked_calls"], 1)
+
+        data_b = yard_b.get("/api/analytics/vehicles?rank=calls").json()
+        labels_b = {f"{m['make']} {m['model']}".strip() for m in data_b["models"]}
+        self.assertIn("Nissan Rogue", labels_b)
+        self.assertNotIn("Jeep Grand Cherokee", labels_b)
+        self.assertEqual(data_b["total_calls"], 1)
+
+    def test_customer_metrics_are_per_rep_and_winback_is_persisted(self):
+        yard = _client()
+        owner, _, _ = _signup(yard, yard="Attribution Rep Yard")
+        created = yard.post(
+            "/api/users/reps",
+            json={
+                "name": "Rep One",
+                "email": f"rep-{uuid.uuid4().hex[:8]}@example.test",
+                "password": "RepPass!234",
+            },
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        rep = created.json()
+
+        st = store.get_state()
+        now = store.now_iso()
+        st.setdefault("calls", []).extend([
+            {
+                "id": f"call-{uuid.uuid4().hex}",
+                "org_id": owner["org_id"],
+                "rep_id": owner["id"],
+                "rep_name": owner["name"],
+                "customer_name": "Owner Customer",
+                "customer_phone": "15550002001",
+                "created_at": now,
+                "duration_sec": 30,
+                "outcome": "won",
+                "order_value": 100.0,
+                "category": "Order/Sale",
+            },
+            {
+                "id": f"call-{uuid.uuid4().hex}",
+                "org_id": owner["org_id"],
+                "rep_id": rep["id"],
+                "rep_name": rep["name"],
+                "customer_name": "Rep Customer",
+                "customer_phone": "15550002002",
+                "created_at": now,
+                "duration_sec": 45,
+                "outcome": "lost",
+                "category": "Part Inquiry/Quote",
+            },
+        ])
+        store.save_state()
+
+        owner_data = yard.get(f"/api/analytics/customers?rep_id={rep['id']}").json()
+        owner_keys = {c["key"] for c in owner_data["all_customers"]}
+        self.assertIn("15550002002", owner_keys)
+        self.assertNotIn("15550002001", owner_keys)
+
+        rep_client = _client()
+        _login(rep_client, rep["email"], "RepPass!234")
+        rep_calls = rep_client.get("/api/calls").json()
+        self.assertTrue(rep_calls)
+        self.assertTrue(all(c["rep_id"] == rep["id"] for c in rep_calls))
+        self.assertEqual(
+            rep_client.get(f"/api/calls?rep_id={owner['id']}").status_code,
+            403,
+        )
+        self.assertEqual(
+            rep_client.get(f"/api/drill/calls?rep_id={owner['id']}").status_code,
+            403,
+        )
+
+        mark = rep_client.post(
+            "/api/customers/15550002002/winback",
+            json={"outcome": "reached"},
+        )
+        self.assertEqual(mark.status_code, 200, mark.text)
+        self.assertEqual(mark.json()["org_id"], owner["org_id"])
+        self.assertEqual(mark.json()["rep_id"], rep["id"])
+
+        results = yard.get("/api/analytics/winback").json()
+        self.assertGreaterEqual(results["total"], 1)
+        self.assertTrue(any(r["customer_key"] == "15550002002" for r in results["recent"]))
+
+        from datetime import datetime, timedelta, timezone
+        later = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+        st = store.get_state()
+        st.setdefault("calls", []).append({
+            "id": f"call-{uuid.uuid4().hex}",
+            "org_id": owner["org_id"],
+            "rep_id": rep["id"],
+            "rep_name": rep["name"],
+            "customer_name": "Rep Customer",
+            "customer_phone": "15550002002",
+            "created_at": later,
+            "duration_sec": 60,
+            "outcome": "won",
+            "order_value": 250.0,
+            "category": "Order/Sale",
+        })
+        store.save_state()
+
+        confirmed = yard.get("/api/analytics/winback").json()
+        row = next(r for r in confirmed["recent"] if r["customer_key"] == "15550002002")
+        self.assertTrue(row["confirmed"])
+        self.assertEqual(row["confirmed_value"], 250.0)

@@ -9,7 +9,8 @@ import analyzer
 from auth_utils import get_current_user, get_uploads_dir
 from gemini_service import analyze_audio_call_llm, is_gemini_configured, normalize_audio_mime
 import store
-from database import get_org_scoring_config, compute_weighted_overall_score
+import yard_analytics as ya
+from database import VEHICLE_CATALOG, get_org_scoring_config, compute_weighted_overall_score
 from security import (
     ALLOWED_AUDIO_EXTENSIONS,
     assert_call_access,
@@ -61,21 +62,16 @@ def get_calls(
     calls = st.get("calls", [])
     filtered = []
 
-    # If signed in as an individual rep, default to viewing their own calls unless an explicit rep_id query param is provided
-    effective_rep_id = rep_id
-    if not effective_rep_id and u.get("role") in ("rep", "sales_rep"):
-        effective_rep_id = u.get("id")
-
-    site_rep_ids = set()
+    # Reps are pinned to their own calls; managers may select a rep in their own
+    # yard; platform staff may cross yards.
+    effective_rep_id = ya.scoped_rep_id(u, rep_id, st)
     if site_id:
-        site_rep_ids = {uid for uid, usr in st["users_by_id"].items() if usr.get("site_id") == site_id}
+        calls = ya.filter_calls_by_site(st, calls, site_id)
 
     for c in calls:
         if org_filter and c.get("org_id") != org_filter:
             continue
         if effective_rep_id and c.get("rep_id") != effective_rep_id:
-            continue
-        if site_id and c.get("rep_id") not in site_rep_ids:
             continue
         if category and c.get("category") != category:
             continue
@@ -134,29 +130,70 @@ def delete_recent_upload(uid: str, request: Request) -> dict[str, Any]:
 
 
 @router.get("/api/calls/vehicle-options")
-def get_vehicle_options(request: Request, catalog: bool = Query(False), rank: str = Query("calls")) -> dict[str, Any]:
+def get_vehicle_options(
+    request: Request,
+    catalog: bool = Query(False),
+    rank: str = Query("calls"),
+    site_id: Optional[str] = Query(None),
+) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    seed = st["seed"].get("/calls/vehicle-options?catalog=true&rank=calls", st["seed"].get("/calls/vehicle-options", {}))
-    if u.get("org_id") == store.KEECH_ORG_ID:
-        return seed
-    # Other yards get the make/model catalogue for their pickers, but never the
-    # call/lost counts that describe another yard's business.
-    makes = [
-        {
-            "make": m.get("make", ""),
-            "models": list(m.get("models") or []),
-            "calls": 0,
-            "calls_30d": 0,
-            "lost": 0,
+    org_id = effective_org(u)
+    if org_id == store.KEECH_ORG_ID and not site_id:
+        return st["seed"].get(
+            "/calls/vehicle-options?catalog=true&rank=calls",
+            st["seed"].get("/calls/vehicle-options", {}),
+        )
+
+    demand = ya.build_vehicle_demand(st, org_id, rank=rank, site_id=site_id)
+    demand_models: dict[str, dict[str, dict[str, Any]]] = {}
+    for model in demand["models"]:
+        demand_models.setdefault(model["make"], {})[model["model"]] = model
+
+    # A catalog picker must still offer every vehicle a rep could tag, even when
+    # this yard has not had a call about it yet.  Counts always come from this
+    # yard's own calls.
+    make_names = {m["make"] for m in demand["makes"]}
+    if catalog:
+        make_names |= set(VEHICLE_CATALOG)
+
+    makes = []
+    for make in sorted(make_names):
+        known = demand_models.get(make, {})
+        if catalog:
+            model_names = [model for model, _ in VEHICLE_CATALOG.get(make, [])]
+            model_names += [model for model in known if model not in model_names]
+        else:
+            model_names = list(known)
+        make_row = next((m for m in demand["makes"] if m["make"] == make), {})
+        makes.append({
+            "make": make,
+            "models": model_names,
+            "calls": int(make_row.get("calls") or 0),
+            "calls_30d": int(make_row.get("calls_30d") or 0),
+            "lost": int(make_row.get("lost") or 0),
             "model_stats": [
-                {"model": model, "calls": 0, "calls_30d": 0, "lost": 0}
-                for model in (m.get("models") or [])
+                {
+                    "model": model,
+                    "calls": int(known.get(model, {}).get("calls") or 0),
+                    "calls_30d": int(known.get(model, {}).get("calls_30d") or 0),
+                    "lost": int(known.get(model, {}).get("lost") or 0),
+                }
+                for model in model_names
             ],
-        }
-        for m in seed.get("makes", [])
+        })
+
+    makes.sort(key=lambda m: (m["calls"], m["calls_30d"]), reverse=True)
+    years = [
+        model["year_min"] for model in demand["models"] if model.get("year_min")
+    ] + [
+        model["year_max"] for model in demand["models"] if model.get("year_max")
     ]
-    return {**seed, "makes": makes}
+    return {
+        "makes": makes,
+        "year_min": min(years) if years else None,
+        "year_max": max(years) if years else None,
+    }
 
 
 @router.get("/api/calls/{call_id}")
@@ -947,14 +984,32 @@ def get_drill_calls(
     st = store.get_state()
     u = get_current_user(request)
     org_id = effective_org(u)
+    effective_rep_id = ya.scoped_rep_id(u, rep_id, st)
     calls = st.get("calls", [])
     res = []
+
+    winback_keys: set[str] = set()
+    if winback_month:
+        for mark in st.get("winback_marks", []) or []:
+            if mark.get("org_id") not in (None, "", org_id):
+                continue
+            if effective_rep_id and mark.get("rep_id") != effective_rep_id:
+                continue
+            if (mark.get("created_at") or "")[:7] != winback_month:
+                continue
+            for value in (mark.get("customer_key"), mark.get("customer_name"), mark.get("customer_phone")):
+                if value:
+                    winback_keys.add(str(value))
 
     for c in calls:
         if org_id and c.get("org_id") != org_id:
             continue
-        if rep_id and c.get("rep_id") != rep_id:
+        if effective_rep_id and c.get("rep_id") != effective_rep_id:
             continue
+        if winback_month:
+            keys = {str(c.get("customer_name") or ""), str(c.get("customer_phone") or "")}
+            if not (keys & winback_keys):
+                continue
         if category and c.get("category") != category:
             continue
         if direction and c.get("direction") != direction:
@@ -964,11 +1019,15 @@ def get_drill_calls(
                 continue
             elif outcome != "sales" and c.get("outcome") != outcome:
                 continue
-        if vehicle_make and (c.get("vehicle_make") or "").lower() != vehicle_make.lower():
+        if vehicle_make or vehicle_model or part:
+            vehicle = ya.vehicle_for_call(st, c)
+        else:
+            vehicle = {}
+        if vehicle_make and (vehicle.get("make") or "").lower() != vehicle_make.lower():
             continue
-        if vehicle_model and (c.get("vehicle_model") or "").lower() != vehicle_model.lower():
+        if vehicle_model and (vehicle.get("model") or "").lower() != vehicle_model.lower():
             continue
-        if part and (c.get("part_requested") or "").lower() != part.lower():
+        if part and (vehicle.get("part") or "").lower() != part.lower():
             continue
         if part_sold and part_sold not in (c.get("parts_sold") or []):
             continue
@@ -1045,57 +1104,65 @@ def post_cleanup_restore(tid: str, request: Request) -> dict[str, Any]:
 
 # Tagging & Delivery
 @router.get("/api/tagging/queue")
-def get_tagging_queue(request: Request) -> dict[str, Any]:
+def get_tagging_queue(request: Request, site_id: Optional[str] = Query(None)) -> dict[str, Any]:
     st = store.get_state()
-    u = get_current_user(request)
-    org_id = u.get("org_id")
-    if org_id == store.KEECH_ORG_ID:
-        return st["seed"].get("/tagging/queue", {"total": 0, "items": []})
-    return {"total": 0, "items": []}
+    org_id = effective_org(get_current_user(request))
+    return ya.build_tagging_queue(st, org_id, site_id=site_id)
 
 
 @router.post("/api/tagging/{cid}/skip")
 @router.post("/api/tagging/{cid}/delivery")
-def post_tagging_action(cid: str, request: Request) -> dict[str, Any]:
+def post_tagging_action(cid: str, request: Request, site_id: Optional[str] = Query(None)) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    org_id = u.get("org_id")
-    if org_id == store.KEECH_ORG_ID:
-        queue = st["seed"].get("/tagging/queue", {"total": 0, "items": []})
-        queue["items"] = [i for i in queue.get("items", []) if i.get("id") != cid]
-        queue["total"] = len(queue["items"])
-        return queue
-    return {"total": 0, "items": []}
+    org_id = effective_org(u)
+    target = next(
+        (
+            c for c in st.get("calls", [])
+            if c.get("id") == cid and (org_id is None or c.get("org_id") == org_id)
+        ),
+        None,
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="Call not found")
+    if request.url.path.endswith("/skip"):
+        target["tag_skipped"] = True
+    else:
+        target["delivery_call"] = True
+    target["tagged_by_id"] = u.get("id", "")
+    target["tagged_at"] = store.now_iso()
+    store.save_state()
+    return ya.build_tagging_queue(st, org_id, site_id=site_id)
 
 
 @router.get("/api/tagging/leaderboard")
-def get_tagging_leaderboard(request: Request) -> dict[str, Any]:
+def get_tagging_leaderboard(
+    request: Request,
+    week_start: Optional[str] = Query(None),
+    site_id: Optional[str] = Query(None),
+) -> dict[str, Any]:
     st = store.get_state()
-    u = get_current_user(request)
-    org_id = u.get("org_id")
-    if org_id == store.KEECH_ORG_ID:
-        return st["seed"].get("/tagging/leaderboard", {})
-    return {"leaders": []}
+    org_id = effective_org(get_current_user(request))
+    return ya.build_tagging_leaderboard(st, org_id, site_id=site_id, week_start=week_start)
 
 
 @router.get("/api/tagging/champion")
-def get_tagging_champion(request: Request) -> dict[str, Any]:
+def get_tagging_champion(request: Request, site_id: Optional[str] = Query(None)) -> dict[str, Any]:
     st = store.get_state()
-    u = get_current_user(request)
-    org_id = u.get("org_id")
-    if org_id == store.KEECH_ORG_ID:
-        return st["seed"].get("/tagging/champion", {})
-    return {"winners": []}
+    org_id = effective_org(get_current_user(request))
+    return ya.build_tagging_champion(st, org_id, site_id=site_id)
 
 
 @router.get("/api/tagging/parts")
-def get_tagging_parts(request: Request) -> dict[str, Any]:
+def get_tagging_parts(
+    request: Request,
+    make: str = Query(""),
+    model: str = Query(""),
+    site_id: Optional[str] = Query(None),
+) -> dict[str, Any]:
     st = store.get_state()
-    u = get_current_user(request)
-    org_id = u.get("org_id")
-    if org_id == store.KEECH_ORG_ID:
-        return st["seed"].get("/tagging/parts", {})
-    return {"parts": []}
+    org_id = effective_org(get_current_user(request))
+    return ya.build_tagging_parts(st, org_id, site_id=site_id, make=make, model=model)
 
 
 @router.get("/api/parts/catalog")
@@ -1105,6 +1172,13 @@ def get_parts_catalog() -> list[str]:
 
 
 @router.get("/api/delivery-stats")
-def get_delivery_stats() -> dict[str, Any]:
+def get_delivery_stats(
+    request: Request,
+    rep_id: Optional[str] = Query(None),
+    site_id: Optional[str] = Query(None),
+) -> dict[str, Any]:
     st = store.get_state()
-    return st["seed"].get("/delivery-stats", {})
+    u = get_current_user(request)
+    org_id = effective_org(u)
+    effective_rep_id = ya.scoped_rep_id(u, rep_id, st)
+    return ya.build_delivery_stats(st, org_id, rep_id=effective_rep_id, site_id=site_id)
