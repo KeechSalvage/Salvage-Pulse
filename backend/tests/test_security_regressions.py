@@ -597,6 +597,23 @@ if __name__ == "__main__":
 class AttributionTests(unittest.TestCase):
     """Metrics must describe the caller's own yard, rep and calls."""
 
+    def test_manager_and_owner_can_open_a_rep_radar_without_credentials(self):
+        """The rep profile (and its 7-metric radar) must work for managers and owners."""
+        for email, password, label in (
+            ("owner@keechauto.com", "owner", "owner"),
+            ("salesmanager@keechauto.com", "salesmanager", "sales manager"),
+        ):
+            client = _client()
+            _login(client, email, password)
+            response = client.get("/api/analytics/overview?rep_id=user-keech-rep")
+            self.assertEqual(response.status_code, 200, f"{label}: {response.text}")
+            body = response.json()
+            self.assertEqual(body["rep"]["id"], "user-keech-rep")
+            self.assertNotIn("password_hash", body["rep"])
+            self.assertGreater(body["scored_calls"], 0)
+            self.assertEqual(len(body["metric_averages"]), 8)
+            self.assertTrue(any(metric["avg"] > 0 for metric in body["metric_averages"]))
+
     def test_vehicle_demand_is_computed_from_own_call_topics(self):
         yard_a = _client()
         user_a, _, _ = _signup(yard_a, yard="Attribution Yard A")

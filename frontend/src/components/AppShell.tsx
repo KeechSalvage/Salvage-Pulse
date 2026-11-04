@@ -338,11 +338,18 @@ function SidebarNavItem({
 }) {
   const loc = useLocation();
   const isRep = role === "rep" || role === "sales_rep";
-  const sections = !isStaff ? YARD_PAGE_SECTIONS[item.id] : undefined;
+  // A rep profile (/reps/:repId) belongs to the Reps page for managers. It has
+  // the same sections as My Performance, including the 7-Metric Radar.
+  const isRepProfile = /^\/reps\/[^/]+\/?$/.test(loc.pathname);
+  const showsRepProfile = isRepProfile && (item.id === "team" || (isRep && item.id === "me"));
+  const sections = !isStaff ? (showsRepProfile ? YARD_PAGE_SECTIONS.me : YARD_PAGE_SECTIONS[item.id]) : undefined;
   const hasSections = Boolean(sections && sections.length > 0);
 
   // Check if we are currently on this item's page route
-  const isCurrentPage = loc.pathname === item.to || (item.to !== "/" && loc.pathname.startsWith(`${item.to}/`));
+  const isCurrentPage =
+    loc.pathname === item.to ||
+    (item.to !== "/" && loc.pathname.startsWith(`${item.to}/`)) ||
+    showsRepProfile;
   const [expanded, setExpanded] = useState(isCurrentPage);
 
   // Keep expanded in sync when navigating to/from this page
@@ -350,7 +357,7 @@ function SidebarNavItem({
     if (isCurrentPage) {
       setExpanded(true);
     }
-  }, [isCurrentPage]);
+  }, [isCurrentPage, loc.pathname]);
 
   const isAnchor = Boolean(item.hash && isStaff && loc.pathname === "/admin");
   const isNavActive = isAnchor ? activeHash === item.hash : isCurrentPage;

@@ -15,6 +15,7 @@ from security import (
     effective_org,
     is_manager,
     is_staff,
+    public_user,
     require_authenticated,
     resolve_write_org,
 )
@@ -282,7 +283,7 @@ def get_analytics_overview(
     if effective_rep_id:
         u_rep = st.get("users_by_id", {}).get(effective_rep_id)
         if u_rep:
-            base["rep"] = u_rep
+            base["rep"] = public_user(u_rep)
     return base
 
 
