@@ -676,6 +676,129 @@ class CallbackCompletionTests(unittest.TestCase):
         self.assertEqual(call["order_value"], 250.0)
 
 
+class ArrivalQueueTests(unittest.TestCase):
+    """Vehicle-arrival callers become callbacks and queue links open the call."""
+
+    def test_arrival_callbacks_show_for_rep_and_link_to_source_call(self):
+        client = _client()
+        owner, _, _ = _signup(client, yard="Arrival Queue Yard")
+        rep_email = f"arrival-rep-{uuid.uuid4().hex[:8]}@example.test"
+        rep = client.post(
+            "/api/users/reps",
+            json={
+                "name": "Arrival Rep",
+                "email": rep_email,
+                "password": "RepPass!234",
+                "role": "rep",
+            },
+        ).json()
+
+        call_id = f"call-{uuid.uuid4().hex}"
+        st = store.get_state()
+        st.setdefault("calls", []).append({
+            "id": call_id,
+            "org_id": owner["org_id"],
+            "rep_id": rep["id"],
+            "rep_name": rep["name"],
+            "customer_name": "Ford Customer",
+            "customer_phone": "15550009701",
+            "direction": "inbound",
+            "duration_sec": 60,
+            "status": "analyzed",
+            "source": "test",
+            "category": "Sales Inquiry",
+            "outcome": "pending",
+            "overall_score": 70,
+            "vehicle": "2018 Ford F-150",
+            "vehicle_year": 2018,
+            "vehicle_make": "Ford",
+            "vehicle_model": "F-150",
+            "part_requested": "Front Door",
+            "topics": ["Ford F-150", "Front Door"],
+            "created_at": store.now_iso(),
+        })
+        store.save_state()
+
+        arrival = client.post(
+            "/api/arrivals",
+            json={"vehicle_year": 2018, "vehicle_make": "Ford", "vehicle_model": "F-150"},
+        )
+        self.assertEqual(arrival.status_code, 200, arrival.text)
+        arrival_body = arrival.json()
+        self.assertTrue(arrival_body["callers"])
+
+        created = client.post(
+            f"/api/arrivals/{arrival_body['id']}/callback-list",
+            json={"rep_ids": [rep["id"]], "name": "Ford callers"},
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+
+        # A sales manager/owner assigning an arrival list still sees it in the
+        # Sales Manager Assigned source.
+        manager_items = client.get("/api/callbacks?status=open&source=sales_manager").json()
+        self.assertTrue(any((c.get("reason") or "").startswith("Vehicle Arrival") for c in manager_items))
+
+        rep_client = _client()
+        _login(rep_client, rep_email, "RepPass!234")
+        rep_callbacks = rep_client.get("/api/callbacks?status=open").json()
+        callback = next(c for c in rep_callbacks if (c.get("reason") or "").startswith("Vehicle Arrival"))
+        self.assertEqual(callback["original_call_id"], call_id)
+
+        queue = rep_client.get("/api/queue").json()
+        arrival_item = next(item for item in queue["items"] if item["kind"] == "arrival")
+        callback_item = next(item for item in queue["items"] if item["kind"] == "callback")
+        self.assertEqual(arrival_item["link"], f"/calls/{call_id}")
+        self.assertEqual(callback_item["link"], f"/calls/{call_id}")
+        self.assertEqual(rep_client.get(callback_item["link"]).status_code, 200)
+
+    def test_arrival_caller_without_a_call_still_gets_a_callback(self):
+        client = _client()
+        owner, _, _ = _signup(client, yard="Arrival No Call Yard")
+        rep_email = f"arrival-nocall-{uuid.uuid4().hex[:8]}@example.test"
+        rep = client.post(
+            "/api/users/reps",
+            json={
+                "name": "No Call Rep",
+                "email": rep_email,
+                "password": "RepPass!234",
+                "role": "rep",
+            },
+        ).json()
+
+        st = store.get_state()
+        st.setdefault("arrivals", []).append({
+            "id": f"arr-{uuid.uuid4().hex}",
+            "org_id": owner["org_id"],
+            "vehicle_year": 2020,
+            "vehicle_make": "Honda",
+            "vehicle_model": "Accord",
+            "created_at": store.now_iso(),
+            "callers": [{
+                "key": "Walk-in caller",
+                "customer_name": "Walk-in caller",
+                "customer_phone": "15550009702",
+                "status": "to_call",
+                "last_call_id": "",
+                "parts": ["Headlight"],
+                "vehicle": "2020 Honda Accord",
+            }],
+        })
+        store.save_state()
+        arrival_id = st["arrivals"][-1]["id"]
+
+        created = client.post(
+            f"/api/arrivals/{arrival_id}/callback-list",
+            json={"rep_ids": [rep["id"]], "name": "Walk-in callbacks"},
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        rep_client = _client()
+        _login(rep_client, rep_email, "RepPass!234")
+        items = rep_client.get("/api/callbacks?status=open").json()
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["customer_name"], "Walk-in caller")
+        self.assertEqual(items[0]["customer_phone"], "15550009702")
+
+
 class FormLibraryTests(unittest.TestCase):
     """Forms are uploaded, listed, downloaded, deleted, and isolated per yard."""
 

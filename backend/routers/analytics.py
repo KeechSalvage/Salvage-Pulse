@@ -1793,7 +1793,7 @@ def post_arrival_callback_list(aid: str, body: dict[str, Any], request: Request)
     created_lists = []
     base_name = body.get("name") or f"{arrival.get('vehicle_year')} {arrival.get('vehicle_make')} {arrival.get('vehicle_model')} callers"
     due_date = body.get("due_date") or ""
-    waiting_callers = [c for c in arrival.get("callers", []) if c.get("status") == "to_call" and c.get("last_call_id")]
+    waiting_callers = [c for c in arrival.get("callers", []) if c.get("status") == "to_call"]
 
     # Index calls by call id for quick lookup (never across yard boundaries)
     calls_by_id = {
@@ -1939,10 +1939,11 @@ def get_callbacks(
                 or (i.get("reason") or "").lower().startswith("vehicle arrival")
             ]
         elif source == "sales_manager":
+            # A vehicle-arrival list created by a sales manager/owner still
+            # belongs in that manager's assigned queue.
             items = [
                 i for i in items
-                if ((i.get("assigned_by_role") or "").lower() in ("sales_manager", "owner", "manager"))
-                and not (i.get("reason") or "").lower().startswith("vehicle arrival")
+                if (i.get("assigned_by_role") or "").lower() in ("sales_manager", "owner", "manager")
             ]
         elif source == "missed":
             items = [i for i in items if not i.get("assigned_by")]

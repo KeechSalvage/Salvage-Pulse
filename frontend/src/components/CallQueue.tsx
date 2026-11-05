@@ -81,7 +81,7 @@ export default function CallQueue() {
                   </a>
                 )}
                 <Link to={i.link} data-testid={`queue-open-${i.id}`} className="rounded-md border border-border px-2 py-1 text-xs text-slate-300 transition-colors duration-150 hover:border-amber-500/50 hover:text-white">
-                  {i.kind === "roleplay" ? "Practise" : i.kind === "arrival" ? "Mark result" : "Open"}
+                  {i.kind === "roleplay" ? "Practise" : i.link.startsWith("/calls/") ? "Open call" : i.kind === "arrival" ? "Mark result" : "Open"}
                 </Link>
               </li>
             );

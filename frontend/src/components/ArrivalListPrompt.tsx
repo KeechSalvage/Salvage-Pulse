@@ -19,7 +19,7 @@ export default function ArrivalListPrompt({ arrival, onClose }: { arrival: Arriv
   const [selectedReps, setSelectedReps] = useState<string[]>([]);
   const [name, setName] = useState("");
   const [due, setDue] = useState("");
-  const waitingCallers = arrival?.callers.filter((c) => c.status === "to_call" && c.last_call_id) ?? [];
+  const waitingCallers = arrival?.callers.filter((c) => c.status === "to_call") ?? [];
   const waiting = waitingCallers.length;
   const vehicle = arrival ? `${arrival.vehicle_year} ${arrival.vehicle_make} ${arrival.vehicle_model}` : "";
 

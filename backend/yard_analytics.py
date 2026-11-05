@@ -1381,6 +1381,7 @@ def build_queue(state: dict[str, Any], org_id: Optional[str], *, user: dict[str,
         if callback_id in seen_callbacks:
             continue
         seen_callbacks.add(callback_id)
+        source_call_id = str(call.get("original_call_id") or call.get("id") or "")
         items.append({
             "kind": "callback",
             "id": call.get("id", ""),
@@ -1388,7 +1389,7 @@ def build_queue(state: dict[str, Any], org_id: Optional[str], *, user: dict[str,
             "detail": call.get("reason") or "Follow up with this customer",
             "phone": call.get("customer_phone", ""),
             "urgent": bool(call.get("list_overdue")),
-            "link": "/calls",
+            "link": f"/calls/{source_call_id}" if source_call_id else "/callbacks",
             "at": call.get("created_at", ""),
         })
 
@@ -1406,6 +1407,7 @@ def build_queue(state: dict[str, Any], org_id: Optional[str], *, user: dict[str,
                 continue
             if user.get("role") in REP_ROLES and caller.get("rep_id") not in (None, "", user.get("id")):
                 continue
+            source_call_id = str(caller.get("last_call_id") or "")
             items.append({
                 "kind": "arrival",
                 "id": f"{arrival.get('id')}:{caller.get('key')}",
@@ -1413,7 +1415,7 @@ def build_queue(state: dict[str, Any], org_id: Optional[str], *, user: dict[str,
                 "detail": f"Asked about {caller.get('vehicle') or vehicle} ({', '.join(caller.get('parts') or []) or 'parts'})",
                 "phone": caller.get("customer_phone", ""),
                 "urgent": True,
-                "link": "/vehicles",
+                "link": f"/calls/{source_call_id}" if source_call_id else "/vehicles",
                 "at": arrival.get("created_at", ""),
             })
 
