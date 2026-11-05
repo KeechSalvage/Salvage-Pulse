@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Inbox, LifeBuoy, Lightbulb, MessageSquare } from "lucide-react";
+import { Bug, CheckCircle2, Inbox, LifeBuoy, Lightbulb, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -15,6 +15,7 @@ import type { ContactCreate, ContactKind, ContactMessage, ContactReplyCreate, Co
 const KINDS: { id: ContactKind; label: string; icon: typeof LifeBuoy; hint: string; placeholder: string }[] = [
   { id: "support", label: "Get support", icon: LifeBuoy, hint: "Something not working, a billing question or need a hand? We reply by email.", placeholder: "What happened, and what did you expect?" },
   { id: "suggestion", label: "Suggest an idea", icon: Lightbulb, hint: "Tell us what would make Salvage Pulse more useful for your yard.", placeholder: "I wish Salvage Pulse could…" },
+  { id: "bug", label: "Report a bug", icon: Bug, hint: "Tell us what broke, what you were doing, and what you expected to happen. We reply by email.", placeholder: "What went wrong? Include the page and what you clicked." },
 ];
 
 /** "Contact us" button + dialog with a support box and a suggestion box. */
@@ -92,8 +93,16 @@ export function ContactUsButton({ className = "", compact = false }: { className
           ) : sent ? (
             <div data-testid="contact-sent" className="flex flex-col items-center gap-3 py-6 text-center">
               <CheckCircle2 className="size-10 text-emerald-400" />
-              <p className="font-heading text-lg font-semibold text-white">{sent === "support" ? "Got it — we'll email you back" : "Thanks for the idea!"}</p>
-              <p className="text-sm text-slate-400">{sent === "support" ? "Most requests get an answer within one business day." : "We review every suggestion when planning what to build next."}</p>
+              <p className="font-heading text-lg font-semibold text-white">
+                {sent === "support" ? "Got it — we'll email you back" : sent === "bug" ? "Thanks — we'll investigate" : "Thanks for the idea!"}
+              </p>
+              <p className="text-sm text-slate-400">
+                {sent === "support"
+                  ? "Most requests get an answer within one business day."
+                  : sent === "bug"
+                    ? "We've logged the page and details you sent. If we need more information, we'll email you."
+                    : "We review every suggestion when planning what to build next."}
+              </p>
               <div className="mt-2 flex gap-2">
                 <Button variant="outline" data-testid="contact-send-another" onClick={() => setSent(null)}>Send another</Button>
                 <Button data-testid="contact-close" onClick={() => close(false)}>Done</Button>
@@ -107,7 +116,7 @@ export function ContactUsButton({ className = "", compact = false }: { className
                 send.mutate();
               }}
             >
-              <div className="grid grid-cols-2 gap-2" role="tablist">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" role="tablist">
                 {KINDS.map((x) => (
                   <button
                     key={x.id}
@@ -117,7 +126,7 @@ export function ContactUsButton({ className = "", compact = false }: { className
                     data-testid={`contact-kind-${x.id}`}
                     onClick={() => setKind(x.id)}
                     className={cn(
-                      "flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm transition-[background-color,border-color,color] duration-150",
+                      "flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-xs transition-[background-color,border-color,color] duration-150 sm:text-sm",
                       kind === x.id ? "border-sky-500 bg-sky-500/15 text-white" : "border-border text-slate-400 hover:text-white",
                     )}
                   >
@@ -126,11 +135,16 @@ export function ContactUsButton({ className = "", compact = false }: { className
                 ))}
               </div>
               <p className="text-xs text-slate-400">{k.hint}</p>
-              {kind === "support" && (
-                <Input data-testid="contact-subject-input" value={subject} onChange={(e) => setSubject(e.target.value.slice(0, 120))} placeholder="Subject (e.g. CSV upload failed)" />
+              {kind !== "suggestion" && (
+                <Input
+                  data-testid="contact-subject-input"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value.slice(0, 120))}
+                  placeholder={kind === "bug" ? "Subject (e.g. Callback list not updating)" : "Subject (e.g. CSV upload failed)"}
+                />
               )}
               <Textarea
-                data-testid={kind === "support" ? "contact-support-box" : "contact-suggestion-box"}
+                data-testid={kind === "support" ? "contact-support-box" : kind === "bug" ? "contact-bug-box" : "contact-suggestion-box"}
                 value={message}
                 onChange={(e) => setMessage(e.target.value.slice(0, 4000))}
                 placeholder={k.placeholder}
@@ -139,7 +153,7 @@ export function ContactUsButton({ className = "", compact = false }: { className
               <div className="flex items-center justify-between">
                 <span className="font-mono text-[11px] text-slate-500">{message.length}/4000</span>
                 <Button type="submit" data-testid="contact-submit" disabled={message.trim().length < 5 || send.isPending}>
-                  {send.isPending ? "Sending…" : kind === "support" ? "Send to support" : "Send suggestion"}
+                  {send.isPending ? "Sending…" : kind === "support" ? "Send to support" : kind === "bug" ? "Send bug report" : "Send suggestion"}
                 </Button>
               </div>
             </form>
@@ -167,12 +181,12 @@ export function MessagesPanel() {
         <Inbox className="size-5 text-sky-300" />
         <div className="mr-auto">
           <h3 className="text-xl font-bold text-white">Messages</h3>
-          <p className="text-xs text-slate-500">Support requests and suggestions sent with "Contact us". Each also emails the master address.</p>
+          <p className="text-xs text-slate-500">Support requests, bug reports, and suggestions sent with "Contact us". Each also emails the master address.</p>
         </div>
         <span data-testid="admin-messages-open" className="rounded border border-sky-500/40 px-2 py-0.5 font-mono text-[11px] uppercase text-sky-300">{open} open</span>
-        {(["", "support", "suggestion"] as const).map((k) => (
+        {(["", "support", "bug", "suggestion"] as const).map((k) => (
           <button key={k || "all"} type="button" data-testid={`admin-messages-filter-${k || "all"}`} onClick={() => setKind(k)} className={cn("rounded-full border px-3 py-1 text-xs transition-colors duration-150", kind === k ? "border-sky-500 bg-sky-500/15 text-white" : "border-border text-slate-400 hover:text-white")}>
-            {k === "" ? "All" : k === "support" ? "Support" : "Suggestions"}
+            {k === "" ? "All" : k === "support" ? "Support" : k === "bug" ? "Bugs" : "Suggestions"}
           </button>
         ))}
       </div>
@@ -181,7 +195,7 @@ export function MessagesPanel() {
         {(data ?? []).map((m) => (
           <li key={m.id} data-testid={`admin-message-${m.id}`} className={cn("rounded-lg border p-4", m.status === "new" ? "border-sky-500/40 bg-sky-500/[0.04]" : "border-border opacity-70")}>
             <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className={cn("rounded px-1.5 py-0.5 font-mono uppercase", m.kind === "support" ? "bg-red-500/15 text-red-300" : "bg-amber-500/15 text-amber-300")}>{m.kind}</span>
+              <span className={cn("rounded px-1.5 py-0.5 font-mono uppercase", m.kind === "bug" ? "bg-rose-500/15 text-rose-300" : m.kind === "support" ? "bg-red-500/15 text-red-300" : "bg-amber-500/15 text-amber-300")}>{m.kind}</span>
               <span className="font-medium text-white">{m.user_name}</span>
               <a href={`mailto:${m.user_email}?subject=${encodeURIComponent(`Re: ${m.subject || "your Salvage Pulse message"}`)}`} className="text-sky-300 hover:underline">{m.user_email}</a>
               <span className="text-slate-500">{m.role} · {m.org_name || "—"} · {new Date(m.created_at).toLocaleString()}{m.page ? ` · from ${m.page}` : ""}</span>

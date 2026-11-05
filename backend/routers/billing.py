@@ -211,11 +211,13 @@ def get_contact_mine(request: Request) -> list[dict[str, Any]]:
 def post_contact(body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    subject = str(body.get("subject") or "Inquiry").strip()[:200]
+    kind = str(body.get("kind") or "support").strip().lower()
+    if kind not in ("support", "suggestion", "bug"):
+        kind = "support"
+    subject = str(body.get("subject") or ("Bug report" if kind == "bug" else "Inquiry")).strip()[:200]
     message = str(body.get("message") or "").strip()[:5000]
     if not message:
         raise HTTPException(status_code=400, detail="Enter a message")
-    kind = str(body.get("kind") or "support")[:40]
     org_id = u.get("org_id", "")
     yard = next((o for o in st.get("admin_orgs", []) if o.get("id") == org_id), None)
     cid = str(uuid.uuid4())

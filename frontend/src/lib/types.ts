@@ -1906,7 +1906,7 @@ export interface BulkDeleteResult {
   deleted: number;
 }
 
-export type ContactKind = "support" | "suggestion";
+export type ContactKind = "support" | "suggestion" | "bug";
 
 export interface ContactCreate {
   kind: ContactKind;

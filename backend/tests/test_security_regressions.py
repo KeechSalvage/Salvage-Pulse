@@ -1747,6 +1747,27 @@ class ThemePreferenceTests(unittest.TestCase):
         self.assertEqual(manager_client.get("/api/branding").json()["accent"], "#EF4444")
 
 
+class ContactBugReportTests(unittest.TestCase):
+    def test_bug_report_is_saved_with_the_bug_kind(self):
+        client = _client()
+        _signup(client, yard="Bug Report Yard")
+        sent = client.post(
+            "/api/contact",
+            json={
+                "kind": "bug",
+                "subject": "Callback list not updating",
+                "message": "Checking off a callback did not remove it from the list.",
+                "page": "/callbacks",
+            },
+        )
+        self.assertEqual(sent.status_code, 200, sent.text)
+        mine = client.get("/api/contact/mine").json()
+        report = next(m for m in mine if m["id"] == sent.json()["id"])
+        self.assertEqual(report["kind"], "bug")
+        self.assertEqual(report["subject"], "Callback list not updating")
+        self.assertEqual(report["page"], "/callbacks")
+
+
 class OrgPlanTests(unittest.TestCase):
     """Plan payloads must not make active yards look like limited trials."""
 
