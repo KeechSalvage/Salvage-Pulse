@@ -1778,6 +1778,7 @@ class OrgPlanTests(unittest.TestCase):
         self.assertEqual(org["status"], "active")
         self.assertFalse(org["trial_limited"])
         self.assertIsNone(org["suggestion_cap"])
+        self.assertIsNone(org["roleplay_daily_cap"])
 
     def test_limited_trial_still_gets_the_small_suggestion_cap(self):
         client = _client()
@@ -1791,6 +1792,7 @@ class OrgPlanTests(unittest.TestCase):
         org = client.get("/api/org/me").json()
         self.assertTrue(org["trial_limited"])
         self.assertEqual(org["suggestion_cap"], 3)
+        self.assertEqual(org["roleplay_daily_cap"], 1)
 
 
 if __name__ == "__main__":

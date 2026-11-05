@@ -132,9 +132,9 @@ export default function Roleplay() {
       {!activeId ? (
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
           <div className="xl:col-span-8">
-            {!!org.data?.roleplay_daily_cap && (
+            {org.data?.trial_limited && !!org.data?.roleplay_daily_cap && (
               <p data-testid="roleplay-trial-cap" className="mb-4 rounded-lg border border-orange-500/40 bg-orange-500/10 px-4 py-2 text-sm text-orange-100">
-                Free-trial limit: {org.data.roleplay_daily_cap} role-play call per person per day for the rest of your trial. Upgrade on the Billing page for unlimited practice.
+                Trial limit: {org.data.roleplay_daily_cap} role-play call per person per day for the rest of your trial. Upgrade on the Billing page for unlimited practice.
               </p>
             )}
             <div id="roleplay-assignments" className="scroll-mt-6">

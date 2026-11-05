@@ -1060,7 +1060,7 @@ export interface OrgInfo {
   trial_limited: boolean;
   limited_starts_at: string | null;
   locked_features: PremiumFeature[];
-  roleplay_daily_cap: number;
+  roleplay_daily_cap: number | null;
   suggestion_cap: number | null;
   sample_data: boolean;
   blocked: boolean;
