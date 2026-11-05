@@ -1,7 +1,7 @@
 /**
  * Application version configuration and release channel metadata.
  */
-export const APP_VERSION = "1.0.0-beta.12";
+export const APP_VERSION = "1.0.0-beta.13";
 export const APP_STAGE = "Beta";
 export const IS_BETA = true;
 

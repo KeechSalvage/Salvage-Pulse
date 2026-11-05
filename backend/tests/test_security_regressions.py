@@ -1659,6 +1659,31 @@ class TransportSecurityTests(unittest.TestCase):
         self.assertNotIn(b"root:", response.content)
 
 
+class OrgPlanTests(unittest.TestCase):
+    """Plan payloads must not make active yards look like limited trials."""
+
+    def test_active_yard_has_no_trial_suggestion_cap(self):
+        client = _client()
+        _login(client, "salesmanager@keechauto.com", "salesmanager")
+        org = client.get("/api/org/me").json()
+        self.assertEqual(org["status"], "active")
+        self.assertFalse(org["trial_limited"])
+        self.assertIsNone(org["suggestion_cap"])
+
+    def test_limited_trial_still_gets_the_small_suggestion_cap(self):
+        client = _client()
+        owner, _, _ = _signup(client, yard="Limited Trial Yard")
+        st = store.get_state()
+        yard = next(o for o in st["admin_orgs"] if o["id"] == owner["org_id"])
+        yard["status"] = "trialing"
+        yard["limited_starts_at"] = "2020-01-01T00:00:00Z"
+        store.save_state()
+
+        org = client.get("/api/org/me").json()
+        self.assertTrue(org["trial_limited"])
+        self.assertEqual(org["suggestion_cap"], 3)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
 

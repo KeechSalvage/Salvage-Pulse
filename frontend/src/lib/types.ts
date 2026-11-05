@@ -1061,7 +1061,7 @@ export interface OrgInfo {
   limited_starts_at: string | null;
   locked_features: PremiumFeature[];
   roleplay_daily_cap: number;
-  suggestion_cap: number;
+  suggestion_cap: number | null;
   sample_data: boolean;
   blocked: boolean;
   plan_locked: PremiumFeature[]; // Enterprise-only features this plan doesn't include

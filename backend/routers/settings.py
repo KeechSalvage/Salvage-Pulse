@@ -340,6 +340,17 @@ def get_org_me(request: Request) -> dict[str, Any]:
                     except Exception:
                         pass
 
+            # Only a trial that has entered its limited phase gets a suggestion
+            # cap. Active yards must not look like they are on a trial.
+            trial_limited = False
+            limited_start = yard.get("limited_starts_at")
+            if yard.get("status") == "trialing" and limited_start and not yard.get("is_demo"):
+                try:
+                    start_dt = dt.datetime.fromisoformat(str(limited_start).replace("Z", "+00:00"))
+                    trial_limited = dt.datetime.now(dt.timezone.utc) >= start_dt
+                except Exception:
+                    trial_limited = False
+
             return {
                 "id": yard.get("id", ""),
                 "name": yard.get("name", "Yard"),
@@ -356,11 +367,11 @@ def get_org_me(request: Request) -> dict[str, Any]:
                 "reps": yard.get("users", 1),
                 "max_reps": 10,
                 "card_on_file": bool(yard.get("card_on_file", False)),
-                "trial_limited": False,
-                "limited_starts_at": None,
+                "trial_limited": trial_limited,
+                "limited_starts_at": limited_start,
                 "locked_features": [],
-                "roleplay_daily_cap": 25,
-                "suggestion_cap": 50,
+                "roleplay_daily_cap": 1 if trial_limited else 25,
+                "suggestion_cap": 3 if trial_limited else None,
                 "sample_data": False,
                 "blocked": bool(yard.get("blocked", False)),
                 "plan_locked": [],
@@ -395,7 +406,7 @@ def get_org_me(request: Request) -> dict[str, Any]:
         "limited_starts_at": None,
         "locked_features": [],
         "roleplay_daily_cap": 50,
-        "suggestion_cap": 100,
+        "suggestion_cap": None,
         "sample_data": False,
         "blocked": False,
         "plan_locked": [],

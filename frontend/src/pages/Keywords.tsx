@@ -191,8 +191,8 @@ export default function Keywords() {
       <Panel id="keywords-suggested" className="mb-6 scroll-mt-6" testId="keyword-suggestions-panel">
         <Overline>Suggested words</Overline>
         <p className="mt-1 text-xs text-slate-500">Come up often in your calls but no tile tracks them yet. Tap one to start tracking it.</p>
-        {!!org.data?.suggestion_cap && (
-          <p data-testid="keyword-suggestions-trial-cap" className="mt-1 text-xs text-orange-300">Free-trial limit: showing the top {org.data.suggestion_cap}. Upgrade to see them all.</p>
+        {org.data?.trial_limited && !!org.data?.suggestion_cap && (
+          <p data-testid="keyword-suggestions-trial-cap" className="mt-1 text-xs text-orange-300">Trial limit: showing the top {org.data.suggestion_cap} suggested words. Upgrade to see them all.</p>
         )}
         <div className="mt-3 flex flex-wrap gap-2">
           {suggestions.isLoading && <p className="text-sm text-slate-500">Reading your calls…</p>}
