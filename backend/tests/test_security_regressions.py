@@ -1662,7 +1662,7 @@ class TransportSecurityTests(unittest.TestCase):
 class ThemePreferenceTests(unittest.TestCase):
     """Each user's mode and accent follow their account, not the browser or yard."""
 
-    def test_user_theme_follows_account_and_stays_isolated(self):
+    def test_user_mode_follows_account_and_stays_isolated(self):
         client = _client()
         owner, owner_email, owner_password = _signup(client, yard="Theme Yard")
 
@@ -1673,20 +1673,18 @@ class ThemePreferenceTests(unittest.TestCase):
         self.assertEqual(initial["user_mode"], "")
         self.assertIsNone(initial["user_accent"])
 
-        saved = client.put("/api/me/theme", json={"mode": "light", "accent": "#22C55E"})
+        saved = client.put("/api/me/theme", json={"mode": "light"})
         self.assertEqual(saved.status_code, 200, saved.text)
         themed = saved.json()
         self.assertEqual(themed["mode"], "light")
-        self.assertEqual(themed["accent"], "#22C55E")
         self.assertEqual(themed["user_mode"], "light")
-        self.assertEqual(themed["user_accent"], "#22C55E")
+        self.assertEqual(themed["accent"], "")
 
-        # The preference survives a fresh sign-in.
+        # The mode preference survives a fresh sign-in.
         client.post("/api/auth/logout")
         _login(client, owner_email, owner_password)
         reloaded = client.get("/api/branding").json()
         self.assertEqual(reloaded["mode"], "light")
-        self.assertEqual(reloaded["accent"], "#22C55E")
 
         rep_email = f"theme-rep-{uuid.uuid4().hex[:8]}@example.test"
         created = client.post(
@@ -1705,19 +1703,17 @@ class ThemePreferenceTests(unittest.TestCase):
         teammate = rep.get("/api/branding").json()
         self.assertEqual(teammate["mode"], "dark")
         self.assertEqual(teammate["accent"], "")
-        self.assertIsNone(teammate["user_accent"])
 
-        rep_saved = rep.put("/api/me/theme", json={"accent": "#0EA5E9"})
-        self.assertEqual(rep_saved.status_code, 200, rep_saved.text)
-        self.assertEqual(rep_saved.json()["accent"], "#0EA5E9")
-        self.assertEqual(client.get("/api/branding").json()["accent"], "#22C55E")
+        # Accent is company branding, not a personal preference.
+        blocked = rep.put("/api/me/theme", json={"accent": "#0EA5E9"})
+        self.assertEqual(blocked.status_code, 403, blocked.text)
 
-        cleared = rep.put("/api/me/theme", json={"accent": None})
-        self.assertEqual(cleared.status_code, 200, cleared.text)
-        self.assertIsNone(cleared.json()["user_accent"])
-        self.assertEqual(cleared.json()["accent"], "")
+        rep_mode = rep.put("/api/me/theme", json={"mode": "light"})
+        self.assertEqual(rep_mode.status_code, 200, rep_mode.text)
+        self.assertEqual(rep_mode.json()["mode"], "light")
+        self.assertEqual(client.get("/api/branding").json()["mode"], "light")
 
-    def test_yard_defaults_are_the_fallback_for_people_without_overrides(self):
+    def test_only_the_owner_controls_company_accent_and_staff_mode(self):
         client = _client()
         _signup(client, yard="Theme Defaults Yard")
         saved = client.put(
@@ -1727,15 +1723,28 @@ class ThemePreferenceTests(unittest.TestCase):
         self.assertEqual(saved.status_code, 200, saved.text)
         body = saved.json()
         self.assertEqual(body["yard_accent"], "#EF4444")
-        self.assertEqual(body["default_mode"], "light")
         self.assertEqual(body["accent"], "#EF4444")
-        self.assertEqual(body["mode"], "light")
+        # The owner cannot set a light/dark default for staff.
+        self.assertEqual(body["default_mode"], "dark")
+        self.assertEqual(body["mode"], "dark")
 
-        personal = client.put("/api/me/theme", json={"accent": "#0EA5E9", "mode": "dark"})
-        self.assertEqual(personal.status_code, 200, personal.text)
-        self.assertEqual(personal.json()["accent"], "#0EA5E9")
-        self.assertEqual(personal.json()["mode"], "dark")
-        self.assertEqual(personal.json()["yard_accent"], "#EF4444")
+        manager_email = f"theme-manager-{uuid.uuid4().hex[:8]}@example.test"
+        manager = client.post(
+            "/api/users/reps",
+            json={
+                "name": "Theme Manager",
+                "email": manager_email,
+                "password": "ManagerPass!234",
+                "role": "sales_manager",
+            },
+        )
+        self.assertEqual(manager.status_code, 200, manager.text)
+
+        manager_client = _client()
+        _login(manager_client, manager_email, "ManagerPass!234")
+        denied = manager_client.put("/api/branding", json={"accent": "#0EA5E9"})
+        self.assertEqual(denied.status_code, 403, denied.text)
+        self.assertEqual(manager_client.get("/api/branding").json()["accent"], "#EF4444")
 
 
 class OrgPlanTests(unittest.TestCase):

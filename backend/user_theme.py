@@ -1,8 +1,7 @@
-"""Resolve a user's display theme on top of their yard's default look.
+"""Resolve a user's display mode on top of their yard's company branding.
 
-Mode and accent are user preferences: once someone picks them, they follow that
-account on every device.  Users who have not picked one inherit the yard
-defaults set by an owner or sales manager.
+Light/dark is a personal choice.  The accent colour and logo belong to the yard
+and can only be changed by the owner, so they apply to everyone.
 """
 from __future__ import annotations
 
@@ -25,17 +24,12 @@ def normalize_user_theme(raw: Any) -> dict[str, Any]:
         return {"mode": raw} if raw in ("dark", "light") else {}
     if not isinstance(raw, dict):
         return {}
-    theme: dict[str, Any] = {}
     mode = str(raw.get("mode") or "").lower()
-    if mode in ("dark", "light"):
-        theme["mode"] = mode
-    if "accent" in raw and isinstance(raw.get("accent"), str):
-        theme["accent"] = raw["accent"].strip()
-    return theme
+    return {"mode": mode} if mode in ("dark", "light") else {}
 
 
 def branding_for_user(state: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]:
-    """Return the effective branding for one user, with personal overrides."""
+    """Return company branding plus this user's personal light/dark choice."""
     org_id = str((user or {}).get("org_id") or "")
     if org_id:
         branding_map = state.setdefault("branding_by_org", {})
@@ -46,19 +40,15 @@ def branding_for_user(state: dict[str, Any], user: dict[str, Any]) -> dict[str, 
 
     uid = str((user or {}).get("id") or "")
     user_theme = normalize_user_theme(state.setdefault("theme_by_user", {}).get(uid))
-
-    mode = user_theme.get("mode") or yard.get("default_mode") or "dark"
-    if mode not in ("dark", "light"):
-        mode = "dark"
-    accent = user_theme["accent"] if "accent" in user_theme else (yard.get("accent") or "")
+    mode = user_theme.get("mode") or "dark"
 
     return {
         "yard_name": yard.get("yard_name") or "Salvage Pulse",
-        "accent": accent,
+        "accent": yard.get("accent") or "",
         "yard_accent": yard.get("accent") or "",
-        "default_mode": yard.get("default_mode") or "dark",
+        "default_mode": "dark",
         "logo_url": yard.get("logo_url") or "",
         "user_mode": user_theme.get("mode", ""),
-        "user_accent": user_theme.get("accent"),
+        "user_accent": None,
         "mode": mode,
     }

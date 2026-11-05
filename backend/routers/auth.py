@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 import threading
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -702,8 +701,10 @@ def me_mobile_put(body: dict[str, Any], request: Request) -> dict[str, Any]:
 
 @router.put("/api/me/theme")
 def me_theme_put(body: dict[str, Any], request: Request) -> dict[str, Any]:
-    """Save this user's own mode/accent; both follow the account on every device."""
+    """Save this user's own light/dark mode; it follows the account on every device."""
     u = get_current_user(request)
+    if "accent" in body:
+        raise HTTPException(status_code=403, detail="Only the yard owner can change the company accent colour.")
     st = store.get_state()
     themes = st.setdefault("theme_by_user", {})
     theme = normalize_user_theme(themes.get(u["id"]))
@@ -716,18 +717,6 @@ def me_theme_put(body: dict[str, Any], request: Request) -> dict[str, Any]:
             theme.pop("mode", None)
         else:
             raise HTTPException(status_code=400, detail="Invalid display mode")
-
-    if "accent" in body:
-        accent = body.get("accent")
-        if accent is None:
-            theme.pop("accent", None)
-        elif isinstance(accent, str):
-            accent = accent.strip()
-            if accent and not re.fullmatch(r"#[0-9a-fA-F]{3,8}", accent):
-                raise HTTPException(status_code=400, detail="Accent must be a hex colour such as #1f6feb")
-            theme["accent"] = accent
-        else:
-            raise HTTPException(status_code=400, detail="Accent must be a hex colour or null")
 
     if theme:
         themes[u["id"]] = theme

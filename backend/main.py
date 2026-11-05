@@ -40,7 +40,7 @@ MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_MB", "25")) * 1024 * 1024
 
 app = FastAPI(
     title="Salvage Pulse AI API",
-    version="1.0.0-beta.14",
+    version="1.0.0-beta.15",
     docs_url="/docs" if DOCS_ENABLED else None,
     redoc_url="/redoc" if DOCS_ENABLED else None,
     openapi_url="/openapi.json" if DOCS_ENABLED else None,
@@ -234,7 +234,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 def health() -> dict[str, Any]:
     return {
         "status": "ok",
-        "version": "1.0.0-beta.14",
+        "version": "1.0.0-beta.15",
         "stage": "beta",
         "timestamp": store.now_iso(),
     }
@@ -243,7 +243,7 @@ def health() -> dict[str, Any]:
 @app.get("/api/system/version")
 def system_version() -> dict[str, Any]:
     return {
-        "version": "1.0.0-beta.14",
+        "version": "1.0.0-beta.15",
         "stage": "beta",
         "is_beta": True,
         "release_date": "2026-11-04",

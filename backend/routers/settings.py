@@ -55,6 +55,12 @@ def _require_manager(user: dict[str, Any]) -> None:
         raise HTTPException(status_code=403, detail="Manager access required")
 
 
+def _require_owner(user: dict[str, Any]) -> None:
+    """Company branding (logo + accent) belongs to the yard owner."""
+    if user.get("role") != "owner" and not is_staff(user):
+        raise HTTPException(status_code=403, detail="Only the yard owner can change the company logo and accent colour")
+
+
 def _site_in_org(st: dict[str, Any], site_id: str, org_id: str | None) -> dict[str, Any]:
     site = next((s for s in st.get("sites_data", {}).get("sites", []) if s.get("id") == site_id), None)
     if not site:
@@ -487,7 +493,7 @@ def get_branding(request: Request) -> dict[str, Any]:
 def put_branding(body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    _require_manager(u)
+    _require_owner(u)
     org_id = u.get("org_id") or "default"
     branding_map = st.setdefault("branding_by_org", {})
     yard = next((o for o in st.get("admin_orgs", []) if o.get("id") == org_id), None)
@@ -501,11 +507,7 @@ def put_branding(body: dict[str, Any], request: Request) -> dict[str, Any]:
         if accent and not re.fullmatch(r"#[0-9a-fA-F]{3,8}", accent):
             raise HTTPException(status_code=400, detail="Accent must be a hex colour such as #1f6feb")
         b["accent"] = accent
-    if "default_mode" in body:
-        mode = str(body.get("default_mode") or "dark").lower()
-        if mode not in ("dark", "light", "system"):
-            raise HTTPException(status_code=400, detail="Invalid display mode")
-        b["default_mode"] = mode
+    # Light/dark is personal now; the owner cannot set a mode for staff.
     store.save_state()
     return branding_for_user(st, u)
 
@@ -514,7 +516,7 @@ def put_branding(body: dict[str, Any], request: Request) -> dict[str, Any]:
 async def post_branding_logo(request: Request, file: UploadFile = File(...)) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    _require_manager(u)
+    _require_owner(u)
     org_id = u.get("org_id") or "default"
     content = await file.read(2 * 1024 * 1024 + 1)
     ext = validate_upload(content, file.filename or "", ALLOWED_IMAGE_EXTENSIONS, max_bytes=2 * 1024 * 1024)
@@ -537,7 +539,7 @@ async def post_branding_logo(request: Request, file: UploadFile = File(...)) -> 
 def delete_branding_logo(request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
-    _require_manager(u)
+    _require_owner(u)
     org_id = u.get("org_id") or "default"
     branding_map = st.setdefault("branding_by_org", {})
     b = branding_map.setdefault(org_id, dict(DEFAULT_BRANDING))

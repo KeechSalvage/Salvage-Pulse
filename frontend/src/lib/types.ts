@@ -1810,16 +1810,10 @@ export interface Branding {
 
 export interface BrandingUpdate {
   accent: string;
-  default_mode: ThemeMode;
 }
 
 export interface ThemeModeUpdate {
   mode: "" | ThemeMode;
-}
-
-export interface ThemeUpdate {
-  mode?: "" | ThemeMode;
-  accent?: string | null;
 }
 
 export interface CompareRow {

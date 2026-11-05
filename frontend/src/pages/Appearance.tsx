@@ -6,20 +6,20 @@ import { Button } from "@/components/ui/button";
 import { Overline, PageHeader, Panel } from "@/components/common";
 import BrandLogo from "@/components/BrandLogo";
 import { apiDelete, apiPut, apiUpload, errorMessage } from "@/lib/api";
-import { useBranding, useSetMyTheme } from "@/lib/branding";
+import { useBranding, useSetMyMode } from "@/lib/branding";
 import { useMe } from "@/lib/hooks";
 import { ACCENT_PRESETS, applyBranding } from "@/lib/theme";
 import { cn } from "@/lib/utils";
-import type { Branding, BrandingUpdate, ThemeMode } from "@/lib/types";
+import type { Branding, BrandingUpdate } from "@/lib/types";
 
-/** Everyone: this user's own dark/light choice and accent, saved to the account. */
+/** Everyone: this user's own light/dark choice, saved to the account. */
 function MyThemePanel({ b }: { b: Branding }) {
-  const set = useSetMyTheme();
+  const set = useSetMyMode();
   return (
     <Panel className="mb-6" testId="my-theme-panel">
       <Overline>My appearance</Overline>
       <p className="mt-1 max-w-2xl text-sm text-slate-400">
-        These choices follow your account on every device. If you have not picked one, you inherit your yard&apos;s default look.
+        Pick light or dark for yourself. This follows your account on every device. The company accent colour is set by the owner.
       </p>
 
       <p className="mt-5 font-mono text-[11px] uppercase tracking-wider text-slate-500">My mode</p>
@@ -30,7 +30,7 @@ function MyThemePanel({ b }: { b: Branding }) {
             type="button"
             data-testid={`my-theme-mode-${m}`}
             disabled={set.isPending}
-            onClick={() => set.mutate({ mode: m })}
+            onClick={() => set.mutate(m)}
             className={cn(
               "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors duration-150",
               b.mode === m ? "border-amber-500 bg-amber-500/10 text-white" : "border-border text-slate-300 hover:border-slate-500",
@@ -41,76 +41,38 @@ function MyThemePanel({ b }: { b: Branding }) {
           </button>
         ))}
       </div>
-
-      <p className="mt-5 font-mono text-[11px] uppercase tracking-wider text-slate-500">My accent colour</p>
-      <div className="mt-3 flex flex-wrap items-center gap-2.5">
-        {ACCENT_PRESETS.map((p) => (
-          <button
-            key={p.name}
-            type="button"
-            title={p.name}
-            data-testid={`my-theme-accent-${p.name.toLowerCase().replace(/\s+/g, "-")}`}
-            disabled={set.isPending}
-            onClick={() => set.mutate({ accent: p.hex })}
-            style={{ backgroundColor: p.hex || "#3A6AF0" }}
-            className={cn(
-              "grid size-9 place-items-center rounded-full ring-offset-2 ring-offset-card transition-transform duration-150 hover:scale-110",
-              b.accent === p.hex && "ring-2 ring-white",
-            )}
-          >
-            {b.accent === p.hex && <Check className="size-4 text-black/80" />}
-          </button>
-        ))}
-        {b.user_accent !== null && (
-          <Button variant="ghost" size="sm" data-testid="my-theme-use-yard-accent" disabled={set.isPending} onClick={() => set.mutate({ accent: null })}>
-            Use yard colour
-          </Button>
-        )}
-      </div>
-      <p className="mt-2 text-xs text-slate-500" data-testid="my-theme-source">
-        {b.user_accent !== null
-          ? "Using your own accent colour."
-          : `Following your yard's accent colour${b.accent ? ` (${b.accent})` : ""}.`}
-      </p>
     </Panel>
   );
 }
 
-/** Manager: the yard's logo, accent colour and default dark/light mode. Changes preview live, then save. */
+/** Owner: the company logo and accent colour. */
 export default function Appearance() {
   const qc = useQueryClient();
   const { data: me } = useMe();
-  const canEditYard = me?.role === "owner" || me?.role === "sales_manager" || me?.role === "manager";
+  const isOwner = me?.role === "owner";
   const { data: b } = useBranding();
   const [accent, setAccent] = useState("");
-  const [mode, setMode] = useState<ThemeMode>("dark");
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Sync the form from the saved yard look (not on every branding refresh, e.g. toggling your own mode).
+  // Sync the owner form from the saved company accent.
   const savedAccent = b?.yard_accent;
-  const savedMode = b?.default_mode;
   useEffect(() => {
     if (savedAccent !== undefined) setAccent(savedAccent);
-    if (savedMode) setMode(savedMode);
-  }, [savedAccent, savedMode]);
+  }, [savedAccent]);
 
-  // Live preview of the yard look, while keeping this manager's own overrides.
+  // Live preview of the company accent in this owner's own light/dark mode.
   useEffect(() => {
-    if (!b || !canEditYard) return;
-    applyBranding({
-      ...b,
-      accent: b.user_accent !== null ? b.user_accent : accent,
-      mode: b.user_mode || mode,
-    });
-  }, [accent, mode, b, canEditYard]);
+    if (!b || !isOwner) return;
+    applyBranding({ ...b, accent, mode: b.mode });
+  }, [accent, b, isOwner]);
 
   const saved = (msg: string) => (r: Branding) => {
     qc.setQueryData(["branding"], r);
     toast.success(msg);
   };
   const save = useMutation({
-    mutationFn: () => apiPut<Branding>("/branding", { accent, default_mode: mode } satisfies BrandingUpdate),
-    onSuccess: saved("Yard look saved — your whole team sees it now"),
+    mutationFn: () => apiPut<Branding>("/branding", { accent } satisfies BrandingUpdate),
+    onSuccess: saved("Company accent saved — your whole team sees it now"),
     onError: (e) => toast.error(errorMessage(e, "Couldn't save")),
   });
   const upload = useMutation({
@@ -128,17 +90,17 @@ export default function Appearance() {
     onError: (e) => toast.error(errorMessage(e)),
   });
   if (!b) return null;
-  const dirty = accent !== b.yard_accent || mode !== b.default_mode;
+  const dirty = accent !== b.yard_accent;
 
   return (
     <>
       <PageHeader overline="Settings" title="Appearance" />
       <MyThemePanel b={b} />
-      {canEditYard && (
+      {isOwner && (
         <>
           <div className="mb-3">
-            <Overline>Yard default look</Overline>
-            <p className="mt-1 text-sm text-slate-400">The logo and fallback theme everyone sees unless they pick their own in My appearance above.</p>
+            <Overline>Company branding</Overline>
+            <p className="mt-1 text-sm text-slate-400">The logo and accent colour everyone sees. Staff still choose their own light or dark mode.</p>
           </div>
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         <Panel className="xl:col-span-5" testId="appearance-logo-panel">
@@ -175,38 +137,9 @@ export default function Appearance() {
         </Panel>
 
         <Panel className="xl:col-span-7" testId="appearance-theme-panel">
-          <Overline>Theme</Overline>
-          <p className="mt-1 text-sm text-slate-400">The fallback for your team. Anyone can override it for themselves in My appearance above or with the sun/moon button by Sign out.</p>
-          <div className="mt-4 flex gap-3">
-            {(["dark", "light"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                data-testid={`appearance-mode-${m}`}
-                onClick={() => setMode(m)}
-                className={cn(
-                  "flex flex-1 items-center gap-3 rounded-xl border p-4 text-left transition-[border-color,background-color] duration-150",
-                  mode === m ? "border-amber-500 bg-amber-500/10" : "border-border hover:border-slate-500",
-                )}
-              >
-                <span className={cn("grid size-10 place-items-center rounded-lg", m === "dark" ? "bg-[#0B0F19] text-slate-200" : "bg-[#F4F6FA] text-[#0F172A] ring-1 ring-[#DCE3EC]")}>
-                  {m === "dark" ? <Moon className="size-5" /> : <Sun className="size-5" />}
-                </span>
-                <span>
-                  <span className="block font-semibold text-white">{m === "dark" ? "Dark" : "Light"}</span>
-                  <span className="text-xs text-slate-500">{m === "dark" ? "Easy on the eyes in the shop" : "Bright, for the front counter"}</span>
-                </span>
-              </button>
-            ))}
-          </div>
-          {b.user_mode && (
-            <p className="mt-2 text-xs text-slate-500" data-testid="appearance-own-mode-note">
-              You've picked {b.user_mode} mode for yourself, so your screen stays {b.user_mode} — your team will get the default above.
-            </p>
-          )}
-
-          <p className="mt-6 font-mono text-[11px] uppercase tracking-wider text-slate-500">Accent colour</p>
-          <div className="mt-3 flex flex-wrap items-center gap-2.5">
+          <Overline>Company accent colour</Overline>
+          <p className="mt-1 text-sm text-slate-400">Only the owner can change this. It applies to everyone; staff still choose their own light or dark mode in My appearance above.</p>
+          <div className="mt-4 flex flex-wrap items-center gap-2.5">
             {ACCENT_PRESETS.map((p) => (
               <button
                 key={p.name}
@@ -249,7 +182,7 @@ export default function Appearance() {
               {save.isPending && <Loader2 className="size-4 animate-spin" />} Save for the whole yard
             </Button>
             {dirty && (
-              <Button variant="ghost" data-testid="appearance-reset" onClick={() => (setAccent(b.yard_accent), setMode(b.default_mode))}>
+              <Button variant="ghost" data-testid="appearance-reset" onClick={() => setAccent(b.yard_accent)}>
                 Undo changes
               </Button>
             )}
