@@ -51,6 +51,9 @@ export default function Callbacks() {
     qc.invalidateQueries({ queryKey: ["callbacks"] });
     qc.invalidateQueries({ queryKey: ["callback-lists"] });
     qc.invalidateQueries({ queryKey: ["overview"] });
+    qc.invalidateQueries({ queryKey: ["leaderboards"] });
+    qc.invalidateQueries({ queryKey: ["calls"] });
+    qc.invalidateQueries({ queryKey: ["queue"] });
   };
   const unassign = useMutation({
     mutationFn: (id: string) => apiDelete(`/calls/${id}/assignment`),

@@ -16,6 +16,7 @@ from database import CATEGORIES, VEHICLE_CATALOG, compute_weighted_overall_score
 from scoring_config import resolve_scoring
 from security import (
     ALLOWED_AUDIO_EXTENSIONS,
+    REP_ROLES,
     assert_call_access,
     assert_same_org,
     effective_org,
@@ -501,47 +502,197 @@ def post_call_delivery_check_ai(call_id: str, request: Request) -> dict[str, Any
     raise HTTPException(status_code=404, detail="Call not found")
 
 
+def _callback_row_for_user(
+    items: list[dict[str, Any]], call_id: str, user: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Find a callback row, preferring the signed-in rep's own copy.
+
+    Manager-assigned callbacks keep the source call's id, and the same call can
+    be assigned to more than one rep.  A rep may only complete their own copy.
+    """
+    matches = [item for item in items if item.get("id") == call_id]
+    if not matches:
+        return None
+    if user.get("role") in REP_ROLES:
+        mine = [item for item in matches if item.get("rep_id") in (None, "", user.get("id"))]
+        if not mine:
+            raise HTTPException(status_code=403, detail="That callback belongs to another rep")
+        return mine[0]
+    return matches[0]
+
+
+def _refresh_list_overdue(callback_list: dict[str, Any]) -> None:
+    due = str(callback_list.get("due_date") or "")
+    callback_list["overdue"] = bool(due and due < store.today_str() and int(callback_list.get("open") or 0) > 0)
+
+
+def _recount_callback_list(st: dict[str, Any], list_id: str) -> None:
+    """Recompute a named list's progress from its current callback rows."""
+    if not list_id:
+        return
+    callback_list = next((row for row in st.get("callback_lists", []) if row.get("id") == list_id), None)
+    if not callback_list:
+        return
+    open_rows = [row for row in st.get("callbacks_open", []) if row.get("assigned_list_id") == list_id]
+    resolved_rows = [row for row in st.get("callbacks_resolved", []) if row.get("assigned_list_id") == list_id]
+    sold_rows: list[dict[str, Any]] = []
+    revenue = 0.0
+    for row in resolved_rows:
+        try:
+            value = float(row.get("callback_sold_value") or 0.0)
+        except (TypeError, ValueError):
+            value = 0.0
+        if value > 0:
+            sold_rows.append(row)
+            revenue += value
+    callback_list["open"] = len(open_rows)
+    callback_list["done"] = len(resolved_rows)
+    callback_list["total"] = len(open_rows) + len(resolved_rows)
+    callback_list["sold"] = len(sold_rows)
+    callback_list["revenue"] = round(revenue, 2)
+    _refresh_list_overdue(callback_list)
+
+
+def _sync_source_call(
+    st: dict[str, Any],
+    callback: dict[str, Any],
+    *,
+    resolved: bool,
+    sold_price: float,
+    parts_sold: Any,
+    actor: dict[str, Any],
+    at: str,
+) -> None:
+    """Mirror the callback result onto the original call in the call library."""
+    source_id = str(callback.get("original_call_id") or callback.get("id") or "")
+    if not source_id:
+        return
+    for call in st.get("calls", []):
+        if call.get("id") != source_id:
+            continue
+        call["callback_done"] = resolved
+        call["callback_by"] = actor.get("name", "Rep")
+        call["callback_at"] = at
+        if resolved:
+            call["resolved_at"] = at
+        else:
+            call.pop("resolved_at", None)
+        if sold_price:
+            call["outcome"] = "won"
+            call["order_value"] = sold_price
+            if parts_sold is not None:
+                call["parts_sold"] = parts_sold
+        return
+
+
 @router.patch("/api/calls/{call_id}/callback")
 def patch_call_callback(call_id: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
+    done = bool(body.get("done"))
+    sold_raw = body.get("sold_price")
+    try:
+        sold_price = float(sold_raw) if sold_raw not in (None, "") else 0.0
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="sold_price must be a number")
+    if sold_price < 0:
+        raise HTTPException(status_code=400, detail="sold_price cannot be negative")
+    parts_sold = body.get("parts_sold") if "parts_sold" in body else None
+    at = store.now_iso()
+    is_resolved = done or bool(sold_price)
 
-    # 1. Check primary calls list
-    for c in st.get("calls", []):
-        if c.get("id") == call_id:
-            assert_call_access(u, c)
-            c["callback_done"] = bool(body.get("done"))
-            c["callback_by"] = u.get("name", "Rep")
-            c["callback_at"] = store.now_iso()
-            if body.get("sold_price"):
-                c["outcome"] = "won"
-                c["order_value"] = float(body["sold_price"])
-                if "parts_sold" in body:
-                    c["parts_sold"] = body["parts_sold"]
-            store.save_state()
-            return c
+    # Callback rows come first: manager-assigned callbacks share the source
+    # call's id, so checking the call library first would never close the list.
+    open_cb = st.get("callbacks_open", [])
+    resolved_cb = st.get("callbacks_resolved", [])
+    callback = _callback_row_for_user(open_cb, call_id, u)
+    if not callback:
+        callback = _callback_row_for_user(resolved_cb, call_id, u)
 
-    # 2. Check open callbacks (e.g. arrival callback items)
-    cb_open = st.get("callbacks_open", [])
-    for idx, c in enumerate(cb_open):
-        if c.get("id") == call_id:
-            assert_call_access(u, c)
-            c["callback_done"] = bool(body.get("done"))
-            c["callback_by"] = u.get("name", "Rep")
-            c["callback_at"] = store.now_iso()
-            if body.get("sold_price"):
-                c["outcome"] = "won"
-                c["order_value"] = float(body["sold_price"])
-                if "parts_sold" in body:
-                    c["parts_sold"] = body["parts_sold"]
-            
-            # If done or sold, move to callbacks_resolved
-            if body.get("done") or body.get("sold_price"):
-                resolved_item = cb_open.pop(idx)
-                st.setdefault("callbacks_resolved", []).insert(0, resolved_item)
-            
+    if callback:
+        assert_call_access(u, callback)
+        rep_scope = callback.get("rep_id")
+
+        # Older assignments could contain several rows for the same call and
+        # rep.  Collapse them so one completion removes every copy.
+        duplicates = [
+            row for row in (*open_cb, *resolved_cb)
+            if row is not callback
+            and row.get("id") == call_id
+            and row.get("rep_id") == rep_scope
+        ]
+        duplicate_ids = {id(row) for row in duplicates}
+        affected_lists = {
+            str(row.get("assigned_list_id"))
+            for row in (*duplicates, callback)
+            if row.get("assigned_list_id")
+        }
+
+        callback["callback_done"] = is_resolved
+        callback["callback_by"] = u.get("name", "Rep")
+        callback["callback_at"] = at
+        if is_resolved:
+            callback["resolved_at"] = at
+            callback["resolved_by"] = u.get("name", "Rep")
+            callback["resolved_by_id"] = u.get("id", "")
+        else:
+            callback.pop("resolved_at", None)
+            callback.pop("resolved_by", None)
+            callback.pop("resolved_by_id", None)
+            callback.pop("callback_sold_value", None)
+        if sold_price:
+            callback["outcome"] = "won"
+            callback["order_value"] = sold_price
+            callback["callback_sold_value"] = sold_price
+            if parts_sold is not None:
+                callback["parts_sold"] = parts_sold
+
+        _sync_source_call(
+            st,
+            callback,
+            resolved=is_resolved,
+            sold_price=sold_price,
+            parts_sold=parts_sold,
+            actor=u,
+            at=at,
+        )
+
+        # Move the exact row, never another rep's copy of the same call.
+        st["callbacks_open"] = [
+            row for row in open_cb
+            if row is not callback and id(row) not in duplicate_ids
+        ]
+        st["callbacks_resolved"] = [
+            row for row in resolved_cb
+            if row is not callback and id(row) not in duplicate_ids
+        ]
+        if is_resolved:
+            st.setdefault("callbacks_resolved", []).insert(0, callback)
+        else:
+            st.setdefault("callbacks_open", []).insert(0, callback)
+        for list_id in affected_lists:
+            _recount_callback_list(st, list_id)
+        store.save_state()
+        return callback
+
+    # No callback row: update the source call directly (legacy calls).
+    for call in st.get("calls", []):
+        if call.get("id") == call_id:
+            assert_call_access(u, call)
+            call["callback_done"] = is_resolved
+            call["callback_by"] = u.get("name", "Rep")
+            call["callback_at"] = at
+            if is_resolved:
+                call["resolved_at"] = at
+            else:
+                call.pop("resolved_at", None)
+            if sold_price:
+                call["outcome"] = "won"
+                call["order_value"] = sold_price
+                if parts_sold is not None:
+                    call["parts_sold"] = parts_sold
             store.save_state()
-            return c
+            return call
 
     raise HTTPException(status_code=404, detail="Call not found")
 
@@ -554,7 +705,14 @@ def delete_call_assignment(call_id: str, request: Request) -> dict[str, Any]:
     if not target:
         raise HTTPException(status_code=404, detail="Call not found")
     assert_call_access(actor, target)
+    affected_lists = {
+        str(row.get("assigned_list_id"))
+        for row in st.get("callbacks_open", [])
+        if row.get("id") == call_id and row.get("assigned_list_id")
+    }
     st["callbacks_open"] = [c for c in st.get("callbacks_open", []) if c.get("id") != call_id]
+    for list_id in affected_lists:
+        _recount_callback_list(st, list_id)
     store.save_state()
     return {"ok": True}
 

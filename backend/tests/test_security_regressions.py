@@ -168,6 +168,35 @@ class CustomerProfileTests(unittest.TestCase):
         self.assertEqual(row["email"], "ops@acme.test")
         self.assertFalse(row["text_ok"])
 
+    def test_rep_can_edit_customer_details(self):
+        client = _client()
+        owner, _, _ = _signup(client, yard="Rep Customer Edit Yard")
+        phone = "15550007801"
+        self._add_call(owner, phone=phone, name="Original Name", created_at=store.now_iso())
+        rep_email = f"customer-rep-{uuid.uuid4().hex[:8]}@example.test"
+        created = client.post(
+            "/api/users/reps",
+            json={
+                "name": "Customer Rep",
+                "email": rep_email,
+                "password": "RepPass!234",
+                "role": "rep",
+            },
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+
+        rep = _client()
+        _login(rep, rep_email, "RepPass!234")
+        saved = rep.put(
+            f"/api/customers/{phone}/profile",
+            json={"name": "Added By Rep", "email": "rep@example.test", "text_ok": True},
+        )
+        self.assertEqual(saved.status_code, 200, saved.text)
+        profile = rep.get(f"/api/customers/{phone}").json()["stat"]
+        self.assertEqual(profile["name"], "Added By Rep")
+        self.assertEqual(profile["email"], "rep@example.test")
+        self.assertTrue(profile["text_ok"])
+
     def test_alternate_phone_groups_existing_and_new_calls(self):
         client = _client()
         owner, _, _ = _signup(client, yard="Alternate Contact Yard")
@@ -526,6 +555,125 @@ class RepQueueTests(unittest.TestCase):
             {item["kind"] for item in queue["items"]}
             <= {"arrival", "missed", "callback", "roleplay"}
         )
+
+
+class CallbackCompletionTests(unittest.TestCase):
+    """Checking off a callback closes its row, list, and team stats."""
+
+    def _setup(self):
+        client = _client()
+        owner, _, _ = _signup(client, yard="Callback Completion Yard")
+        rep_email = f"callback-rep-{uuid.uuid4().hex[:8]}@example.test"
+        rep = client.post(
+            "/api/users/reps",
+            json={
+                "name": "Callback Rep",
+                "email": rep_email,
+                "password": "RepPass!234",
+                "role": "rep",
+            },
+        ).json()
+
+        call_id = f"call-{uuid.uuid4().hex}"
+        st = store.get_state()
+        st.setdefault("calls", []).append({
+            "id": call_id,
+            "org_id": owner["org_id"],
+            "rep_id": rep["id"],
+            "rep_name": rep["name"],
+            "customer_name": "Callback Customer",
+            "customer_phone": "15550009601",
+            "direction": "inbound",
+            "duration_sec": 20,
+            "status": "analyzed",
+            "source": "test",
+            "category": "Sales Inquiry",
+            "outcome": "pending",
+            "overall_score": 70,
+            "created_at": store.now_iso(),
+        })
+        store.save_state()
+
+        callback_list = client.post(
+            "/api/callback-lists",
+            json={"name": "Monday callbacks", "rep_id": rep["id"]},
+        ).json()
+        assigned = client.post(
+            "/api/callbacks/assign",
+            json={
+                "call_ids": [call_id],
+                "rep_id": rep["id"],
+                "list_id": callback_list["id"],
+                "note": "Please call back",
+            },
+        )
+        self.assertEqual(assigned.status_code, 200, assigned.text)
+
+        rep_client = _client()
+        _login(rep_client, rep_email, "RepPass!234")
+        return client, rep_client, rep, call_id, callback_list["id"]
+
+    def test_done_closes_callback_and_updates_list_and_team(self):
+        owner_client, rep, rep_user, call_id, list_id = self._setup()
+
+        # Simulate an older duplicate assignment of the same call to the same rep.
+        again = owner_client.post(
+            "/api/callbacks/assign",
+            json={
+                "call_ids": [call_id],
+                "rep_id": rep_user["id"],
+                "list_id": list_id,
+                "note": "Duplicate",
+            },
+        )
+        self.assertEqual(again.status_code, 200, again.text)
+
+        open_before = rep.get("/api/callbacks?status=open").json()
+        self.assertEqual(len([c for c in open_before if c["id"] == call_id]), 2)
+
+        done = rep.patch(f"/api/calls/{call_id}/callback", json={"done": True})
+        self.assertEqual(done.status_code, 200, done.text)
+        self.assertTrue(done.json()["callback_done"])
+        self.assertTrue(done.json().get("resolved_at"))
+
+        self.assertEqual(rep.get("/api/callbacks?status=open").json(), [])
+        resolved = rep.get("/api/callbacks?status=resolved").json()
+        self.assertEqual(len([c for c in resolved if c["id"] == call_id]), 1)
+
+        lists = rep.get("/api/callback-lists").json()
+        callback_list = next(l for l in lists if l["id"] == list_id)
+        self.assertEqual(callback_list["open"], 0)
+        self.assertEqual(callback_list["done"], 1)
+        self.assertEqual(callback_list["total"], 1)
+
+        board = rep.get("/api/leaderboards/team-player").json()
+        row = next(r for r in board["reps"] if r["rep_id"] == rep_user["id"])
+        self.assertEqual(row["handled"], 1)
+
+        call = next(c for c in store.get_state()["calls"] if c["id"] == call_id)
+        self.assertTrue(call["callback_done"])
+        self.assertTrue(call.get("resolved_at"))
+
+        reopened = rep.patch(f"/api/calls/{call_id}/callback", json={"done": False})
+        self.assertEqual(reopened.status_code, 200, reopened.text)
+        open_after = rep.get("/api/callbacks?status=open").json()
+        self.assertEqual(len([c for c in open_after if c["id"] == call_id]), 1)
+        self.assertEqual(rep.get("/api/callbacks?status=resolved").json(), [])
+        callback_list = next(l for l in rep.get("/api/callback-lists").json() if l["id"] == list_id)
+        self.assertEqual(callback_list["open"], 1)
+        self.assertEqual(callback_list["done"], 0)
+        board = rep.get("/api/leaderboards/team-player").json()
+        row = next(r for r in board["reps"] if r["rep_id"] == rep_user["id"])
+        self.assertEqual(row["handled"], 0)
+
+        sold = rep.patch(f"/api/calls/{call_id}/callback", json={"done": True, "sold_price": 250})
+        self.assertEqual(sold.status_code, 200, sold.text)
+        callback_list = next(l for l in rep.get("/api/callback-lists").json() if l["id"] == list_id)
+        self.assertEqual(callback_list["sold"], 1)
+        self.assertEqual(callback_list["revenue"], 250.0)
+        call = next(c for c in store.get_state()["calls"] if c["id"] == call_id)
+        self.assertEqual(call["outcome"], "won")
+        self.assertEqual(call["order_value"], 250.0)
 
 
 class FormLibraryTests(unittest.TestCase):

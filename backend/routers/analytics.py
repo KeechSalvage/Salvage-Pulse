@@ -12,6 +12,7 @@ import store
 import yard_analytics as ya
 from database import CUSTOMER_TAGS, infer_customer_tag
 from security import (
+    REP_ROLES,
     assert_same_org,
     effective_org,
     is_manager,
@@ -861,8 +862,8 @@ def put_customer_profile(key: str, body: dict[str, Any], request: Request) -> di
     u = get_current_user(request)
     if not _customer_visible(st, key, u):
         raise HTTPException(status_code=404, detail="Customer not found")
-    if not is_manager(u):
-        raise HTTPException(status_code=403, detail="Manager access required to edit customer details")
+    # Reps need to add or correct names, emails, alternate numbers, and texting
+    # permission while they are on the phone with the customer.
     name = body.get("name", "")
     if not isinstance(name, str):
         raise HTTPException(status_code=400, detail="name must be a string")
@@ -1922,6 +1923,10 @@ def get_callbacks(
         items = st.get("callbacks_open", [])
     if org_id:
         items = [i for i in items if i.get("org_id") == org_id]
+    if u.get("role") in REP_ROLES:
+        # A rep's queue is their own work, plus shared missed callers that have
+        # not been assigned to a specific rep yet.
+        items = [i for i in items if i.get("rep_id") in (None, "", u.get("id"))]
     if date_from:
         items = [i for i in items if (i.get("created_at") or i.get("call_at") or "")[:10] >= date_from]
     if date_to:
@@ -2018,7 +2023,16 @@ def get_callback_lists(request: Request) -> list[dict[str, Any]]:
     org_id = effective_org(u)
     items = st.get("callback_lists", [])
     if org_id:
-        return [l for l in items if l.get("org_id") == org_id]
+        items = [l for l in items if l.get("org_id") == org_id]
+    if u.get("role") in REP_ROLES:
+        items = [l for l in items if l.get("rep_id") in (None, "", u.get("id"))]
+    today = store.today_str()
+    for item in items:
+        item["overdue"] = bool(
+            item.get("due_date")
+            and str(item.get("due_date")) < today
+            and int(item.get("open") or 0) > 0
+        )
     return items
 
 

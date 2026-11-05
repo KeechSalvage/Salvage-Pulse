@@ -11,13 +11,13 @@ import { apiGet, apiPost, apiPut, errorMessage } from "@/lib/api";
 import { useMe } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 import type { CustomerNote, CustomerNoteCreate, CustomerProfile, CustomerProfileUpdate, CustomerStat, CustomerTag, CustomerTagUpdate } from "@/lib/types";
-import { isManagerLike } from "@/lib/types";
 
 const TAG_OPTIONS: CustomerTag[] = ["body_shop", "mechanic", "fleet", "retail", "dealership", "driver", "adjuster", "other"];
 
 function fmtPhone(p: string) {
-  const d = p.replace(/\D/g, "").slice(-10);
-  return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : p;
+  const raw = String(p ?? "");
+  const d = raw.replace(/\D/g, "").slice(-10);
+  return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : raw;
 }
 
 export default function CustomerProfilePage() {
@@ -25,7 +25,8 @@ export default function CustomerProfilePage() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const { data: me } = useMe();
-  const canEdit = isManagerLike(me?.role);
+  // Reps add or correct customer details while they are on the call, not just managers.
+  const canEdit = Boolean(me);
   const [note, setNote] = useState("");
   const [details, setDetails] = useState<CustomerProfileUpdate>({ name: "", email: "", alt_phones: [], alt_emails: [], text_ok: null });
   const { data, isError } = useQuery({
@@ -90,9 +91,9 @@ export default function CustomerProfilePage() {
   if (!data) return <>{back}<div className="h-40 animate-pulse rounded-xl bg-card" /></>;
 
   const { stat, calls, notes } = data;
-  const scored = calls.filter((c) => c.overall_score > 0);
-  const avg = scored.length ? Math.round(scored.reduce((n, c) => n + c.overall_score, 0) / scored.length) : 0;
-  const tel = stat.phone.replace(/\D/g, "").slice(-10);
+  const scored = calls.filter((c) => (c.overall_score ?? 0) > 0);
+  const avg = scored.length ? Math.round(scored.reduce((n, c) => n + (c.overall_score ?? 0), 0) / scored.length) : 0;
+  const tel = String(stat.phone ?? "").replace(/\D/g, "").slice(-10);
   const reps = (stat.rep_names ?? []).map((n) => ({ name: n, calls: (calls ?? []).filter((c) => c.rep_name === n).length }));
 
   return (
@@ -176,7 +177,7 @@ export default function CustomerProfilePage() {
                     <CategoryBadge category={c.category} />
                     {c.outcome === "won" && <span className="font-mono text-[10px] uppercase text-emerald-400">order{c.order_value ? ` · ${fmtMoney(c.order_value)}` : ""}</span>}
                   </div>
-                  <p className="mt-1 text-sm text-slate-400">{c.topics.slice(0, 3).join(", ") || c.summary || "—"}</p>
+                  <p className="mt-1 text-sm text-slate-400">{(c.topics ?? []).slice(0, 3).join(", ") || c.summary || "—"}</p>
                 </div>
                 <span className="text-sm text-slate-300">{c.rep_name}</span>
                 <span className="w-12 text-right font-mono text-xs text-slate-400">{c.duration_sec ? fmtDuration(c.duration_sec) : "—"}</span>
