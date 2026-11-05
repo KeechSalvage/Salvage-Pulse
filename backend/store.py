@@ -546,9 +546,11 @@ def _build_initial_state() -> dict[str, Any]:
             "accent": "",
             "default_mode": "dark",
             "logo_url": "",
-            "user_mode": "dark",
+            "user_mode": "",
+            "user_accent": None,
             "mode": "dark",
         },
+        "theme_by_user": {},
         "calls": [],
         "full_calls": {},
         "full_customers": {},
@@ -897,7 +899,8 @@ def _ensure_demo_users(st: dict[str, Any]) -> dict[str, Any]:
         "accent": "",
         "default_mode": "dark",
         "logo_url": "",
-        "user_mode": "dark",
+        "user_mode": "",
+        "user_accent": None,
         "mode": "dark",
     }
 

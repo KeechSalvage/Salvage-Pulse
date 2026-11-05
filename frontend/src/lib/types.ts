@@ -1800,9 +1800,11 @@ export type ThemeMode = "dark" | "light";
 export interface Branding {
   yard_name: string;
   accent: string; // "#RRGGBB"; "" = Salvage Pulse amber
+  yard_accent: string; // the yard's fallback accent
   default_mode: ThemeMode;
   logo_url: string; // "" = Salvage Pulse logo
   user_mode: "" | ThemeMode; // this user's own choice ("" = follow the yard)
+  user_accent: string | null; // this user's own accent (null = follow the yard)
   mode: ThemeMode; // effective
 }
 
@@ -1813,6 +1815,11 @@ export interface BrandingUpdate {
 
 export interface ThemeModeUpdate {
   mode: "" | ThemeMode;
+}
+
+export interface ThemeUpdate {
+  mode?: "" | ThemeMode;
+  accent?: string | null;
 }
 
 export interface CompareRow {

@@ -1,8 +1,9 @@
 import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiGet, apiPut } from "@/lib/api";
+import { toast } from "sonner";
+import { apiGet, apiPut, errorMessage } from "@/lib/api";
 import { applyBranding } from "@/lib/theme";
-import type { Branding, ThemeModeUpdate } from "@/lib/types";
+import type { Branding, ThemeModeUpdate, ThemeUpdate } from "@/lib/types";
 
 /** The signed-in user's yard branding; applies it (mode, accent, favicon) whenever it changes. */
 export function useBranding(enabled = true) {
@@ -19,5 +20,16 @@ export function useSetMyMode() {
   return useMutation({
     mutationFn: (mode: ThemeModeUpdate["mode"]) => apiPut<Branding>("/me/theme", { mode } satisfies ThemeModeUpdate),
     onSuccess: (b) => qc.setQueryData(["branding"], b),
+    onError: (e) => toast.error(errorMessage(e, "Couldn't save your theme")),
+  });
+}
+
+/** Save this user's own mode and/or accent; they follow the account on every device. */
+export function useSetMyTheme() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: ThemeUpdate) => apiPut<Branding>("/me/theme", body),
+    onSuccess: (b) => qc.setQueryData(["branding"], b),
+    onError: (e) => toast.error(errorMessage(e, "Couldn't save your theme")),
   });
 }

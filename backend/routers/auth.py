@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import threading
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -33,6 +34,7 @@ from security import (
     validate_email,
     validate_password,
 )
+from user_theme import branding_for_user, normalize_user_theme
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +91,8 @@ def _create_yard(st: dict[str, Any], *, yard_name: str, plan: str) -> dict[str, 
         "accent": "",
         "default_mode": "dark",
         "logo_url": "",
-        "user_mode": "dark",
+        "user_mode": "",
+        "user_accent": None,
         "mode": "dark",
     }
     return org
@@ -699,12 +702,36 @@ def me_mobile_put(body: dict[str, Any], request: Request) -> dict[str, Any]:
 
 @router.put("/api/me/theme")
 def me_theme_put(body: dict[str, Any], request: Request) -> dict[str, Any]:
+    """Save this user's own mode/accent; both follow the account on every device."""
     u = get_current_user(request)
     st = store.get_state()
-    mode = "light" if str(body.get("mode", "")).lower() == "light" else "dark"
-    st.setdefault("theme_by_user", {})[u["id"]] = mode
+    themes = st.setdefault("theme_by_user", {})
+    theme = normalize_user_theme(themes.get(u["id"]))
+
+    if "mode" in body:
+        mode = str(body.get("mode") or "").lower()
+        if mode in ("dark", "light"):
+            theme["mode"] = mode
+        elif mode in ("", "system"):
+            theme.pop("mode", None)
+        else:
+            raise HTTPException(status_code=400, detail="Invalid display mode")
+
+    if "accent" in body:
+        accent = body.get("accent")
+        if accent is None:
+            theme.pop("accent", None)
+        elif isinstance(accent, str):
+            accent = accent.strip()
+            if accent and not re.fullmatch(r"#[0-9a-fA-F]{3,8}", accent):
+                raise HTTPException(status_code=400, detail="Accent must be a hex colour such as #1f6feb")
+            theme["accent"] = accent
+        else:
+            raise HTTPException(status_code=400, detail="Accent must be a hex colour or null")
+
+    if theme:
+        themes[u["id"]] = theme
+    else:
+        themes.pop(u["id"], None)
     store.save_state()
-    branding = dict(st.get("branding", {}))
-    branding["user_mode"] = mode
-    branding["mode"] = mode
-    return branding
+    return branding_for_user(st, u)

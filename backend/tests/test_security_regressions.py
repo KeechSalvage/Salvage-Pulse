@@ -1659,6 +1659,85 @@ class TransportSecurityTests(unittest.TestCase):
         self.assertNotIn(b"root:", response.content)
 
 
+class ThemePreferenceTests(unittest.TestCase):
+    """Each user's mode and accent follow their account, not the browser or yard."""
+
+    def test_user_theme_follows_account_and_stays_isolated(self):
+        client = _client()
+        owner, owner_email, owner_password = _signup(client, yard="Theme Yard")
+
+        initial = client.get("/api/branding").json()
+        self.assertEqual(initial["mode"], "dark")
+        self.assertEqual(initial["accent"], "")
+        self.assertEqual(initial["yard_accent"], "")
+        self.assertEqual(initial["user_mode"], "")
+        self.assertIsNone(initial["user_accent"])
+
+        saved = client.put("/api/me/theme", json={"mode": "light", "accent": "#22C55E"})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        themed = saved.json()
+        self.assertEqual(themed["mode"], "light")
+        self.assertEqual(themed["accent"], "#22C55E")
+        self.assertEqual(themed["user_mode"], "light")
+        self.assertEqual(themed["user_accent"], "#22C55E")
+
+        # The preference survives a fresh sign-in.
+        client.post("/api/auth/logout")
+        _login(client, owner_email, owner_password)
+        reloaded = client.get("/api/branding").json()
+        self.assertEqual(reloaded["mode"], "light")
+        self.assertEqual(reloaded["accent"], "#22C55E")
+
+        rep_email = f"theme-rep-{uuid.uuid4().hex[:8]}@example.test"
+        created = client.post(
+            "/api/users/reps",
+            json={
+                "name": "Theme Rep",
+                "email": rep_email,
+                "password": "RepPass!234",
+                "role": "rep",
+            },
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+
+        rep = _client()
+        _login(rep, rep_email, "RepPass!234")
+        teammate = rep.get("/api/branding").json()
+        self.assertEqual(teammate["mode"], "dark")
+        self.assertEqual(teammate["accent"], "")
+        self.assertIsNone(teammate["user_accent"])
+
+        rep_saved = rep.put("/api/me/theme", json={"accent": "#0EA5E9"})
+        self.assertEqual(rep_saved.status_code, 200, rep_saved.text)
+        self.assertEqual(rep_saved.json()["accent"], "#0EA5E9")
+        self.assertEqual(client.get("/api/branding").json()["accent"], "#22C55E")
+
+        cleared = rep.put("/api/me/theme", json={"accent": None})
+        self.assertEqual(cleared.status_code, 200, cleared.text)
+        self.assertIsNone(cleared.json()["user_accent"])
+        self.assertEqual(cleared.json()["accent"], "")
+
+    def test_yard_defaults_are_the_fallback_for_people_without_overrides(self):
+        client = _client()
+        _signup(client, yard="Theme Defaults Yard")
+        saved = client.put(
+            "/api/branding",
+            json={"accent": "#EF4444", "default_mode": "light"},
+        )
+        self.assertEqual(saved.status_code, 200, saved.text)
+        body = saved.json()
+        self.assertEqual(body["yard_accent"], "#EF4444")
+        self.assertEqual(body["default_mode"], "light")
+        self.assertEqual(body["accent"], "#EF4444")
+        self.assertEqual(body["mode"], "light")
+
+        personal = client.put("/api/me/theme", json={"accent": "#0EA5E9", "mode": "dark"})
+        self.assertEqual(personal.status_code, 200, personal.text)
+        self.assertEqual(personal.json()["accent"], "#0EA5E9")
+        self.assertEqual(personal.json()["mode"], "dark")
+        self.assertEqual(personal.json()["yard_accent"], "#EF4444")
+
+
 class OrgPlanTests(unittest.TestCase):
     """Plan payloads must not make active yards look like limited trials."""
 

@@ -13,6 +13,7 @@ import store
 import yard_analytics as ya
 from database import CATEGORIES, METRICS, get_db, get_org_scoring_config, compute_weighted_overall_score
 from scoring_config import resolve_scoring
+from user_theme import DEFAULT_BRANDING, branding_for_user
 from security import (
     ALLOWED_IMAGE_EXTENSIONS,
     assert_same_org,
@@ -475,20 +476,11 @@ def get_branding(request: Request) -> dict[str, Any]:
     org_id = u.get("org_id")
     if org_id:
         branding_map = st.setdefault("branding_by_org", {})
-        if org_id in branding_map:
-            return branding_map[org_id]
-        yard = next((o for o in st.get("admin_orgs", []) if o.get("id") == org_id), None)
-        yard_name = yard.get("name") or yard.get("yard_name") if yard else "Salvage Pulse"
-        branding_map[org_id] = {
-            "yard_name": yard_name or "Salvage Pulse",
-            "accent": "",
-            "default_mode": "dark",
-            "logo_url": "",
-            "user_mode": "dark",
-            "mode": "dark",
-        }
-        return branding_map[org_id]
-    return st.get("branding", {"yard_name": "Salvage Pulse", "mode": "dark"})
+        if org_id not in branding_map:
+            yard = next((o for o in st.get("admin_orgs", []) if o.get("id") == org_id), None)
+            yard_name = (yard.get("name") or yard.get("yard_name")) if yard else "Salvage Pulse"
+            branding_map[org_id] = {**DEFAULT_BRANDING, "yard_name": yard_name or "Salvage Pulse"}
+    return branding_for_user(st, u)
 
 
 @router.put("/api/branding")
@@ -501,12 +493,8 @@ def put_branding(body: dict[str, Any], request: Request) -> dict[str, Any]:
     yard = next((o for o in st.get("admin_orgs", []) if o.get("id") == org_id), None)
     yard_name = yard.get("name") if yard else "Salvage Pulse"
     b = branding_map.setdefault(org_id, {
+        **DEFAULT_BRANDING,
         "yard_name": yard_name or "Salvage Pulse",
-        "accent": "",
-        "default_mode": "dark",
-        "logo_url": "",
-        "user_mode": "dark",
-        "mode": "dark",
     })
     if "accent" in body:
         accent = str(body.get("accent") or "").strip()
@@ -518,9 +506,8 @@ def put_branding(body: dict[str, Any], request: Request) -> dict[str, Any]:
         if mode not in ("dark", "light", "system"):
             raise HTTPException(status_code=400, detail="Invalid display mode")
         b["default_mode"] = mode
-        b["mode"] = mode
     store.save_state()
-    return b
+    return branding_for_user(st, u)
 
 
 @router.post("/api/branding/logo")
@@ -540,10 +527,10 @@ async def post_branding_logo(request: Request, file: UploadFile = File(...)) -> 
     }[ext]
     b64 = base64.b64encode(content).decode("ascii")
     branding_map = st.setdefault("branding_by_org", {})
-    b = branding_map.setdefault(org_id, dict(st.get("branding", {})))
+    b = branding_map.setdefault(org_id, dict(DEFAULT_BRANDING))
     b["logo_url"] = f"data:{mime};base64,{b64}"
     store.save_state()
-    return b
+    return branding_for_user(st, u)
 
 
 @router.delete("/api/branding/logo")
@@ -553,10 +540,10 @@ def delete_branding_logo(request: Request) -> dict[str, Any]:
     _require_manager(u)
     org_id = u.get("org_id") or "default"
     branding_map = st.setdefault("branding_by_org", {})
-    b = branding_map.setdefault(org_id, dict(st.get("branding", {})))
+    b = branding_map.setdefault(org_id, dict(DEFAULT_BRANDING))
     b["logo_url"] = ""
     store.save_state()
-    return b
+    return branding_for_user(st, u)
 
 
 @router.get("/api/settings/business")

@@ -31,7 +31,7 @@ const TABS = [
   { id: "phone", label: "Phone & texts", icon: Smartphone, page: PhoneAndTexts, roles: ["rep", "sales_rep"] },
   { id: "connectors", label: "Phone Connectors", icon: Plug, page: Connectors, roles: ["owner", "sales_manager", "manager"] },
   { id: "billing", label: "Billing", icon: CreditCard, page: Billing, roles: ["owner", "manager"] },
-  { id: "appearance", label: "Appearance", icon: Palette, page: Appearance, roles: ["owner", "sales_manager", "manager"] },
+  { id: "appearance", label: "Appearance", icon: Palette, page: Appearance, roles: ["owner", "sales_manager", "manager", "inventory_manager", "rep", "sales_rep"] },
   { id: "devices", label: "Devices", icon: MonitorSmartphone, page: MyDevices, roles: ["owner", "sales_manager", "inventory_manager", "manager"] },
 ] as const;
 
