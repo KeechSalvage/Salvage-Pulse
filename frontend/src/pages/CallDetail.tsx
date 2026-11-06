@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, FileAudio, GraduationCap, Lightbulb, Loader2, Radio, RefreshCw, Save, ThumbsUp, Trash2, TrendingUp } from "lucide-react";
+import { ArrowLeft, ExternalLink, FileAudio, GraduationCap, Lightbulb, Loader2, Radio, RefreshCw, Save, ThumbsUp, Trash2, TrendingUp, Webhook } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
@@ -75,6 +75,44 @@ function AttachPanel({ callId }: { callId: string }) {
           {attach.isPending && <Loader2 className="size-4 animate-spin" />} Analyze with AI
         </Button>
       </div>
+    </Panel>
+  );
+}
+
+function IngestPanel({ call }: { call: Call }) {
+  const ingest = call.ingest;
+  return (
+    <Panel testId="call-ingest-panel">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Webhook className="size-4 text-sky-400" />
+          <h3 className="text-xl font-bold text-white">Captured via {(ingest?.provider || call.ingest_provider || "phone system").replace(/^./, (c) => c.toUpperCase())}</h3>
+        </div>
+        {call.external_url && (
+          <a href={call.external_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm text-sky-400 hover:underline">
+            Open recording source <ExternalLink className="size-3.5" />
+          </a>
+        )}
+      </div>
+      <dl className="mt-5 grid grid-cols-2 gap-4 md:grid-cols-4">
+        {[
+          ["Direction", call.direction || "—"],
+          ["Duration", call.duration_sec ? fmtDuration(call.duration_sec) : "—"],
+          ["External ID", ingest?.external_id || call.external_id || "—"],
+          ["Transcript", ingest?.engine || call.analysis_engine || "—"],
+        ].map(([key, value]) => (
+          <div key={key} className="min-w-0">
+            <dt className="font-mono text-[10px] uppercase tracking-wider text-slate-500">{key}</dt>
+            <dd className={cn("mt-1 truncate text-slate-200", key === "Direction" && "capitalize")} title={String(value)}>{value}</dd>
+          </div>
+        ))}
+      </dl>
+      {ingest?.rep_match && ingest.rep_match !== "email" && (
+        <p className="mt-4 text-xs text-slate-500">
+          Rep matched by {ingest.rep_match.replace(/_/g, " ")}.{" "}
+          {ingest.rep_match.includes("fallback") ? "Add the agent email or extension to the provider payload, or set a default rep in Phone connectors." : ""}
+        </p>
+      )}
     </Panel>
   );
 }
@@ -349,6 +387,7 @@ export default function CallDetail() {
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-12">
         <div className="space-y-6 xl:col-span-7">
           {call.source === "ringcentral" && <RingCentralPanel call={call} />}
+          {call.source === "ingest" && <IngestPanel call={call} />}
           {call.has_audio && (
             <Panel testId="call-audio-panel">
               <Overline className="mb-3">Recording</Overline>

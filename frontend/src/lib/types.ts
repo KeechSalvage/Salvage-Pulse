@@ -200,7 +200,9 @@ export interface CallSummary {
   rep_id: string;
   rep_name: string;
   customer_name: string;
-  source: "audio" | "transcript" | "ringcentral";
+  source: "audio" | "transcript" | "ringcentral" | "ingest";
+  ingest_provider?: string;
+  external_id?: string;
   status: CallStatus;
   category: string;
   category_source?: "manual" | "auto" | "import";
@@ -249,6 +251,20 @@ export interface Call extends CallSummary {
   trackers: string[];
   customer_phone: string;
   external_url: string;
+  ingest_provider?: string;
+  ingest_event_id?: string;
+  analysis_engine?: string;
+  ingest?: {
+    provider: string;
+    external_id: string;
+    event: string;
+    recording_url: string;
+    engine: string;
+    rep_match: string;
+    received_at: string;
+    media_host: string;
+    media_error?: string;
+  };
 }
 
 export interface TranscriptCreate {
@@ -1275,6 +1291,46 @@ export interface ConnectorStatus {
   ringcentral: RingCentralStatus;
 }
 
+export interface IngestProviderSettings {
+  signing_configured: boolean;
+  media_auth_configured: boolean;
+  account_sid: string;
+  client_id: string;
+}
+
+export interface IngestEvent {
+  id: string;
+  org_id: string;
+  provider: string;
+  external_id: string;
+  event: string;
+  status: "queued" | "processing" | "completed" | "failed" | "duplicate" | "waiting";
+  message: string;
+  call_id: string;
+  attempts: number;
+  duration_sec: number;
+  engine: string;
+  created_at: string;
+  updated_at: string;
+  rep_name: string;
+  customer_name: string;
+}
+
+export interface IngestSettings {
+  token: string;
+  webhook_url: string;
+  provider_urls: Record<string, string>;
+  audio_upload_url: string;
+  stt_provider: "auto" | "gemini" | "deepgram" | "assemblyai" | "openai";
+  default_rep_id: string;
+  auto_create_reps: boolean;
+  providers: Record<string, IngestProviderSettings>;
+  updated_at: string;
+  supported_providers: string[];
+  stt_available: Record<string, boolean>;
+  recent_events?: IngestEvent[];
+}
+
 export interface SyncResult {
   imported: number;
   updated: number;
@@ -1967,7 +2023,7 @@ export interface ImportBatch {
 export interface RangeDelete {
   date_from: string;
   date_to: string;
-  source: "" | "ringcentral" | "audio" | "transcript";
+  source: "" | "ringcentral" | "audio" | "transcript" | "ingest";
   dry_run: boolean;
 }
 

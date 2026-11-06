@@ -19,6 +19,26 @@ This app no longer accepts "any password" and does not ship default demo passwor
 
 ---
 
+## 📞 Provider-agnostic call ingestion
+
+The platform now has a **VoIP-agnostic ingest pipeline** instead of depending on
+one phone vendor. Any PBX, VoIP provider, Zapier/Make flow or custom integration
+can POST a finished call to one of two universal, per-yard token-authenticated
+endpoints:
+
+- `POST /api/ingest/webhook/{token}` — normalised JSON webhook (generic,
+  Twilio, RingCentral, Telnyx and Vonage adapters built in; unknown provider
+  names fall through to the forgiving generic adapter).
+- `POST /api/ingest/audio/{token}` — multipart audio upload for systems that
+  cannot expose a recording URL.
+
+The pipeline de-duplicates by provider call id, safely downloads the recording,
+transcribes it with Gemini / Deepgram / AssemblyAI / OpenAI (or accepts a
+transcript in the payload), then hands it to the existing yard scoring engine.
+Configure it in **Settings → Phone connectors**. See
+[`docs/CALL_INGESTION.md`](docs/CALL_INGESTION.md) for payload examples,
+provider setup, security and how to add a new adapter.
+
 ## 🚀 Docker Deployment
 
 The app is packaged as a lightweight, self-contained multi-stage Docker container that builds the React frontend and serves both the SPA and FastAPI backend from a single port (`8000`).

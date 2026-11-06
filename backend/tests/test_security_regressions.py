@@ -9,6 +9,9 @@ the real yard data or sends mail.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
 import os
 import tempfile
@@ -2051,3 +2054,246 @@ class AttributionTests(unittest.TestCase):
                     data = yard.get(query).json()
                     self.assertEqual(expected, data["total"], query)
                     self.assertEqual(expected, len(data["calls"]), query)
+
+
+class IngestPipelineTests(unittest.TestCase):
+    """Provider-agnostic call ingestion: token auth, adapters, AI hand-off, de-dupe."""
+
+    def _yard(self, name: str = "Ingest Yard"):
+        client = _client()
+        owner, email, _ = _signup(client, yard=name)
+        response = client.get("/api/ingest/settings")
+        self.assertEqual(response.status_code, 200, response.text)
+        token = response.json()["token"]
+        saved = client.put(
+            "/api/ingest/settings",
+            json={"stt_provider": "auto", "default_rep_id": owner["id"], "auto_create_reps": False},
+        )
+        self.assertEqual(saved.status_code, 200, saved.text)
+        return client, owner, email, token
+
+    @staticmethod
+    def _find_call(client: TestClient, external_id: str) -> dict:
+        calls = client.get("/api/calls").json()
+        match = next((call for call in calls if call.get("external_id") == external_id), None)
+        assert match, f"call {external_id} was not created"
+        return match
+
+    def test_generic_webhook_creates_a_scored_call(self):
+        client, owner, email, token = self._yard("Generic Ingest Yard")
+        payload = {
+            "call_id": "generic-1001",
+            "start_time": "2026-10-23T14:05:00Z",
+            "direction": "inbound",
+            "from": "+18605550123",
+            "to": "+18605550999",
+            "agent_email": email,
+            "caller_name": "Ridgeline Collision",
+            "duration": 184,
+            "status": "completed",
+            "transcript": (
+                "Rep: Thanks for calling Salvage Pulse, this is the parts team.\n"
+                "Customer: I need a 2019 Honda Civic driver headlight.\n"
+                "Rep: We have an OEM LED assembly for $245 with a 90-day warranty. Want me to hold it?\n"
+                "Customer: Yes, hold it, I will pick it up today."
+            ),
+        }
+        response = client.post(f"/api/ingest/webhook/{token}?wait=1", json=payload)
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual(body["status"], "completed")
+        self.assertTrue(body["call_id"])
+
+        call = self._find_call(client, "generic-1001")
+        self.assertEqual(call["source"], "ingest")
+        self.assertEqual(call["ingest_provider"], "generic")
+        self.assertEqual(call["org_id"], owner["org_id"])
+        self.assertEqual(call["rep_id"], owner["id"])
+        self.assertEqual(call["customer_name"], "Ridgeline Collision")
+        self.assertEqual(call["direction"], "inbound")
+
+        detail = client.get(f"/api/calls/{call['id']}").json()
+        self.assertIn("Honda Civic", detail["transcript"])
+        self.assertTrue(detail["turns"])
+        self.assertEqual(detail["ingest"]["provider"], "generic")
+
+        again = client.post(f"/api/ingest/webhook/{token}?wait=1", json=payload).json()
+        self.assertEqual(again["status"], "duplicate")
+        self.assertEqual(again["call_id"], call["id"])
+
+    def test_start_event_is_merged_with_a_later_transcript(self):
+        client, _, email, token = self._yard("Pending Ingest Yard")
+        first = client.post(
+            f"/api/ingest/webhook/{token}?wait=1",
+            json={
+                "call_id": "pending-1",
+                "status": "started",
+                "direction": "outbound",
+                "from": "+18605550100",
+                "to": "+18605550123",
+                "agent_email": email,
+                "caller_name": "Merged Customer",
+            },
+        )
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual(first.json()["status"], "waiting")
+
+        second = client.post(
+            f"/api/ingest/webhook/{token}?wait=1",
+            json={
+                "call_id": "pending-1",
+                "status": "completed",
+                "transcript": "Rep: Thanks for calling.\nCustomer: I need a bumper for a 2020 Ford F-150.",
+            },
+        )
+        self.assertEqual(second.status_code, 200, second.text)
+        self.assertEqual(second.json()["status"], "completed")
+
+        call = self._find_call(client, "pending-1")
+        self.assertEqual(call["customer_name"], "Merged Customer")
+        self.assertEqual(call["direction"], "outbound")
+
+    def test_generic_hmac_signature_is_enforced(self):
+        client, _, email, token = self._yard("Signed Ingest Yard")
+        secret = "generic-signing-secret"
+        saved = client.put(
+            "/api/ingest/settings",
+            json={"providers": {"generic": {"signing_secret": secret}}},
+        )
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertTrue(saved.json()["providers"]["generic"]["signing_configured"])
+
+        payload = {
+            "call_id": "signed-1",
+            "agent_email": email,
+            "status": "completed",
+            "transcript": "Rep: Hello.\nCustomer: Hi, do you have a hood?",
+        }
+        raw = json.dumps(payload).encode("utf-8")
+        rejected = client.post(f"/api/ingest/webhook/{token}/generic", content=raw, headers={"content-type": "application/json"})
+        self.assertEqual(rejected.status_code, 401, rejected.text)
+
+        signature = "sha256=" + hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
+        accepted = client.post(
+            f"/api/ingest/webhook/{token}/generic?wait=1",
+            content=raw,
+            headers={"content-type": "application/json", "x-call-signature": signature},
+        )
+        self.assertEqual(accepted.status_code, 200, accepted.text)
+        self.assertEqual(accepted.json()["status"], "completed")
+
+    def test_twilio_form_signature_and_transcript(self):
+        client, _, email, token = self._yard("Twilio Ingest Yard")
+        secret = "twilio-auth-token"
+        client.put("/api/ingest/settings", json={"providers": {"twilio": {"signing_secret": secret}}})
+
+        form = {
+            "CallSid": "CA-INGEST-1",
+            "CallStatus": "completed",
+            "From": "+15551112222",
+            "To": "+15553334444",
+            "Direction": "inbound",
+            "CallDuration": "95",
+            "agent_email": email,
+            "transcript": "Rep: Parts desk.\nCustomer: I need a mirror for a 2018 Chevy Silverado.",
+        }
+        url = f"https://app.example.test/api/ingest/webhook/{token}/twilio?wait=1"
+        data = url + "".join(f"{key}{form[key]}" for key in sorted(form))
+        signature = base64.b64encode(hmac.new(secret.encode(), data.encode(), hashlib.sha1).digest()).decode()
+
+        response = client.post(
+            f"/api/ingest/webhook/{token}/twilio?wait=1",
+            data=form,
+            headers={"x-twilio-signature": signature},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["status"], "completed")
+        call = self._find_call(client, "CA-INGEST-1")
+        self.assertEqual(call["ingest_provider"], "twilio")
+        self.assertEqual(call["customer_phone"], "+15551112222")
+
+    def test_tokens_are_scoped_to_one_yard(self):
+        client_a, owner_a, _, token_a = self._yard("Tenant A")
+        client_b, owner_b, email_b, _ = self._yard("Tenant B")
+        response = client_a.post(
+            f"/api/ingest/webhook/{token_a}?wait=1",
+            json={
+                "call_id": "tenant-1",
+                "agent_email": email_b,
+                "status": "completed",
+                "transcript": "Rep: Tenant A.\nCustomer: I need a part.",
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        call = self._find_call(client_a, "tenant-1")
+        self.assertEqual(call["org_id"], owner_a["org_id"])
+        self.assertEqual(call["rep_id"], owner_a["id"])
+        self.assertNotEqual(call["org_id"], owner_b["org_id"])
+
+    def test_audio_push_is_transcribed_path_and_keeps_audio(self):
+        client, _, email, token = self._yard("Audio Ingest Yard")
+        wav = store.generate_wav_bytes(duration_sec=1.0)
+        response = client.post(
+            f"/api/ingest/audio/{token}?wait=1",
+            files={"file": ("call.wav", wav, "audio/wav")},
+            data={
+                "external_id": "audio-1",
+                "agent_email": email,
+                "customer_name": "Audio Caller",
+                "from_number": "+15551110000",
+                "direction": "inbound",
+                "transcript": "Rep: Thanks for calling.\nCustomer: Do you have a 2017 Toyota Camry fender?",
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["status"], "completed")
+        call = self._find_call(client, "audio-1")
+        self.assertTrue(call["has_audio"])
+        detail = client.get(f"/api/calls/{call['id']}").json()
+        self.assertTrue(detail["has_audio"])
+        self.assertTrue(detail["audio_path"])
+
+    def test_ringcentral_validation_token_handshake(self):
+        client, _, _, token = self._yard("Handshake Ingest Yard")
+        response = client.post(
+            f"/api/ingest/webhook/{token}/ringcentral",
+            headers={"Validation-Token": "rc-validation-123"},
+            content=b"",
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.headers.get("validation-token"), "rc-validation-123")
+
+    def test_rotating_the_token_invalidates_the_old_url(self):
+        client, _, _, token = self._yard("Rotate Ingest Yard")
+        rotated = client.post("/api/ingest/rotate")
+        self.assertEqual(rotated.status_code, 200, rotated.text)
+        new_token = rotated.json()["token"]
+        self.assertNotEqual(new_token, token)
+        response = client.post(
+            f"/api/ingest/webhook/{token}",
+            json={"call_id": "rotated-1", "status": "completed", "transcript": "Rep: Hi.\nCustomer: Hello."},
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_event_log_is_visible_to_managers_only(self):
+        client, _, _, token = self._yard("Event Log Yard")
+        client.post(
+            f"/api/ingest/webhook/{token}?wait=1",
+            json={
+                "call_id": "events-1",
+                "status": "completed",
+                "transcript": "Rep: Hi.\nCustomer: Hello.",
+            },
+        )
+        events = client.get("/api/ingest/events").json()
+        self.assertTrue(any(event.get("external_id") == "events-1" for event in events))
+        rep_client = _client()
+        # A rep account in the same yard cannot read the ingest event log.
+        created = client.post(
+            "/api/users/reps",
+            json={"name": "Ingest Rep", "email": f"rep-{uuid.uuid4().hex[:8]}@example.test", "password": "StrongPass!234", "title": "Sales Rep"},
+        )
+        if created.status_code == 200:
+            rep_client.post("/api/auth/login", json={"email": created.json()["email"], "password": "StrongPass!234"})
+            forbidden = rep_client.get("/api/ingest/events")
+            self.assertEqual(forbidden.status_code, 403)

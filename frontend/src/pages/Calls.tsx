@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { motion } from "motion/react";
 import { fadeUpSm } from "@/lib/motion";
-import { Car, Trash2, FileAudio, FileText, Loader2, PhoneIncoming, PhoneOutgoing, Radio, Search, X } from "lucide-react";
+import { Car, Trash2, FileAudio, FileText, Loader2, PhoneIncoming, PhoneOutgoing, Radio, Search, Webhook, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -355,12 +355,17 @@ export default function Calls() {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      {c.source === "ringcentral" ? (
+                      {c.source === "ringcentral" || c.source === "ingest" ? (
                         c.direction === "outbound" ? <PhoneOutgoing className="size-3.5 text-sky-400" /> : <PhoneIncoming className="size-3.5 text-amber-400" />
                       ) : c.source === "audio" ? (
                         <FileAudio className="size-3.5 text-sky-400" />
                       ) : (
                         <FileText className="size-3.5 text-slate-500" />
+                      )}
+                      {c.source === "ingest" && (
+                        <span title={`Captured via ${c.ingest_provider || "phone system"}`} className="inline-flex items-center">
+                          <Webhook className="size-3 text-sky-500/70" />
+                        </span>
                       )}
                       <span className="font-medium text-white">{c.customer_name}</span>
                       {priceMissing(c) && <PriceMissingBadge testId={`call-price-missing-${c.id}`} />}

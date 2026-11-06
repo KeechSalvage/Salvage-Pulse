@@ -29,7 +29,7 @@ import database
 
 # Initialize database schema and run migrations
 database.init_schema()
-from routers import admin, analytics, auth, billing, calls, forms, roleplay, settings, team
+from routers import admin, analytics, auth, billing, calls, forms, ingest, roleplay, settings, team
 from security import request_origin_allowed
 
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "development").strip().lower()
@@ -37,6 +37,9 @@ IS_PRODUCTION = ENVIRONMENT in ("production", "prod")
 DOCS_ENABLED = os.environ.get("DOCS_ENABLED", "0" if IS_PRODUCTION else "1").lower() in ("1", "true", "yes")
 MAX_JSON_BODY_BYTES = int(os.environ.get("MAX_JSON_BODY_BYTES", str(2 * 1024 * 1024)))
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_MB", "25")) * 1024 * 1024
+# Recordings pushed by a phone system are often much larger than a manual
+# upload. This applies only to the token-authenticated ingest endpoints.
+MAX_INGEST_BYTES = int(os.environ.get("MAX_INGEST_MB", "100")) * 1024 * 1024
 
 app = FastAPI(
     title="Salvage Pulse AI API",
@@ -110,7 +113,10 @@ class BodySizeLimitMiddleware:
             return
 
         path = scope.get("path", "")
-        limit = MAX_UPLOAD_BYTES if any(hint in path for hint in _UPLOAD_PATH_HINTS) else MAX_JSON_BODY_BYTES
+        if path.startswith("/api/ingest/audio/"):
+            limit = MAX_INGEST_BYTES
+        else:
+            limit = MAX_UPLOAD_BYTES if any(hint in path for hint in _UPLOAD_PATH_HINTS) else MAX_JSON_BODY_BYTES
         headers = Headers(scope=scope)
         declared = headers.get("content-length")
         if declared:
@@ -165,6 +171,12 @@ class CSRFMiddleware:
 
     async def __call__(self, scope, receive, send):
         if scope.get("type") != "http" or scope.get("method") in ("GET", "HEAD", "OPTIONS"):
+            await self.app(scope, receive, send)
+            return
+        # Ingestion endpoints authenticate with a per-yard token (and provider
+        # signatures), not the browser session cookie, so CSRF does not apply.
+        path = scope.get("path", "")
+        if path.startswith("/api/ingest/webhook/") or path.startswith("/api/ingest/audio/"):
             await self.app(scope, receive, send)
             return
         request = Request(scope, receive=receive)
@@ -267,6 +279,8 @@ def ai_status() -> dict[str, Any]:
 app.include_router(auth.router)
 app.include_router(settings.router)
 app.include_router(calls.router)
+app.include_router(ingest.public_router)
+app.include_router(ingest.router)
 app.include_router(forms.router)
 app.include_router(analytics.router)
 app.include_router(roleplay.router)

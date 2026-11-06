@@ -23,6 +23,14 @@ services:
       - INITIAL_MASTER_EMAIL=${INITIAL_MASTER_EMAIL:-brettk@salvagepulsepro.com}
       - INITIAL_MASTER_NAME=${INITIAL_MASTER_NAME:-Brett K}
       - INITIAL_MASTER_PASSWORD=${INITIAL_MASTER_PASSWORD:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - INGEST_STT_PROVIDER=${INGEST_STT_PROVIDER:-auto}
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY:-}
+      - ASSEMBLYAI_API_KEY=${ASSEMBLYAI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - TELNYX_API_KEY=${TELNYX_API_KEY:-}
+      - MAX_INGEST_MB=${MAX_INGEST_MB:-100}
+      - INGEST_MEDIA_MAX_MB=${INGEST_MEDIA_MAX_MB:-100}
     volumes:
       # Persistent storage on your server
       - salvage-pulse-data:/app/backend/data

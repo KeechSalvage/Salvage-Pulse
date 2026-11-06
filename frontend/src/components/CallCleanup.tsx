@@ -88,6 +88,7 @@ export default function CallCleanup() {
               <select data-testid="cleanup-source" value={range.source} onChange={(e) => set({ source: e.target.value as RangeDelete["source"] })} className="h-9 rounded-md border border-border bg-surface px-2 text-sm text-white">
                 <option value="">All call types</option>
                 <option value="ringcentral">RingCentral imports</option>
+                <option value="ingest">Provider-ingested calls</option>
                 <option value="audio">Uploaded recordings</option>
                 <option value="transcript">Pasted transcripts</option>
               </select>

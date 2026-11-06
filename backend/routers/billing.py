@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 import uuid
 from typing import Any
@@ -8,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from auth_utils import get_current_user
 import store
 import email_service
+from ingest import config as ingest_config
 from security import effective_org, is_manager, require_authenticated, require_manager
 
 # Public pricing data (used by the marketing/signup pages).
@@ -144,12 +146,24 @@ def get_payment_status(sid: str, request: Request) -> dict[str, Any]:
     return {"session_id": sid, "status": "complete", "payment_status": "paid"}
 
 
+def _ingest_base_url(request: Request) -> str:
+    configured = (os.getenv("PUBLIC_BASE_URL") or os.getenv("APP_URL") or "").strip().rstrip("/")
+    return configured or str(request.base_url).rstrip("/")
+
+
 @router.get("/api/connect/status")
 def get_connect_status(request: Request) -> dict[str, Any]:
     st = store.get_state()
     u = get_current_user(request)
     _require_manager(u)
-    return _connector_state(st, u)
+    state = _connector_state(st, u)
+    org_id = effective_org(u) or ""
+    if org_id:
+        cfg = ingest_config.get_config(st, org_id)
+        # Keep the older connector payload useful now that the universal
+        # receiver is real.
+        state["webhook_url"] = f"{_ingest_base_url(request)}/api/ingest/webhook/{cfg.get('token') or ''}"
+    return state
 
 
 @router.get("/api/connect/ringcentral/start")
@@ -183,8 +197,12 @@ def post_connect_webhook_rotate(request: Request) -> dict[str, Any]:
     u = get_current_user(request)
     _require_manager(u)
     state = _connector_state(st, u)
-    state["webhook_url"] = f"https://salvagepulse.com/api/connect/webhook/{uuid.uuid4().hex}"
-    store.save_state()
+    org_id = effective_org(u) or ""
+    if org_id:
+        cfg = ingest_config.get_config(st, org_id)
+        ingest_config.rotate_token(cfg)
+        store.save_state()
+        state["webhook_url"] = f"{_ingest_base_url(request)}/api/ingest/webhook/{cfg.get('token') or ''}"
     return state
 
 
