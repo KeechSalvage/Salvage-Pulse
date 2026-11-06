@@ -655,9 +655,15 @@ def _resolve_rep(st: dict[str, Any], org_id: str, call: NormalizedCall, cfg: dic
     phone = (call.agent_phone or "").strip()
     if phone:
         digits = "".join(ch for ch in phone if ch.isdigit())
+        text_prefs = st.get("me_mobile_by_user", {})
         for user in users:
-            for field in ("phone", "mobile", "cell", "direct_number"):
-                value = "".join(ch for ch in str(user.get(field) or "") if ch.isdigit())
+            numbers = [str(user.get(field) or "") for field in ("phone", "mobile", "cell", "direct_number")]
+            numbers.extend(str(item or "") for item in (user.get("alt_phones") or []))
+            # Existing text numbers saved before profile phones existed should
+            # still match calls without requiring the user to re-save them.
+            numbers.append(str((text_prefs.get(user.get("id")) or {}).get("mobile") or ""))
+            for number in numbers:
+                value = "".join(ch for ch in number if ch.isdigit())
                 if digits and value and digits[-10:] == value[-10:]:
                     return {**user, "_match": "phone"}
 

@@ -258,10 +258,18 @@ def can_manage_yard_user(actor: dict[str, Any], target: dict[str, Any]) -> bool:
 
 
 def public_user(user: dict[str, Any]) -> dict[str, Any]:
-    """Strip credential material before a user object leaves the server."""
+    """Strip credential material before a user object leaves the server.
+
+    Personal contact numbers are also removed from shared rep listings; each
+    user can still read and edit their own through /api/auth/me and
+    /api/me/mobile.
+    """
     safe = dict(user)
     safe.pop("password_hash", None)
     safe.pop("password", None)
+    safe.pop("phone", None)
+    safe.pop("mobile", None)
+    safe.pop("alt_phones", None)
     return safe
 
 

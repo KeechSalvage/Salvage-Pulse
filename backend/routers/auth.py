@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import threading
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -49,6 +50,27 @@ def _public_user(user: dict[str, Any]) -> dict[str, Any]:
     safe.pop("password_hash", None)
     safe.pop("password", None)
     return safe
+
+
+_PHONE_RE = re.compile(r"^[0-9+()\-.\s]+$")
+
+
+def _clean_phone(value: Any, label: str = "phone number") -> str:
+    """Accept common US/international formatting and reject junk.
+
+    Numbers are kept in the format the user typed so phone-system payloads and
+    SMS providers see what the person expects; matching elsewhere strips
+    punctuation and compares digits.
+    """
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    if len(raw) > 40 or not _PHONE_RE.fullmatch(raw):
+        raise HTTPException(status_code=400, detail=f"Enter a valid {label}")
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    if not 7 <= len(digits) <= 15:
+        raise HTTPException(status_code=400, detail=f"Enter a valid {label}")
+    return raw
 
 
 def _app_url(request: Request) -> str:
@@ -676,7 +698,7 @@ def auth_device_delete(dev_id: str, request: Request) -> dict[str, Any]:
 def me_mobile(request: Request) -> dict[str, Any]:
     u = get_current_user(request)
     st = store.get_state()
-    return st.setdefault("me_mobile_by_user", {}).setdefault(u["id"], {
+    cur = st.setdefault("me_mobile_by_user", {}).setdefault(u["id"], {
         "mobile": "",
         "days_off": [],
         "vacation_start": None,
@@ -685,6 +707,15 @@ def me_mobile(request: Request) -> dict[str, Any]:
         "shift_end": "",
         "held": 0,
     })
+    # The live user record is the source of truth for the number phone-system
+    # webhooks use to match a call to this person.
+    mobile = str(cur.get("mobile") or u.get("mobile") or "")
+    return {
+        **cur,
+        "mobile": mobile,
+        "direct_phone": str(u.get("phone") or cur.get("direct_phone") or ""),
+        "alt_phones": list(u.get("alt_phones") or []),
+    }
 
 
 @router.put("/api/me/mobile")
@@ -692,11 +723,58 @@ def me_mobile_put(body: dict[str, Any], request: Request) -> dict[str, Any]:
     u = get_current_user(request)
     st = store.get_state()
     cur = st.setdefault("me_mobile_by_user", {}).setdefault(u["id"], {})
+    user = st.get("users_by_id", {}).get(u["id"])
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    # Validate every number before mutating the shared state so a rejected
+    # alternate number cannot leave a half-saved form behind.
+    mobile_value: Optional[str] = None
+    if "mobile" in body:
+        mobile_value = _clean_phone(body.get("mobile"), "mobile number")
+    direct_value: Optional[str] = None
+    if "direct_phone" in body:
+        direct_value = _clean_phone(body.get("direct_phone"), "direct phone number")
+    alt_value: Optional[list[str]] = None
+    if "alt_phones" in body:
+        raw_alt = body.get("alt_phones")
+        if raw_alt is None:
+            raw_alt = []
+        if not isinstance(raw_alt, list):
+            raise HTTPException(status_code=400, detail="Alternate phone numbers must be a list")
+        if len(raw_alt) > 5:
+            raise HTTPException(status_code=400, detail="Add at most 5 alternate phone numbers")
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for value in raw_alt:
+            number = _clean_phone(value, "alternate phone number")
+            if not number:
+                continue
+            digits = "".join(ch for ch in number if ch.isdigit())
+            if digits in seen:
+                continue
+            seen.add(digits)
+            cleaned.append(number)
+        alt_value = cleaned
+
+    if mobile_value is not None:
+        cur["mobile"] = mobile_value
+        user["mobile"] = mobile_value
+    if direct_value is not None:
+        user["phone"] = direct_value
+    if alt_value is not None:
+        user["alt_phones"] = alt_value
+
     cur.update({k: v for k, v in body.items() if k in {
-        "mobile", "days_off", "vacation_start", "vacation_end", "shift_start", "shift_end", "held"
+        "days_off", "vacation_start", "vacation_end", "shift_start", "shift_end", "held"
     }})
     store.save_state()
-    return cur
+    return {
+        **cur,
+        "mobile": str(cur.get("mobile") or user.get("mobile") or ""),
+        "direct_phone": str(user.get("phone") or ""),
+        "alt_phones": list(user.get("alt_phones") or []),
+    }
 
 
 @router.put("/api/me/theme")

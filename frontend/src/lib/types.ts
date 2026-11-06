@@ -83,6 +83,9 @@ export interface User {
   disabled: boolean; // login turned off
   site_id: string; // yard location ("" = not assigned)
   must_change_password: boolean; // new staff login: must pick their own password first
+  phone?: string; // own direct line (returned on /auth/me)
+  mobile?: string; // own mobile number (returned on /auth/me)
+  alt_phones?: string[]; // extra call-matching numbers (returned on /auth/me)
 }
 
 export interface Site {
@@ -681,6 +684,8 @@ export interface OverdueAlertResult {
 
 export interface MobileNumber {
   mobile: string; // "" clears it
+  direct_phone: string; // direct/office line used to match calls to this user
+  alt_phones: string[]; // extra numbers the phone system may send
   days_off: number[]; // 0=Mon … 6=Sun — never text on these days
   vacation_start: string | null; // YYYY-MM-DD, both or neither
   vacation_end: string | null;

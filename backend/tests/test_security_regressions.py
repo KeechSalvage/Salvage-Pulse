@@ -2056,6 +2056,83 @@ class AttributionTests(unittest.TestCase):
                     self.assertEqual(expected, len(data["calls"]), query)
 
 
+class PhoneSettingsTests(unittest.TestCase):
+    """Every user can keep their own numbers current for calls and texts."""
+
+    def test_user_can_update_mobile_direct_and_alternate_numbers(self):
+        client = _client()
+        _, email, password = _signup(client, yard="Phone Settings Yard")
+        initial = client.get("/api/me/mobile").json()
+        self.assertEqual(initial["direct_phone"], "")
+        self.assertEqual(initial["alt_phones"], [])
+
+        response = client.put(
+            "/api/me/mobile",
+            json={
+                "mobile": "(512) 555-0100",
+                "direct_phone": "512.555.0101",
+                "alt_phones": ["512-555-0102", "(512) 555-0102", "512 555 0103"],
+                "days_off": [5],
+                "shift_start": "08:00",
+                "shift_end": "17:00",
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual(body["mobile"], "(512) 555-0100")
+        self.assertEqual(body["direct_phone"], "512.555.0101")
+        self.assertEqual(body["alt_phones"], ["512-555-0102", "512 555 0103"])
+        self.assertEqual(body["days_off"], [5])
+
+        # The same numbers are persisted on the user record so phone-system
+        # webhooks can match calls to this person.
+        me = client.get("/api/auth/me").json()
+        self.assertEqual(me["mobile"], "(512) 555-0100")
+        self.assertEqual(me["phone"], "512.555.0101")
+        self.assertEqual(me["alt_phones"], ["512-555-0102", "512 555 0103"])
+
+        # Logging in again returns the saved values.
+        again = _client()
+        _login(again, email, password)
+        reloaded = again.get("/api/me/mobile").json()
+        self.assertEqual(reloaded["mobile"], "(512) 555-0100")
+        self.assertEqual(reloaded["direct_phone"], "512.555.0101")
+        self.assertEqual(reloaded["alt_phones"], ["512-555-0102", "512 555 0103"])
+
+    def test_invalid_phone_values_are_rejected_without_partial_saves(self):
+        client = _client()
+        _signup(client, yard="Invalid Phone Yard")
+        before = client.get("/api/me/mobile").json()
+
+        bad_mobile = client.put("/api/me/mobile", json={"mobile": "call me maybe"})
+        self.assertEqual(bad_mobile.status_code, 400)
+
+        bad_list = client.put("/api/me/mobile", json={"alt_phones": "5125550100"})
+        self.assertEqual(bad_list.status_code, 400)
+
+        too_many = client.put(
+            "/api/me/mobile",
+            json={"alt_phones": [f"51255501{i:02d}" for i in range(6)]},
+        )
+        self.assertEqual(too_many.status_code, 400)
+
+        after = client.get("/api/me/mobile").json()
+        self.assertEqual(after["mobile"], before["mobile"])
+        self.assertEqual(after["alt_phones"], before["alt_phones"])
+
+    def test_clearing_a_number_removes_it(self):
+        client = _client()
+        _signup(client, yard="Clear Phone Yard")
+        client.put(
+            "/api/me/mobile",
+            json={"mobile": "5125550100", "direct_phone": "5125550101", "alt_phones": ["5125550102"]},
+        )
+        cleared = client.put("/api/me/mobile", json={"mobile": "", "direct_phone": "", "alt_phones": []}).json()
+        self.assertEqual(cleared["mobile"], "")
+        self.assertEqual(cleared["direct_phone"], "")
+        self.assertEqual(cleared["alt_phones"], [])
+
+
 class IngestPipelineTests(unittest.TestCase):
     """Provider-agnostic call ingestion: token auth, adapters, AI hand-off, de-dupe."""
 
@@ -2211,6 +2288,36 @@ class IngestPipelineTests(unittest.TestCase):
         call = self._find_call(client, "CA-INGEST-1")
         self.assertEqual(call["ingest_provider"], "twilio")
         self.assertEqual(call["customer_phone"], "+15551112222")
+
+    def test_calls_match_a_rep_by_their_saved_direct_and_alt_numbers(self):
+        client, owner, _, token = self._yard("Phone Match Ingest Yard")
+        saved = client.put(
+            "/api/me/mobile",
+            json={
+                "mobile": "+15559990000",
+                "direct_phone": "+15553334444",
+                "alt_phones": ["+15557778888"],
+            },
+        )
+        self.assertEqual(saved.status_code, 200, saved.text)
+
+        for index, number in enumerate(("+15553334444", "+15557778888", "+15559990000"), start=1):
+            response = client.post(
+                f"/api/ingest/webhook/{token}?wait=1",
+                json={
+                    "call_id": f"phone-match-{index}",
+                    "direction": "inbound",
+                    "from": "+15551110000",
+                    "to": number,
+                    "status": "completed",
+                    "transcript": "Rep: Thanks for calling.\nCustomer: I need a 2019 Honda Civic headlight.",
+                },
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            call = self._find_call(client, f"phone-match-{index}")
+            self.assertEqual(call["rep_id"], owner["id"])
+            detail = client.get(f"/api/calls/{call['id']}").json()
+            self.assertEqual(detail["ingest"]["rep_match"], "phone")
 
     def test_tokens_are_scoped_to_one_yard(self):
         client_a, owner_a, _, token_a = self._yard("Tenant A")

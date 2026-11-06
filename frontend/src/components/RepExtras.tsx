@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { MessageSquareText, Printer, Truck } from "lucide-react";
+import { MessageSquareText, Plus, Printer, Truck, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,22 +24,86 @@ function MobileForm({ data, onSaved }: { data: MobileNumber; onSaved: (m: Mobile
   const [f, setF] = useState<MobileNumber>(data);
   const dirty = JSON.stringify(f) !== JSON.stringify(data);
   const save = useMutation({
-    mutationFn: () => apiPut<MobileNumber>("/me/mobile", { ...f, vacation_start: f.vacation_start || null, vacation_end: f.vacation_end || null } satisfies MobileNumber),
-    onSuccess: (m) => (onSaved(m), toast.success(m.mobile ? `Texts will go to ${m.mobile}` : "Mobile number removed")),
+    mutationFn: () => apiPut<MobileNumber>("/me/mobile", {
+      ...f,
+      vacation_start: f.vacation_start || null,
+      vacation_end: f.vacation_end || null,
+      alt_phones: f.alt_phones.filter((phone) => phone.trim()),
+    } satisfies MobileNumber),
+    onSuccess: (m) => (onSaved(m), toast.success(m.mobile ? `Phone numbers saved — texts will go to ${m.mobile}` : "Phone numbers saved")),
     onError: (e) => toast.error(errorMessage(e)),
   });
   const today = new Date().toISOString().slice(0, 10);
   const onVacation = !!(data.vacation_start && data.vacation_end && data.vacation_start <= today && today <= data.vacation_end);
   return (
     <Panel testId="mobile-card" className="mb-6">
-      <form className="flex flex-wrap items-center gap-3" onSubmit={(e) => (e.preventDefault(), save.mutate())}>
-        <MessageSquareText className="size-4 text-sky-300" />
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-white">Text me on the yard floor</p>
-          <p className="text-xs text-slate-500">We text this number the morning one of your callback lists goes overdue.</p>
+      <form className="space-y-3" onSubmit={(e) => (e.preventDefault(), save.mutate())}>
+        <div className="flex flex-wrap items-center gap-3">
+          <MessageSquareText className="size-4 text-sky-300" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-white">Mobile number</p>
+            <p className="text-xs text-slate-500">Used for callback, cover-swap and coaching texts.</p>
+          </div>
+          <Input data-testid="mobile-input" inputMode="tel" value={f.mobile} onChange={(e) => setF({ ...f, mobile: e.target.value.slice(0, 40) })} placeholder="(555) 123-4567" className="h-9 w-44" />
+          <Button size="sm" type="submit" data-testid="mobile-save" disabled={!dirty || save.isPending}>Save</Button>
         </div>
-        <Input data-testid="mobile-input" inputMode="tel" value={f.mobile} onChange={(e) => setF({ ...f, mobile: e.target.value.slice(0, 20) })} placeholder="(555) 123-4567" className="h-9 w-44" />
-        <Button size="sm" type="submit" data-testid="mobile-save" disabled={!dirty || save.isPending}>Save</Button>
+
+        <div className="grid gap-4 border-t border-border pt-3 md:grid-cols-2">
+          <div>
+            <p className="text-xs font-medium text-slate-300">Direct line</p>
+            <Input
+              data-testid="direct-phone-input"
+              inputMode="tel"
+              value={f.direct_phone}
+              onChange={(e) => setF({ ...f, direct_phone: e.target.value.slice(0, 40) })}
+              placeholder="(555) 123-4567"
+              className="mt-1.5 h-9"
+            />
+            <p className="mt-1 text-[11px] text-slate-500">
+              Your desk or direct line. Phone-system webhooks use it to match calls to you.
+            </p>
+          </div>
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-medium text-slate-300">Additional numbers</p>
+              <span className="text-[11px] text-slate-500">{f.alt_phones.length}/5</span>
+            </div>
+            <div className="mt-1.5 space-y-2">
+              {f.alt_phones.map((phone, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <Input
+                    data-testid={`alt-phone-input-${index}`}
+                    inputMode="tel"
+                    value={phone}
+                    onChange={(e) => setF({ ...f, alt_phones: f.alt_phones.map((item, i) => (i === index ? e.target.value.slice(0, 40) : item)) })}
+                    placeholder="(555) 123-4567"
+                    className="h-9"
+                  />
+                  <button
+                    type="button"
+                    data-testid={`alt-phone-remove-${index}`}
+                    onClick={() => setF({ ...f, alt_phones: f.alt_phones.filter((_, i) => i !== index) })}
+                    className="text-slate-500 hover:text-red-300"
+                    aria-label="Remove phone number"
+                  >
+                    <X className="size-4" />
+                  </button>
+                </div>
+              ))}
+              {f.alt_phones.length < 5 && (
+                <button
+                  type="button"
+                  data-testid="alt-phone-add"
+                  onClick={() => setF({ ...f, alt_phones: [...f.alt_phones, ""] })}
+                  className="inline-flex items-center gap-1 text-xs text-sky-300 hover:text-sky-200"
+                >
+                  <Plus className="size-3.5" /> Add another number
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
         <div className="flex w-full flex-wrap items-center gap-x-6 gap-y-3 border-t border-border pt-3 text-xs text-slate-400">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="mr-1">No texts on</span>

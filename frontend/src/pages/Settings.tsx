@@ -17,7 +17,7 @@ function PhoneAndTexts() {
   return (
     <div className="max-w-3xl">
       <h2 className="mb-1 font-heading text-2xl font-bold text-white">Phone &amp; texts</h2>
-      <p className="mb-4 text-sm text-slate-400">Your mobile number for callback, cover-swap and coaching texts — and the days they pause (regular days off and vacation).</p>
+      <p className="mb-4 text-sm text-slate-400">Your mobile number for callback, cover-swap and coaching texts, plus the direct and additional numbers your phone system can use to match calls to you. Set the days texts pause here too.</p>
       <MobileCard />
     </div>
   );
@@ -28,7 +28,7 @@ const TABS = [
   { id: "locations", label: "Yard & locations", icon: MapPin, page: YardSettings, roles: ["owner", "sales_manager"] },
   { id: "forms", label: "Form library", icon: FolderOpen, page: FormLibrary, roles: ["owner", "sales_manager"] },
   { id: "scoring", label: "Call Scoring", icon: SlidersHorizontal, page: ScoringSettings, roles: ["owner", "sales_manager", "manager"] },
-  { id: "phone", label: "Phone & texts", icon: Smartphone, page: PhoneAndTexts, roles: ["rep", "sales_rep"] },
+  { id: "phone", label: "Phone & texts", icon: Smartphone, page: PhoneAndTexts, roles: ["owner", "sales_manager", "inventory_manager", "manager", "rep", "sales_rep", "master", "admin"] },
   { id: "connectors", label: "Phone Connectors", icon: Plug, page: Connectors, roles: ["owner", "sales_manager", "manager"] },
   { id: "billing", label: "Billing", icon: CreditCard, page: Billing, roles: ["owner", "manager"] },
   { id: "appearance", label: "Appearance", icon: Palette, page: Appearance, roles: ["owner", "sales_manager", "manager", "inventory_manager", "rep", "sales_rep"] },
