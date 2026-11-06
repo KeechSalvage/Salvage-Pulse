@@ -83,8 +83,11 @@ def transcribe(
     name = resolve_provider(provider)
     if not name:
         raise TranscriptionUnavailable(
-            "No transcription provider is configured. Add GEMINI_API_KEY (recommended), "
-            "DEEPGRAM_API_KEY, ASSEMBLYAI_API_KEY or OPENAI_API_KEY on the server."
+            "No transcription provider is configured. The running server process did not see "
+            "GEMINI_API_KEY, DEEPGRAM_API_KEY, ASSEMBLYAI_API_KEY or OPENAI_API_KEY. Add one to the "
+            "server environment file and restart the service (systemctl restart salvage-pulse, or "
+            "docker compose up -d after editing .env). Check Settings → Phone Connectors to confirm "
+            "which provider keys were detected."
         )
 
     if name == "gemini":

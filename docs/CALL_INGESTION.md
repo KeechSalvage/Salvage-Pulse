@@ -147,6 +147,26 @@ One of these server-side environment variables is enough:
 `auto` picks the first configured one in that order. If the provider sends a
 finished `transcript`, no key is used.
 
+### “No transcription provider is configured”
+
+That error means the **running process** cannot see any of the key variables.
+The startup log and **Settings → Phone Connectors** now show which providers
+were detected.
+
+- **Proxmox / systemd:** edit `/opt/salvage-pulse/.env`, confirm the exact name
+  `DEEPGRAM_API_KEY=...`, then `systemctl restart salvage-pulse`.
+  `journalctl -u salvage-pulse -n 40 | grep -i transcription` should list
+  `deepgram`.
+- **Docker:** the container only receives variables listed in
+  `docker-compose.yml`. Add `DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY:-}` under
+  `environment`, add the key to the host `.env`, then recreate with
+  `docker compose up -d` (a plain `restart` keeps the old environment).
+- **Local dev:** both `backend/.env` and the repo-root `.env` are now loaded,
+  but the service must still be restarted after editing either file.
+- Verify from inside the running environment:
+  `printenv DEEPGRAM_API_KEY` (Docker) or
+  `journalctl -u salvage-pulse -n 40 --no-pager` (Proxmox).
+
 Secrets live in the server environment or in the per-yard settings store and
 are never returned to the browser. The management API returns only
 `signing_configured` / `media_auth_configured` booleans.

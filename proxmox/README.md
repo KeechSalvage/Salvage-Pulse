@@ -216,6 +216,39 @@ GEMINI_MODEL=gemini-2.5-flash
 
 Without a key the app falls back to rule-based scoring.
 
+### Call-ingestion transcription (Deepgram / AssemblyAI / OpenAI)
+
+Call recordings need a speech-to-text provider. Add **one** of these to the
+same `/opt/salvage-pulse/.env` file, then restart the service:
+
+```dotenv
+# Recommended if Gemini is already configured — it transcribes and scores.
+GEMINI_API_KEY=AIzaSy...
+
+# Or a dedicated transcription provider:
+INGEST_STT_PROVIDER=auto
+DEEPGRAM_API_KEY=dg_...
+DEEPGRAM_MODEL=nova-3
+# ASSEMBLYAI_API_KEY=...
+# OPENAI_API_KEY=...
+# OPENAI_STT_MODEL=whisper-1
+```
+
+```bash
+pct exec <CTID> -- systemctl restart salvage-pulse
+pct exec <CTID> -- journalctl -u salvage-pulse -n 30 --no-pager | grep -i transcription
+```
+
+The startup log lists the providers the running process detected. The
+**Settings → Phone Connectors** page also shows “Detected on the server”.
+If it says none, the service did not see the variable — check the exact name
+(`DEEPGRAM_API_KEY`), confirm it is in `/opt/salvage-pulse/.env` (not just a
+shell profile), and restart the service.
+
+> If you are not on Proxmox: Docker deployments must recreate the container
+> (`docker compose up -d`, not just `restart`) after changing `.env`, and the
+> compose file must pass `DEEPGRAM_API_KEY` through to the container.
+
 ### Google sign-in and email
 
 ```dotenv

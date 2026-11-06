@@ -42,6 +42,13 @@ const GENERIC_SAMPLE = `{
   "transcript": "optional — skip AI transcription by sending text"
 }`;
 
+const STT_LABEL: Record<string, string> = {
+  gemini: "Gemini",
+  deepgram: "Deepgram",
+  assemblyai: "AssemblyAI",
+  openai: "OpenAI",
+};
+
 const PROVIDER_LABEL: Record<string, string> = {
   generic: "Generic",
   twilio: "Twilio",
@@ -221,6 +228,7 @@ export default function Connectors() {
   const rc = connector.data?.ringcentral;
   const repOptions = useMemo(() => reps.data ?? [], [reps.data]);
   const active = (events.data ?? []).filter((event) => event.status === "queued" || event.status === "processing").length;
+  const detectedStt = Object.entries(sttReady).filter(([, ready]) => ready).map(([name]) => STT_LABEL[name] ?? name);
 
   return (
     <>
@@ -294,6 +302,11 @@ export default function Connectors() {
                   </Select>
                   <p className="mt-1 text-xs text-slate-500">
                     Gemini also scores the call in one pass. If the provider sends a transcript, no STT key is needed.
+                  </p>
+                  <p className={cn("mt-1 text-xs", detectedStt.length ? "text-emerald-300/80" : "text-amber-300/90")}>
+                    {detectedStt.length
+                      ? `Detected on the server: ${detectedStt.join(", ")}`
+                      : "No transcription key detected by the running server. Add one to the server environment, then restart the service."}
                   </p>
                 </div>
                 <div>

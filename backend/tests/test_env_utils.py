@@ -6,6 +6,7 @@ systemd.  The application user cannot read that file, so python-dotenv raises
 """
 from __future__ import annotations
 
+import os
 import unittest
 from unittest import mock
 
@@ -24,16 +25,19 @@ class EnvUtilsTests(unittest.TestCase):
     def test_loads_backend_and_repo_root_candidates(self) -> None:
         calls: list[str | None] = []
 
-        def fake_load(path: str | None = None) -> bool:
+        def fake_load(path: str | None = None, override: bool = False) -> bool:
             calls.append(path)
             return True
 
         with mock.patch.object(env_utils, "load_dotenv", side_effect=fake_load):
             env_utils.load_env_files()
 
-        self.assertEqual(len(calls), 2)
-        self.assertTrue(calls[0].endswith(".env"))
-        self.assertIsNone(calls[1])
+        backend_env = os.path.join(os.path.dirname(env_utils.__file__), ".env")
+        repo_env = os.path.join(os.path.dirname(os.path.dirname(env_utils.__file__)), ".env")
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(calls[0], backend_env)
+        self.assertEqual(calls[1], repo_env)
+        self.assertIsNone(calls[2])
 
 
 if __name__ == "__main__":

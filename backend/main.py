@@ -24,8 +24,19 @@ if not os.environ.get("GOOGLE_CLIENT_ID", "").strip():
     )
 
 from gemini_service import is_gemini_configured
+from ingest.transcription import available_providers as ingest_stt_available, resolve_provider as resolve_ingest_stt
 import store
 import database
+
+_INGEST_STT_CONFIGURED = [name for name, ready in ingest_stt_available().items() if ready]
+_logger = logging.getLogger("salvage_pulse")
+if _INGEST_STT_CONFIGURED:
+    _logger.info("Call-ingestion transcription providers detected: %s", ", ".join(_INGEST_STT_CONFIGURED))
+else:
+    _logger.warning(
+        "No call-ingestion transcription provider is configured. Add GEMINI_API_KEY, "
+        "DEEPGRAM_API_KEY, ASSEMBLYAI_API_KEY or OPENAI_API_KEY to the server environment."
+    )
 
 # Initialize database schema and run migrations
 database.init_schema()
@@ -270,6 +281,10 @@ def ai_status() -> dict[str, Any]:
         "configured": configured,
         "model": os.getenv("GEMINI_MODEL", "gemini-3.5-flash") if configured else "heuristic",
         "multimodal_audio_ready": configured,
+        "ingest_transcription": {
+            "configured": _INGEST_STT_CONFIGURED,
+            "selected": resolve_ingest_stt(None) or "none",
+        },
     }
 
 
