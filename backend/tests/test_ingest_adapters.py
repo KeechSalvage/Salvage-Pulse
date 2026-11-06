@@ -136,34 +136,72 @@ class TwilioAdapterTests(unittest.TestCase):
 
 
 class RingCentralAdapterTests(unittest.TestCase):
-    def test_telephony_session_parties(self):
-        payload = {
-            "event": "/restapi/v1.0/account/~/telephony/sessions",
-            "body": {
-                "telephonySessionId": "s-123",
-                "parties": [
-                    {
-                        "id": "p-1",
-                        "direction": "Inbound",
-                        "extensionId": "101",
-                        "extensionNumber": "101",
-                        "name": "Tyler Grant",
-                        "status": {"code": "Answered"},
-                        "from": {"phoneNumber": "+15550001111"},
-                        "to": {"phoneNumber": "+15550002222"},
-                    }
-                ],
-            },
-            "timestamp": "2026-10-23T14:05:00Z",
-        }
-        calls = RingCentralAdapter().parse(payload, {})
+    SESSION = {
+        "event": "/restapi/v1.0/account/~/telephony/sessions",
+        "body": {
+            "telephonySessionId": "s-123",
+            "parties": [
+                {
+                    "id": "p-caller",
+                    "direction": "Inbound",
+                    "status": {"code": "Answered"},
+                    "from": {"phoneNumber": "+15550001111"},
+                    "to": {"phoneNumber": "+15550002222"},
+                },
+                {
+                    "id": "p-rep",
+                    "direction": "Inbound",
+                    "extensionId": "101",
+                    "extensionNumber": "101",
+                    "name": "Tyler Grant",
+                    "status": {"code": "Answered"},
+                    "from": {"phoneNumber": "+15550001111"},
+                    "to": {"extensionNumber": "101"},
+                },
+            ],
+        },
+        "timestamp": "2026-10-23T14:05:00Z",
+    }
+
+    def test_a_session_with_two_parties_emits_one_call(self):
+        calls = RingCentralAdapter().parse(self.SESSION, {})
         self.assertEqual(len(calls), 1)
         call = calls[0]
         self.assertEqual(call.provider, "ringcentral")
         self.assertEqual(call.external_id, "s-123")
         self.assertEqual(call.event, "started")
+        self.assertEqual(call.direction, "inbound")
         self.assertEqual(call.agent_extension, "101")
         self.assertEqual(call.agent_name, "Tyler Grant")
+        self.assertEqual(call.customer_phone, "+15550001111")
+        self.assertEqual(call.to_number, "101")
+
+    def test_ringing_is_ignored_and_disconnect_completes_the_call(self):
+        ringing = {
+            **self.SESSION,
+            "body": {
+                **self.SESSION["body"],
+                "parties": [
+                    {**party, "status": {"code": "Ringing"}}
+                    for party in self.SESSION["body"]["parties"]
+                ],
+            },
+        }
+        self.assertEqual(RingCentralAdapter().parse(ringing, {}), [])
+
+        ended = {
+            **self.SESSION,
+            "body": {
+                **self.SESSION["body"],
+                "parties": [
+                    {**party, "status": {"code": "Disconnected"}}
+                    for party in self.SESSION["body"]["parties"]
+                ],
+            },
+        }
+        calls = RingCentralAdapter().parse(ended, {})
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0].event, "completed")
 
 
 class MediaTests(unittest.TestCase):

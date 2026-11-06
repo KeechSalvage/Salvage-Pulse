@@ -116,6 +116,14 @@ _COMPLETED = {
     "call.ended", "call.missed", "call.completed",
 }
 
+# RingCentral party status codes. Ringing/Setup/Proceeding are ignored so the
+# popup appears when the call is actually answered, not while it is ringing.
+_RC_STARTED = {"answered", "inprogress", "in-progress", "active"}
+_RC_COMPLETED = {
+    "disconnected", "gone", "missed", "noanswer", "no-answer", "busy",
+    "rejected", "failed", "canceled", "cancelled", "voicemail",
+}
+
 
 def _normalise_event(status: Any, event_type: Any, recording_url: str, transcript: str) -> str:
     raw = f"{event_type or ''} {status or ''}".strip().lower()
@@ -553,32 +561,67 @@ class RingCentralAdapter(ProviderAdapter):
             or payload.get("telephonySessionId")
             or ""
         ).strip()
-        parties = session.get("parties")
-        if not external_id or not isinstance(parties, list) or not parties:
+        parties = [party for party in (session.get("parties") or []) if isinstance(party, dict)]
+        if not external_id or not parties:
             calls = super().parse(payload, headers)
             for call in calls:
                 if external_id:
                     call.external_id = external_id
             return calls
 
-        out: list[NormalizedCall] = []
-        event_type = str(payload.get("event") or session.get("event") or "")
+        # A telephony session contains one party for the caller and one for the
+        # rep. Emitting a call per party created duplicate call records and
+        # duplicate "waiting" log rows. Pick the monitoring party and emit one
+        # event for the whole session instead.
+        statuses: list[tuple[dict[str, Any], str]] = []
         for party in parties:
-            if not isinstance(party, dict):
-                continue
-            status = _as_dict(party.get("status"))
-            code = str(status.get("code") or "")
-            event = _normalise_event(code, event_type, "", "")
-            if event not in ("started", "completed"):
-                continue
-            direction = _normalise_direction(party.get("direction"))
-            from_info = _as_dict(party.get("from"))
-            to_info = _as_dict(party.get("to"))
-            from_number = str(from_info.get("phoneNumber") or from_info.get("extensionNumber") or "")
-            to_number = str(to_info.get("phoneNumber") or to_info.get("extensionNumber") or "")
-            extension_id = str(party.get("extensionId") or "")
-            extension_number = str(party.get("extensionNumber") or "")
-            call = NormalizedCall(
+            code = str(_as_dict(party.get("status")).get("code") or "").strip().lower()
+            statuses.append((party, code))
+        completed = any(code in _RC_COMPLETED for _, code in statuses)
+        started = any(code in _RC_STARTED for _, code in statuses)
+        event = "completed" if completed else ("started" if started else "")
+        if not event:
+            return []
+
+        def has_extension(party: dict[str, Any]) -> bool:
+            return bool(party.get("extensionId") or party.get("extensionNumber"))
+
+        # Prefer the party whose status caused this notification, then any
+        # internal party, then the first party.
+        matching = [
+            party for party, code in statuses
+            if (code in _RC_COMPLETED if event == "completed" else code in _RC_STARTED) and has_extension(party)
+        ]
+        agent_party = (matching or [party for party, _ in statuses if has_extension(party)] or [parties[0]])[0]
+        customer_party = next((party for party, _ in statuses if party is not agent_party and not has_extension(party)), None)
+        if customer_party is None:
+            customer_party = next((party for party, _ in statuses if party is not agent_party), agent_party)
+
+        def phone_of(party: dict[str, Any], key: str) -> str:
+            info = _as_dict(party.get(key))
+            return str(info.get("phoneNumber") or info.get("extensionNumber") or "")
+
+        direction = _normalise_direction(agent_party.get("direction") or session.get("direction"))
+        agent_from = phone_of(agent_party, "from")
+        agent_to = phone_of(agent_party, "to")
+        customer_from = phone_of(customer_party, "from")
+        customer_to = phone_of(customer_party, "to")
+        if direction == "inbound":
+            from_number = customer_from or agent_from
+            to_number = agent_to or customer_to
+            customer_phone = from_number
+            agent_phone = agent_to
+        else:
+            from_number = agent_from or customer_from
+            to_number = customer_to or agent_to
+            customer_phone = to_number
+            agent_phone = agent_from
+
+        extension_id = str(agent_party.get("extensionId") or "")
+        extension_number = str(agent_party.get("extensionNumber") or "")
+        event_type = str(payload.get("event") or session.get("event") or "")
+        return [
+            NormalizedCall(
                 provider=self.name,
                 external_id=external_id,
                 event=event,
@@ -589,17 +632,21 @@ class RingCentralAdapter(ProviderAdapter):
                 from_number=from_number,
                 to_number=to_number,
                 agent_extension=extension_id or extension_number,
-                agent_phone=to_number if direction == "inbound" else from_number,
-                customer_phone=from_number if direction == "inbound" else to_number,
-                agent_name=str(party.get("name") or party.get("extensionName") or ""),
+                agent_phone=agent_phone,
+                customer_phone=customer_phone,
+                agent_name=str(agent_party.get("name") or agent_party.get("extensionName") or ""),
+                customer_name=str(customer_party.get("name") or ""),
                 recording_url=_recording_url(session) or _recording_url(payload),
                 transcript=_transcript(session),
-                metadata=_metadata(payload, self.name, code, event_type)
-                | {"party_id": str(party.get("id") or ""), "extension_number": extension_number},
+                metadata=_metadata(payload, self.name, "", event_type)
+                | {
+                    "party_id": str(agent_party.get("id") or ""),
+                    "extension_number": extension_number,
+                    "parties": len(parties),
+                },
                 raw=payload,
             )
-            out.append(call)
-        return out
+        ]
 
 
 ADAPTERS: dict[str, ProviderAdapter] = {

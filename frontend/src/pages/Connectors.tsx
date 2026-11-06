@@ -18,6 +18,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useCallPopups } from "@/components/CallPopupProvider";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -25,7 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Overline, PageHeader, Panel, fmtDate } from "@/components/common";
 import { apiDelete, apiGet, apiPost, apiPut, errorMessage } from "@/lib/api";
-import type { AuthUrl, ConnectorStatus, IngestEvent, IngestSettings, SyncResult, User } from "@/lib/types";
+import type { AuthUrl, CallPopupData, ConnectorStatus, IngestEvent, IngestSettings, SyncResult, User } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const GENERIC_SAMPLE = `{
@@ -104,6 +105,7 @@ const STATUS_STYLE: Record<string, string> = {
 
 export default function Connectors() {
   const qc = useQueryClient();
+  const callPopups = useCallPopups();
   const [params, setParams] = useSearchParams();
   const reps = useQuery({ queryKey: ["reps", { ingest: true }], queryFn: () => apiGet<User[]>("/users/reps?include_managers=true") });
   const settings = useQuery({ queryKey: ["ingest-settings"], queryFn: () => apiGet<IngestSettings>("/ingest/settings") });
@@ -191,6 +193,12 @@ export default function Connectors() {
       refresh();
     },
     onError: (e) => toast.error(errorMessage(e, "Could not retry this call")),
+  });
+
+  const callerDetails = useMutation({
+    mutationFn: (eventId: string) => apiGet<CallPopupData>(`/call-popups/events/${eventId}`),
+    onSuccess: (popup) => callPopups.show(popup),
+    onError: (e) => toast.error(errorMessage(e, "Could not load caller details")),
   });
 
   const clearEvents = useMutation({
@@ -444,6 +452,15 @@ export default function Connectors() {
                     </p>
                     {event.message && <p className="mt-1 line-clamp-2 text-xs text-slate-400">{event.message}</p>}
                     <div className="mt-1.5 flex items-center gap-3">
+                      {["waiting", "queued", "processing", "completed"].includes(event.status) && (
+                        <button
+                          onClick={() => callerDetails.mutate(event.id)}
+                          disabled={callerDetails.isPending}
+                          className="inline-flex items-center gap-1 text-xs text-sky-300 hover:underline"
+                        >
+                          Caller details
+                        </button>
+                      )}
                       {event.call_id && (
                         <a href={`/calls/${event.call_id}`} className="inline-flex items-center gap-1 text-xs text-sky-400 hover:underline">
                           Open call <ExternalLink className="size-3" />

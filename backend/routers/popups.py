@@ -67,7 +67,10 @@ def _line_for_number(st: dict[str, Any], org_id: str, number: str) -> dict[str, 
     for user in (st.get("users_by_id") or {}).values():
         if user.get("org_id") != org_id or user.get("disabled"):
             continue
-        values = [user.get("phone"), user.get("mobile"), user.get("cell"), user.get("direct_number")]
+        values = [
+            user.get("phone"), user.get("mobile"), user.get("cell"), user.get("direct_number"),
+            user.get("extension"), user.get("rc_extension_id"), user.get("extension_number"),
+        ]
         values.extend(user.get("alt_phones") or [])
         values.append((text_prefs.get(user.get("id")) or {}).get("mobile"))
         for value in values:
@@ -190,6 +193,10 @@ def _popup_for_event(st: dict[str, Any], org_id: str, event: dict[str, Any]) -> 
         for item in prior[:8]
     ]
     line_number = str(event.get("to_number") if direction == "inbound" else event.get("from_number") or "")
+    line = _line_for_number(st, org_id, line_number)
+    rep_name = str((call or {}).get("rep_name") or event.get("rep_name") or "")
+    if line.get("label") == "Main line" and rep_name:
+        line = {**line, "label": f"{rep_name}'s line", "name": rep_name}
     return {
         "event_id": str(event.get("id") or ""),
         "call_id": current_id,
@@ -203,7 +210,7 @@ def _popup_for_event(st: dict[str, Any], org_id: str, event: dict[str, Any]) -> 
         "caller_name": name,
         "customer_name": name,
         "rep_id": str((call or {}).get("rep_id") or event.get("rep_id") or ""),
-        "rep_name": str((call or {}).get("rep_name") or event.get("rep_name") or ""),
+        "rep_name": rep_name,
         "started_at": str((call or {}).get("created_at") or event.get("started_at") or event.get("created_at") or ""),
         "known": known,
         "customer": {
@@ -216,7 +223,7 @@ def _popup_for_event(st: dict[str, Any], org_id: str, event: dict[str, Any]) -> 
         },
         "notes": notes,
         "prior_calls": prior_cards,
-        "line": _line_for_number(st, org_id, line_number),
+        "line": line,
         "has_audio": bool((call or {}).get("has_audio")),
     }
 
@@ -244,6 +251,25 @@ def put_call_popup_prefs(body: dict[str, Any], request: Request) -> dict[str, An
     prefs["updated_at"] = store.now_iso()
     store.save_state()
     return {"mode": mode, "updated_at": prefs["updated_at"]}
+
+
+@router.get("/api/call-popups/events/{event_id}")
+def call_popup_for_event(event_id: str, request: Request) -> dict[str, Any]:
+    u = get_current_user(request)
+    org_id = effective_org(u)
+    if not org_id:
+        raise HTTPException(status_code=404, detail="Call event not found")
+    st = store.get_state()
+    event = next(
+        (item for item in st.get("ingest_events", []) if item.get("id") == event_id and item.get("org_id") == org_id),
+        None,
+    )
+    if not event:
+        raise HTTPException(status_code=404, detail="Call event not found")
+    popup = _popup_for_event(st, org_id, event)
+    if not is_manager(u) and popup.get("rep_id") and popup.get("rep_id") != u.get("id"):
+        raise HTTPException(status_code=403, detail="This call belongs to another rep")
+    return popup
 
 
 @router.get("/api/call-popups/feed")

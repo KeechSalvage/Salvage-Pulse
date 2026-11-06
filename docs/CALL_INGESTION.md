@@ -133,6 +133,12 @@ recording under the platform uploads directory, and runs the same AI pipeline.
 - RingCentral session events do not contain audio. Add a JWT app's Client ID,
   Client Secret and JWT under Provider authentication; the adapter then looks up
   the recording in the call log and downloads it with a bearer token.
+- RingCentral often needs a few seconds after disconnect before the recording
+  appears in the call log. The ingest worker retries the lookup automatically
+  for about a minute instead of failing immediately.
+- A telephony session contains both the caller and rep parties. The adapter
+  emits **one** call per session, so you should no longer see duplicate waiting
+  or call rows.
 - The legacy call-log sync remains available at the bottom of the page for
   metadata and previously-recorded calls.
 

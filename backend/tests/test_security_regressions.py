@@ -2262,6 +2262,44 @@ class CallPopupTests(unittest.TestCase):
         self.assertIn("owner-popup", manager_ids)
         self.assertIn("rep-popup", manager_ids)
 
+    def test_an_answered_ringcentral_call_creates_a_popup_before_it_ends(self):
+        client, _, token = self._yard("Popup RingCentral Yard")
+        payload = {
+            "event": "/restapi/v1.0/account/~/telephony/sessions",
+            "body": {
+                "telephonySessionId": "rc-popup-live-1",
+                "parties": [
+                    {
+                        "id": "caller",
+                        "direction": "Inbound",
+                        "status": {"code": "Answered"},
+                        "from": {"phoneNumber": "+15125550333"},
+                        "to": {"phoneNumber": "+15125550000"},
+                    },
+                    {
+                        "id": "rep",
+                        "direction": "Inbound",
+                        "extensionId": "101",
+                        "extensionNumber": "101",
+                        "name": "Dale Miller",
+                        "status": {"code": "Answered"},
+                        "from": {"phoneNumber": "+15125550333"},
+                        "to": {"extensionNumber": "101"},
+                    },
+                ],
+            },
+        }
+        response = client.post(f"/api/ingest/webhook/{token}/ringcentral", json=payload)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["status"], "waiting")
+
+        feed = client.get("/api/call-popups/feed?since=2000-01-01T00:00:00Z").json()
+        popup = next(item for item in feed["popups"] if item["external_id"] == "rc-popup-live-1")
+        self.assertEqual(popup["status"], "waiting")
+        self.assertEqual(popup["number"], "+15125550333")
+        self.assertEqual(popup["rep_name"], "Dale Miller")
+        self.assertEqual(popup["line"]["label"], "Dale Miller's line")
+
     def test_popup_feed_is_scoped_to_the_signed_in_yard(self):
         client_a, _, token_a = self._yard("Popup Tenant A")
         client_b, _, _ = self._yard("Popup Tenant B")
@@ -2425,6 +2463,60 @@ class IngestPipelineTests(unittest.TestCase):
         call = self._find_call(client, "CA-INGEST-1")
         self.assertEqual(call["ingest_provider"], "twilio")
         self.assertEqual(call["customer_phone"], "+15551112222")
+
+    def test_ringcentral_session_events_do_not_create_duplicate_rows_or_calls(self):
+        client, _, _, token = self._yard("RC Dedupe Yard")
+        parties = [
+            {
+                "id": "caller-party",
+                "direction": "Inbound",
+                "status": {"code": "Answered"},
+                "from": {"phoneNumber": "+15125550123"},
+                "to": {"phoneNumber": "+15125550999"},
+            },
+            {
+                "id": "rep-party",
+                "direction": "Inbound",
+                "extensionId": "101",
+                "extensionNumber": "101",
+                "name": "Dale Miller",
+                "status": {"code": "Answered"},
+                "from": {"phoneNumber": "+15125550123"},
+                "to": {"extensionNumber": "101"},
+            },
+        ]
+        started = {
+            "event": "/restapi/v1.0/account/~/telephony/sessions",
+            "body": {"telephonySessionId": "rc-session-1", "parties": parties},
+            "timestamp": "2026-11-06T14:00:00Z",
+        }
+        for _ in range(2):
+            response = client.post(f"/api/ingest/webhook/{token}/ringcentral?wait=1", json=started)
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["status"], "waiting")
+
+        events = [item for item in client.get("/api/ingest/events").json() if item["external_id"] == "rc-session-1"]
+        self.assertEqual(len(events), 1)
+
+        completed = {
+            "event": "/restapi/v1.0/account/~/telephony/sessions",
+            "body": {
+                "telephonySessionId": "rc-session-1",
+                "parties": [{**party, "status": {"code": "Disconnected"}} for party in parties],
+                "transcript": "Rep: Thanks for calling.\nCustomer: I need a 2019 Honda Civic headlight.",
+            },
+            "timestamp": "2026-11-06T14:00:00Z",
+        }
+        response = client.post(f"/api/ingest/webhook/{token}/ringcentral?wait=1", json=completed)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["status"], "completed")
+
+        events = [item for item in client.get("/api/ingest/events").json() if item["external_id"] == "rc-session-1"]
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["status"], "completed")
+        calls = [call for call in client.get("/api/calls").json() if call.get("external_id") == "rc-session-1"]
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["ingest_provider"], "ringcentral")
 
     def test_calls_match_a_rep_by_their_saved_direct_and_alt_numbers(self):
         client, owner, _, token = self._yard("Phone Match Ingest Yard")

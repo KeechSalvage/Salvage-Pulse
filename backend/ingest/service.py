@@ -7,6 +7,7 @@ workers (Celery/RQ/SQS) without changing the provider adapters.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -36,6 +37,8 @@ JOBS_DIR = os.path.join(DATA_DIR, "ingest_jobs")
 UPLOADS_DIR = os.path.join(DATA_DIR, "uploads")
 MAX_EVENTS = 500
 MAX_PENDING = 1000
+RECORDING_RETRY_ATTEMPTS = 8
+RECORDING_RETRY_SECONDS = 10
 
 _QUEUE: "queue.Queue[str]" = queue.Queue()
 _WORKER: threading.Thread | None = None
@@ -94,6 +97,12 @@ def _safe_error(exc: Exception | str) -> str:
     return text[:500]
 
 
+def _event_id_for(org_id: str, provider: str, external_id: str) -> str:
+    """One log row/job per real call, even when the provider repeats events."""
+    key = f"{org_id}|{provider}|{external_id}".encode("utf-8", errors="replace")
+    return "evt-" + hashlib.sha256(key).hexdigest()[:20]
+
+
 def _event_summary(event: dict[str, Any]) -> dict[str, Any]:
     return {
         key: event.get(key)
@@ -144,7 +153,7 @@ def record_event(
                 "engine": engine,
                 "created_at": now,
                 "updated_at": now,
-                "rep_name": rep_name,
+                "rep_name": rep_name or ((call.agent_name if call else "") or ""),
                 "rep_id": (call.metadata.get("rep_id") if call else "") or "",
                 "customer_name": customer_name or (call.customer_name if call else ""),
                 "direction": (call.direction if call else "") or "",
@@ -183,6 +192,38 @@ def record_event(
                     _remove_job(str(old["id"]))
         store.save_state()
         return dict(existing)
+
+
+def _drop_stale_events(org_id: str, provider: str, external_id: str, keep_id: str) -> None:
+    """Remove older waiting/queued rows for the same call.
+
+    This also cleans up duplicate rows created by earlier versions that made
+    one event per RingCentral party.
+    """
+    if not external_id:
+        return
+    removed: list[str] = []
+    with store._LOCK:
+        st = store.get_state()
+        events = st.get("ingest_events", [])
+        kept: list[dict[str, Any]] = []
+        for item in events:
+            if (
+                item.get("id") != keep_id
+                and item.get("org_id") == org_id
+                and str(item.get("provider") or "") == str(provider)
+                and str(item.get("external_id") or "") == str(external_id)
+                and item.get("status") in ("waiting", "queued", "processing")
+            ):
+                removed.append(str(item.get("id") or ""))
+                continue
+            kept.append(item)
+        if removed:
+            st["ingest_events"] = kept
+            store.save_state()
+    for event_id in removed:
+        if event_id:
+            _remove_job(event_id)
 
 
 def _increment_attempt(job_id: str) -> int:
@@ -299,6 +340,19 @@ def enqueue_job(job_id: str, *, sync: bool = False) -> None:
     _QUEUE.put(job_id)
 
 
+def _schedule_recording_retry(job_id: str) -> None:
+    """Re-check the provider call log after the call has had time to settle."""
+    def _retry() -> None:
+        try:
+            enqueue_job(job_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("Could not enqueue recording retry for %s", job_id)
+
+    timer = threading.Timer(RECORDING_RETRY_SECONDS, _retry)
+    timer.daemon = True
+    timer.start()
+
+
 def clear_events(org_id: str) -> int:
     with store._LOCK:
         st = store.get_state()
@@ -352,6 +406,7 @@ def ingest_call(
 
     pending = _take_pending(org_id, call)
     call = _merge_calls(pending, call)
+    job_id = _event_id_for(org_id, call.provider, call.external_id)
 
     existing = _existing_call(org_id, call.provider, call.external_id)
     if existing:
@@ -384,7 +439,9 @@ def ingest_call(
                 call=call,
                 status="waiting",
                 message="Waiting for a recording URL, audio upload or transcript",
+                job_id=job_id,
             )
+            _drop_stale_events(org_id, call.provider, call.external_id, job_id)
             _remember_pending(org_id, call)
             return {
                 "status": "waiting",
@@ -392,7 +449,6 @@ def ingest_call(
                 "message": summary["message"],
             }
 
-    job_id = f"evt-{uuid.uuid4().hex[:16]}"
     record_event(
         org_id=org_id,
         call=call,
@@ -400,6 +456,7 @@ def ingest_call(
         message="Queued for transcription",
         job_id=job_id,
     )
+    _drop_stale_events(org_id, call.provider, call.external_id, job_id)
     _write_job(
         job_id,
         {
@@ -475,6 +532,21 @@ def process_job(job_id: str) -> dict[str, Any] | None:
         if not audio_path and not call.recording_url and not call.transcript:
             adapter = adapter_for(call.provider)
             call.recording_url = adapter.resolve_recording(call, cfg)
+            if not call.recording_url and adapter.can_resolve_recording(cfg):
+                if attempts < RECORDING_RETRY_ATTEMPTS:
+                    _update_event(
+                        job_id,
+                        org_id=org_id,
+                        status="queued",
+                        message="Waiting for the provider recording to appear…",
+                        attempts=attempts,
+                    )
+                    _schedule_recording_retry(job_id)
+                    return None
+                raise IngestError(
+                    "The provider call log still has no recording for this call. "
+                    "Retry in a minute, or send a recording_url/transcript."
+                )
         if not audio_path and call.recording_url:
             try:
                 _update_event(job_id, org_id=org_id, message="Downloading recording")
@@ -578,6 +650,7 @@ def process_job(job_id: str) -> dict[str, Any] | None:
             existing = _existing_call(org_id, call.provider, call.external_id)
             if existing:
                 summary = existing
+        _drop_stale_events(org_id, call.provider, call.external_id, job_id)
         _update_event(
             job_id,
             org_id=org_id,

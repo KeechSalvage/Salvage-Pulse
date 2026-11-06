@@ -23,11 +23,13 @@ const SEEN_LIMIT = 200;
 
 type CallPopupContextValue = {
   preview: () => void;
+  show: (popup: CallPopupData) => void;
   mode: CallPopupMode;
 };
 
 const CallPopupContext = createContext<CallPopupContextValue>({
   preview: () => {},
+  show: () => {},
   mode: "popup",
 });
 
@@ -448,7 +450,16 @@ export function CallPopupProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <CallPopupContext.Provider value={{ preview: () => setCurrent(previewPopup()), mode }}>
+    <CallPopupContext.Provider
+      value={{
+        preview: () => setCurrent(previewPopup()),
+        show: (popup) => {
+          currentRef.current = popup;
+          setCurrent(popup);
+        },
+        mode,
+      }}
+    >
       {children}
       {queue.length > 0 && (
         <div className="fixed bottom-4 right-4 z-[90] flex w-[310px] flex-col gap-2" data-testid="call-popup-queue">
