@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import PremiumGate from "@/components/PremiumGate";
+import { CallPopupProvider } from "@/components/CallPopupProvider";
 import { Toaster } from "@/components/ui/sonner";
 import AppShell, { homeFor } from "@/components/AppShell";
 import ErrorBoundary from "@/components/ErrorBoundary";
@@ -38,7 +39,8 @@ function HomeRedirect() {
 export default function App() {
   return (
     <ErrorBoundary>
-      <Routes>
+      <CallPopupProvider>
+        <Routes>
         <Route path="/" element={<HomeRedirect />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
@@ -79,7 +81,8 @@ export default function App() {
           <Route path="/appearance" element={<ToSettings tab="appearance" />} />
         </Route>
         <Route path="*" element={<HomeRedirect />} />
-      </Routes>
+        </Routes>
+      </CallPopupProvider>
       <Toaster richColors />
     </ErrorBoundary>
   );

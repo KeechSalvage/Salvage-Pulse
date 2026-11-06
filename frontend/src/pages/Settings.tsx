@@ -1,5 +1,5 @@
 import { Navigate, NavLink, useLocation, useParams } from "react-router-dom";
-import { CreditCard, FolderOpen, MapPin, MonitorSmartphone, Palette, Plug, SlidersHorizontal, Smartphone, Upload } from "lucide-react";
+import { Bell, CreditCard, FolderOpen, MapPin, MonitorSmartphone, Palette, Plug, SlidersHorizontal, Smartphone, Upload } from "lucide-react";
 import MyDevices from "@/components/MyDevices";
 import { MobileCard } from "@/components/RepExtras";
 import UploadCall from "@/pages/UploadCall";
@@ -8,6 +8,7 @@ import Billing from "@/pages/Billing";
 import Appearance from "@/pages/Appearance";
 import ScoringSettings from "@/pages/ScoringSettings";
 import FormLibrary from "@/pages/FormLibrary";
+import Notifications from "@/pages/Notifications";
 import YardSettings from "@/components/YardSettings";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/lib/hooks";
@@ -29,6 +30,7 @@ const TABS = [
   { id: "forms", label: "Form library", icon: FolderOpen, page: FormLibrary, roles: ["owner", "sales_manager"] },
   { id: "scoring", label: "Call Scoring", icon: SlidersHorizontal, page: ScoringSettings, roles: ["owner", "sales_manager", "manager"] },
   { id: "phone", label: "Phone & texts", icon: Smartphone, page: PhoneAndTexts, roles: ["owner", "sales_manager", "inventory_manager", "manager", "rep", "sales_rep", "master", "admin"] },
+  { id: "notifications", label: "Notifications", icon: Bell, page: Notifications, roles: ["owner", "sales_manager", "inventory_manager", "manager", "rep", "sales_rep", "master", "admin"] },
   { id: "connectors", label: "Phone Connectors", icon: Plug, page: Connectors, roles: ["owner", "sales_manager", "manager"] },
   { id: "billing", label: "Billing", icon: CreditCard, page: Billing, roles: ["owner", "manager"] },
   { id: "appearance", label: "Appearance", icon: Palette, page: Appearance, roles: ["owner", "sales_manager", "manager", "inventory_manager", "rep", "sales_rep"] },

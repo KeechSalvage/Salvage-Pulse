@@ -35,7 +35,9 @@ endpoints:
 The pipeline de-duplicates by provider call id, safely downloads the recording,
 transcribes it with Gemini / Deepgram / AssemblyAI / OpenAI (or accepts a
 transcript in the payload), then hands it to the existing yard scoring engine.
-Configure it in **Settings → Phone connectors**. See
+Configure it in **Settings → Phone connectors**. Incoming calls can also show a
+caller screen-pop in every signed-in tab; choose **Pop up immediately**, **Queue
+in corner** or **Off** in **Settings → Notifications**. See
 [`docs/CALL_INGESTION.md`](docs/CALL_INGESTION.md) for payload examples,
 provider setup, security and how to add a new adapter.
 

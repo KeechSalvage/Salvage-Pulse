@@ -18,6 +18,26 @@ download recording (SSRF-safe)  ──►  speech-to-text (Gemini / Deepgram / A
 Salvage Pulse analyzer (yard rubric + custom weights)  ──►  call library
 ```
 
+## Incoming-call screen pop
+
+The dashboard listens for new ingest events and shows a caller card in the
+browser. It does not depend on which provider sent the event.
+
+- **Settings → Notifications** lets each user choose **Pop up immediately**,
+  **Queue in corner** or **Off**, and includes a **Preview popup** button.
+- Every open signed-in tab for that account polls
+  `GET /api/call-popups/feed` every four seconds.
+- The card shows the caller number, direction, matched customer and business
+  type, which line was called, customer notes, and previous calls from any of
+  the customer's numbers. Known customers link to their profile; completed
+  calls link to the call detail page.
+- If the provider sends a `call.started` event, the popup appears while the
+  call is happening. Completed-call events still produce one popup.
+- Reps only receive popups for calls credited to them or unassigned calls.
+  Managers and owners see the whole yard.
+- The feed remembers seen call ids in the browser session, so a start event and
+  its later completion do not produce two popups.
+
 ## Two universal entry points
 
 Both are token-authenticated. The token is generated per yard and can be

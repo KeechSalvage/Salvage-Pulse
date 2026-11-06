@@ -682,6 +682,63 @@ export interface OverdueAlertResult {
   texts: number; // SMS nudges to reps with a mobile on file
 }
 
+export type CallPopupMode = "popup" | "queue" | "off";
+
+export interface CallPopupSettings {
+  mode: CallPopupMode;
+  updated_at: string;
+}
+
+export interface CallPopupPriorCall {
+  id: string;
+  created_at: string;
+  rep_name: string;
+  direction: string;
+  category: string;
+  outcome: string;
+  overall_score: number;
+  summary: string;
+  duration_sec: number;
+  has_audio: boolean;
+  has_transcript: boolean;
+  delivery_call: boolean;
+}
+
+export interface CallPopupData {
+  event_id: string;
+  call_id: string;
+  external_id: string;
+  provider: string;
+  direction: string;
+  status: string;
+  number: string;
+  display_number: string;
+  other_number: string;
+  caller_name: string;
+  customer_name: string;
+  rep_id: string;
+  rep_name: string;
+  started_at: string;
+  known: boolean;
+  customer: {
+    key: string;
+    name: string;
+    phone: string;
+    tag: string;
+    email: string;
+    alt_phones: string[];
+  };
+  notes: { id: string; text: string; author: string; created_at: string }[];
+  prior_calls: CallPopupPriorCall[];
+  line: { number: string; label: string; name: string };
+  has_audio: boolean;
+}
+
+export interface CallPopupFeed {
+  popups: CallPopupData[];
+  server_time: string;
+}
+
 export interface MobileNumber {
   mobile: string; // "" clears it
   direct_phone: string; // direct/office line used to match calls to this user

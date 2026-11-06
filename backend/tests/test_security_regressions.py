@@ -2133,6 +2133,143 @@ class PhoneSettingsTests(unittest.TestCase):
         self.assertEqual(cleared["alt_phones"], [])
 
 
+class CallPopupTests(unittest.TestCase):
+    """Incoming-call screen-pop feed and per-user display preference."""
+
+    def _yard(self, name: str = "Popup Yard"):
+        client = _client()
+        owner, _, _ = _signup(client, yard=name)
+        token = client.get("/api/ingest/settings").json()["token"]
+        return client, owner, token
+
+    def _call(
+        self,
+        client: TestClient,
+        token: str,
+        *,
+        call_id: str,
+        phone: str,
+        caller: str,
+        transcript: str = "Rep: Thanks for calling.\nCustomer: I need a 2019 Honda Civic headlight.",
+    ):
+        response = client.post(
+            f"/api/ingest/webhook/{token}?wait=1",
+            json={
+                "call_id": call_id,
+                "direction": "inbound",
+                "from": phone,
+                "to": "+15125550000",
+                "caller_name": caller,
+                "status": "completed",
+                "transcript": transcript,
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["status"], "completed")
+        return response.json()["call_id"]
+
+    def test_popup_preferences_default_and_round_trip(self):
+        client = _client()
+        owner, _, _ = _signup(client, yard="Popup Pref Yard")
+        self.assertTrue(owner["id"])
+        initial = client.get("/api/me/call-popups").json()
+        self.assertEqual(initial["mode"], "popup")
+
+        saved = client.put("/api/me/call-popups", json={"mode": "queue"})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(saved.json()["mode"], "queue")
+        self.assertEqual(client.get("/api/me/call-popups").json()["mode"], "queue")
+
+        bad = client.put("/api/me/call-popups", json={"mode": "sometimes"})
+        self.assertEqual(bad.status_code, 400)
+
+    def test_feed_returns_customer_history_and_flags_unknown_callers(self):
+        client, owner, token = self._yard("Popup Feed Yard")
+        first_call = self._call(
+            client, token,
+            call_id="popup-1",
+            phone="+15125550142",
+            caller="Acme Collision",
+        )
+        second_call = self._call(
+            client, token,
+            call_id="popup-2",
+            phone="+15125550142",
+            caller="Acme Collision",
+        )
+        self._call(
+            client, token,
+            call_id="popup-unknown",
+            phone="+15125559999",
+            caller="+15125559999",
+        )
+
+        feed = client.get("/api/call-popups/feed?since=2000-01-01T00:00:00Z").json()
+        by_external = {item["external_id"]: item for item in feed["popups"]}
+        self.assertIn("popup-2", by_external)
+        popup = by_external["popup-2"]
+        self.assertTrue(popup["known"])
+        self.assertEqual(popup["customer_name"], "Acme Collision")
+        self.assertEqual(popup["number"], "+15125550142")
+        self.assertEqual(popup["call_id"], second_call)
+        self.assertEqual([c["id"] for c in popup["prior_calls"]], [first_call])
+
+        unknown = by_external["popup-unknown"]
+        self.assertFalse(unknown["known"])
+        self.assertEqual(unknown["customer_name"], "")
+        self.assertEqual(unknown["prior_calls"], [])
+
+        future = client.get("/api/call-popups/feed?since=2999-01-01T00:00:00Z").json()
+        self.assertEqual(future["popups"], [])
+
+    def test_reps_only_get_popups_for_their_own_calls(self):
+        client, _, token = self._yard("Popup Rep Scope Yard")
+        rep_email = f"popup-rep-{uuid.uuid4().hex[:8]}@example.test"
+        created = client.post(
+            "/api/users/reps",
+            json={"name": "Popup Rep", "email": rep_email, "password": "StrongPass!234", "title": "Sales Rep"},
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        rep_id = created.json()["id"]
+
+        self._call(client, token, call_id="owner-popup", phone="+15125550201", caller="Owner Caller")
+        response = client.post(
+            f"/api/ingest/webhook/{token}?wait=1",
+            json={
+                "call_id": "rep-popup",
+                "direction": "inbound",
+                "from": "+15125550202",
+                "to": "+15125550000",
+                "caller_name": "Rep Caller",
+                "agent_email": rep_email,
+                "status": "completed",
+                "transcript": "Rep: Thanks for calling.\nCustomer: I need a door.",
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        rep_client = _client()
+        _login(rep_client, rep_email, "StrongPass!234")
+        feed = rep_client.get("/api/call-popups/feed?since=2000-01-01T00:00:00Z").json()
+        external_ids = {item["external_id"] for item in feed["popups"]}
+        self.assertIn("rep-popup", external_ids)
+        self.assertNotIn("owner-popup", external_ids)
+        rep_popup = next(item for item in feed["popups"] if item["external_id"] == "rep-popup")
+        self.assertEqual(rep_popup["rep_id"], rep_id)
+
+        manager_feed = client.get("/api/call-popups/feed?since=2000-01-01T00:00:00Z").json()
+        manager_ids = {item["external_id"] for item in manager_feed["popups"]}
+        self.assertIn("owner-popup", manager_ids)
+        self.assertIn("rep-popup", manager_ids)
+
+    def test_popup_feed_is_scoped_to_the_signed_in_yard(self):
+        client_a, _, token_a = self._yard("Popup Tenant A")
+        client_b, _, _ = self._yard("Popup Tenant B")
+        self._call(client_a, token_a, call_id="tenant-pop-up", phone="+15125550111", caller="Tenant A Caller")
+        feed = client_b.get("/api/call-popups/feed?since=2000-01-01T00:00:00Z").json()
+        self.assertFalse(any(item.get("external_id") == "tenant-pop-up" for item in feed["popups"]))
+
+
 class IngestPipelineTests(unittest.TestCase):
     """Provider-agnostic call ingestion: token auth, adapters, AI hand-off, de-dupe."""
 

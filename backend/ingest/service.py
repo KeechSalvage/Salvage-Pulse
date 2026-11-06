@@ -100,7 +100,9 @@ def _event_summary(event: dict[str, Any]) -> dict[str, Any]:
         for key in (
             "id", "org_id", "provider", "external_id", "event", "status",
             "message", "call_id", "attempts", "duration_sec", "engine",
-            "created_at", "updated_at", "rep_name", "customer_name",
+            "created_at", "updated_at", "rep_name", "rep_id", "customer_name",
+            "direction", "from_number", "to_number", "customer_phone",
+            "agent_phone", "started_at",
         )
     }
 
@@ -143,7 +145,14 @@ def record_event(
                 "created_at": now,
                 "updated_at": now,
                 "rep_name": rep_name,
+                "rep_id": (call.metadata.get("rep_id") if call else "") or "",
                 "customer_name": customer_name or (call.customer_name if call else ""),
+                "direction": (call.direction if call else "") or "",
+                "from_number": (call.from_number if call else "") or "",
+                "to_number": (call.to_number if call else "") or "",
+                "customer_phone": (call.customer_phone if call else "") or "",
+                "agent_phone": (call.agent_phone if call else "") or "",
+                "started_at": (call.started_at if call else "") or now,
             }
             events.insert(0, existing)
         else:
@@ -578,6 +587,7 @@ def process_job(job_id: str) -> dict[str, Any] | None:
             duration_sec=float(summary.get("duration_sec") or 0),
             engine=engine,
             rep_name=str(summary.get("rep_name") or ""),
+            rep_id=str(summary.get("rep_id") or ""),
             customer_name=str(summary.get("customer_name") or ""),
         )
         _remove_job(job_id)
