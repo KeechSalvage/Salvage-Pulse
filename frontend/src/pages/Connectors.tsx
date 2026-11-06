@@ -42,6 +42,14 @@ const GENERIC_SAMPLE = `{
   "transcript": "optional — skip AI transcription by sending text"
 }`;
 
+const PROVIDER_LABEL: Record<string, string> = {
+  generic: "Generic",
+  twilio: "Twilio",
+  ringcentral: "RingCentral",
+  telnyx: "Telnyx",
+  vonage: "Vonage",
+};
+
 const PROVIDER_COPY: Record<string, { title: string; body: string; hint: string }> = {
   generic: {
     title: "Generic / any provider",
@@ -247,7 +255,7 @@ export default function Connectors() {
                       provider === name ? "border-amber-400/60 bg-amber-500/15 text-amber-200" : "border-border text-slate-400 hover:text-white",
                     )}
                   >
-                    {name === "ringcentral" ? "RingCentral" : name === "vonage" ? "Vonage" : name}
+                    {PROVIDER_LABEL[name] ?? name}
                   </button>
                 ))}
               </div>
@@ -314,56 +322,73 @@ export default function Connectors() {
 
               <details className="mt-5 rounded-xl border border-border bg-surface/60 p-4">
                 <summary className="cursor-pointer select-none text-sm font-semibold text-white">
-                  Provider authentication (optional)
+                  {PROVIDER_LABEL[provider] ?? "Provider"} authentication (optional)
                 </summary>
                 <p className="mt-2 text-xs text-slate-500">
                   Secrets are stored server-side and never returned by the API. Leave a secret blank to keep the saved value.
                 </p>
                 <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  <div>
-                    <Label htmlFor="ingest-generic-signing">Generic signing secret {configured.generic?.signing_configured ? "· saved" : ""}</Label>
-                    <Input id="ingest-generic-signing" data-testid="ingest-generic-signing" type="password" autoComplete="off" placeholder={configured.generic?.signing_configured ? "••••••••" : "HMAC-SHA256 secret"} value={secrets.genericSigning ?? ""} onChange={(e) => setSecrets((s) => ({ ...s, genericSigning: e.target.value }))} className="mt-2" />
-                  </div>
-                  <div>
-                    <Label htmlFor="ingest-generic-media">Recording bearer token {configured.generic?.media_auth_configured ? "· saved" : ""}</Label>
-                    <Input id="ingest-generic-media" type="password" autoComplete="off" placeholder="Only if recordings need auth" value={secrets.genericMedia ?? ""} onChange={(e) => setSecrets((s) => ({ ...s, genericMedia: e.target.value }))} className="mt-2" />
-                  </div>
-                  <div>
-                    <Label htmlFor="ingest-twilio-signing">Twilio Auth Token / signing secret {configured.twilio?.signing_configured ? "· saved" : ""}</Label>
-                    <Input id="ingest-twilio-signing" type="password" autoComplete="off" placeholder={configured.twilio?.signing_configured ? "••••••••" : "Auth Token"} value={secrets.twilioSigning ?? ""} onChange={(e) => setSecrets((s) => ({ ...s, twilioSigning: e.target.value }))} className="mt-2" />
-                  </div>
-                  <div>
-                    <Label htmlFor="ingest-twilio-sid">Twilio Account SID</Label>
-                    <Input id="ingest-twilio-sid" autoComplete="off" placeholder={configured.twilio?.account_sid || "AC…"} value={secrets.twilioSid ?? ""} onChange={(e) => setSecrets((s) => ({ ...s, twilioSid: e.target.value }))} className="mt-2" />
-                  </div>
-                  <div className="md:col-span-2">
-                    <Label htmlFor="ingest-twilio-token">Optional separate recording token {configured.twilio?.media_auth_configured ? "· saved" : ""}</Label>
-                    <Input id="ingest-twilio-token" type="password" autoComplete="off" placeholder="Defaults to the Auth Token above" value={secrets.twilioToken ?? ""} onChange={(e) => setSecrets((s) => ({ ...s, twilioToken: e.target.value }))} className="mt-2" />
-                  </div>
-                  <div>
-                    <Label htmlFor="ingest-telnyx-signing">Telnyx shared secret {configured.telnyx?.signing_configured ? "· saved" : ""}</Label>
-                    <Input id="ingest-telnyx-signing" type="password" autoComplete="off" placeholder={configured.telnyx?.signing_configured ? "••••••••" : "Optional X-Ingest-Secret value"} value={secrets.telnyxSigning ?? ""} onChange={(e) => setSecrets((s) => ({ ...s, telnyxSigning: e.target.value }))} className="mt-2" />
-                  </div>
-                  <div>
-                    <Label htmlFor="ingest-vonage-signing">Vonage shared secret {configured.vonage?.signing_configured ? "· saved" : ""}</Label>
-                    <Input id="ingest-vonage-signing" type="password" autoComplete="off" placeholder={configured.vonage?.signing_configured ? "••••••••" : "Optional X-Ingest-Secret value"} value={secrets.vonageSigning ?? ""} onChange={(e) => setSecrets((s) => ({ ...s, vonageSigning: e.target.value }))} className="mt-2" />
-                  </div>
-                  <div>
-                    <Label htmlFor="ingest-rc-signing">RingCentral verification token {configured.ringcentral?.signing_configured ? "· saved" : ""}</Label>
-                    <Input id="ingest-rc-signing" type="password" autoComplete="off" placeholder={configured.ringcentral?.signing_configured ? "••••••••" : "Optional verification token"} value={secrets.ringcentralSigning ?? ""} onChange={(e) => setSecrets((s) => ({ ...s, ringcentralSigning: e.target.value }))} className="mt-2" />
-                  </div>
-                  <div>
-                    <Label htmlFor="ingest-rc-client">RingCentral Client ID {configured.ringcentral?.client_id ? "· saved" : ""}</Label>
-                    <Input id="ingest-rc-client" autoComplete="off" placeholder={configured.ringcentral?.client_id || "JWT app client id"} value={secrets.ringcentralClientId ?? ""} onChange={(e) => setSecrets((s) => ({ ...s, ringcentralClientId: e.target.value }))} className="mt-2" />
-                  </div>
-                  <div>
-                    <Label htmlFor="ingest-rc-secret">RingCentral Client Secret {configured.ringcentral?.media_auth_configured ? "· saved" : ""}</Label>
-                    <Input id="ingest-rc-secret" type="password" autoComplete="off" placeholder="JWT app client secret" value={secrets.ringcentralSecret ?? ""} onChange={(e) => setSecrets((s) => ({ ...s, ringcentralSecret: e.target.value }))} className="mt-2" />
-                  </div>
-                  <div>
-                    <Label htmlFor="ingest-rc-jwt">RingCentral JWT</Label>
-                    <Input id="ingest-rc-jwt" type="password" autoComplete="off" placeholder="Only needed to fetch RingCentral recordings" value={secrets.ringcentralJwt ?? ""} onChange={(e) => setSecrets((s) => ({ ...s, ringcentralJwt: e.target.value }))} className="mt-2" />
-                  </div>
+                  {provider === "generic" && (
+                    <>
+                      <div>
+                        <Label htmlFor="ingest-generic-signing">Signing secret {configured.generic?.signing_configured ? "· saved" : ""}</Label>
+                        <Input id="ingest-generic-signing" data-testid="ingest-generic-signing" type="password" autoComplete="off" placeholder={configured.generic?.signing_configured ? "••••••••" : "HMAC-SHA256 secret"} value={secrets.genericSigning ?? ""} onChange={(e) => setSecrets((s) => ({ ...s, genericSigning: e.target.value }))} className="mt-2" />
+                      </div>
+                      <div>
+                        <Label htmlFor="ingest-generic-media">Recording bearer token {configured.generic?.media_auth_configured ? "· saved" : ""}</Label>
+                        <Input id="ingest-generic-media" type="password" autoComplete="off" placeholder="Only if recordings need auth" value={secrets.genericMedia ?? ""} onChange={(e) => setSecrets((s) => ({ ...s, genericMedia: e.target.value }))} className="mt-2" />
+                      </div>
+                    </>
+                  )}
+                  {provider === "twilio" && (
+                    <>
+                      <div>
+                        <Label htmlFor="ingest-twilio-signing">Auth Token / signing secret {configured.twilio?.signing_configured ? "· saved" : ""}</Label>
+                        <Input id="ingest-twilio-signing" type="password" autoComplete="off" placeholder={configured.twilio?.signing_configured ? "••••••••" : "Auth Token"} value={secrets.twilioSigning ?? ""} onChange={(e) => setSecrets((s) => ({ ...s, twilioSigning: e.target.value }))} className="mt-2" />
+                      </div>
+                      <div>
+                        <Label htmlFor="ingest-twilio-sid">Account SID</Label>
+                        <Input id="ingest-twilio-sid" autoComplete="off" placeholder={configured.twilio?.account_sid || "AC…"} value={secrets.twilioSid ?? ""} onChange={(e) => setSecrets((s) => ({ ...s, twilioSid: e.target.value }))} className="mt-2" />
+                      </div>
+                      <div className="md:col-span-2">
+                        <Label htmlFor="ingest-twilio-token">Optional separate recording token {configured.twilio?.media_auth_configured ? "· saved" : ""}</Label>
+                        <Input id="ingest-twilio-token" type="password" autoComplete="off" placeholder="Defaults to the Auth Token above" value={secrets.twilioToken ?? ""} onChange={(e) => setSecrets((s) => ({ ...s, twilioToken: e.target.value }))} className="mt-2" />
+                      </div>
+                    </>
+                  )}
+                  {provider === "ringcentral" && (
+                    <>
+                      <div>
+                        <Label htmlFor="ingest-rc-signing">Verification token {configured.ringcentral?.signing_configured ? "· saved" : ""}</Label>
+                        <Input id="ingest-rc-signing" type="password" autoComplete="off" placeholder={configured.ringcentral?.signing_configured ? "••••••••" : "Optional verification token"} value={secrets.ringcentralSigning ?? ""} onChange={(e) => setSecrets((s) => ({ ...s, ringcentralSigning: e.target.value }))} className="mt-2" />
+                      </div>
+                      <div>
+                        <Label htmlFor="ingest-rc-client">Client ID {configured.ringcentral?.client_id ? "· saved" : ""}</Label>
+                        <Input id="ingest-rc-client" autoComplete="off" placeholder={configured.ringcentral?.client_id || "JWT app client id"} value={secrets.ringcentralClientId ?? ""} onChange={(e) => setSecrets((s) => ({ ...s, ringcentralClientId: e.target.value }))} className="mt-2" />
+                      </div>
+                      <div>
+                        <Label htmlFor="ingest-rc-secret">Client Secret {configured.ringcentral?.media_auth_configured ? "· saved" : ""}</Label>
+                        <Input id="ingest-rc-secret" type="password" autoComplete="off" placeholder="JWT app client secret" value={secrets.ringcentralSecret ?? ""} onChange={(e) => setSecrets((s) => ({ ...s, ringcentralSecret: e.target.value }))} className="mt-2" />
+                      </div>
+                      <div>
+                        <Label htmlFor="ingest-rc-jwt">JWT</Label>
+                        <Input id="ingest-rc-jwt" type="password" autoComplete="off" placeholder="Only needed to fetch RingCentral recordings" value={secrets.ringcentralJwt ?? ""} onChange={(e) => setSecrets((s) => ({ ...s, ringcentralJwt: e.target.value }))} className="mt-2" />
+                      </div>
+                    </>
+                  )}
+                  {provider === "telnyx" && (
+                    <div className="md:col-span-2">
+                      <Label htmlFor="ingest-telnyx-signing">Shared secret {configured.telnyx?.signing_configured ? "· saved" : ""}</Label>
+                      <Input id="ingest-telnyx-signing" type="password" autoComplete="off" placeholder={configured.telnyx?.signing_configured ? "••••••••" : "Optional X-Ingest-Secret value"} value={secrets.telnyxSigning ?? ""} onChange={(e) => setSecrets((s) => ({ ...s, telnyxSigning: e.target.value }))} className="mt-2" />
+                      <p className="mt-1 text-xs text-slate-500">Recording downloads can also use the server-level TELNYX_API_KEY.</p>
+                    </div>
+                  )}
+                  {provider === "vonage" && (
+                    <div className="md:col-span-2">
+                      <Label htmlFor="ingest-vonage-signing">Shared secret {configured.vonage?.signing_configured ? "· saved" : ""}</Label>
+                      <Input id="ingest-vonage-signing" type="password" autoComplete="off" placeholder={configured.vonage?.signing_configured ? "••••••••" : "Optional X-Ingest-Secret value"} value={secrets.vonageSigning ?? ""} onChange={(e) => setSecrets((s) => ({ ...s, vonageSigning: e.target.value }))} className="mt-2" />
+                    </div>
+                  )}
                 </div>
               </details>
 
@@ -464,40 +489,42 @@ export default function Connectors() {
           </div>
         </Panel>
 
-        <Panel className="xl:col-span-12" testId="ringcentral-panel">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <Overline>Optional legacy sync</Overline>
-              <h3 className="mt-1 flex items-center gap-2 text-xl font-bold text-white">
-                <Phone className="size-5 text-sky-400" /> RingCentral call-log sync
-              </h3>
-              <p className="mt-2 max-w-3xl text-sm text-slate-400">
-                Pull metadata and existing recordings from RingCentral's call log every 30 minutes. This is not required for live ingestion — the universal endpoint above works with any provider.
-              </p>
+        {provider === "ringcentral" && (
+          <Panel className="xl:col-span-12" testId="ringcentral-panel">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <Overline>Optional legacy sync</Overline>
+                <h3 className="mt-1 flex items-center gap-2 text-xl font-bold text-white">
+                  <Phone className="size-5 text-sky-400" /> RingCentral call-log sync
+                </h3>
+                <p className="mt-2 max-w-3xl text-sm text-slate-400">
+                  Pull metadata and existing recordings from RingCentral's call log every 30 minutes. This is not required for live ingestion — the universal endpoint above works with any provider.
+                </p>
+              </div>
+              {rc?.connected ? (
+                <div className="flex gap-2">
+                  <Button size="sm" disabled={sync.isPending} onClick={() => sync.mutate()}>
+                    {sync.isPending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} Sync now
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => disconnect.mutate()}>Disconnect</Button>
+                </div>
+              ) : (
+                <Button size="sm" disabled={!rc?.configured || connect.isPending} onClick={() => connect.mutate()}>
+                  {connect.isPending && <Loader2 className="size-4 animate-spin" />} Connect RingCentral
+                </Button>
+              )}
             </div>
             {rc?.connected ? (
-              <div className="flex gap-2">
-                <Button size="sm" disabled={sync.isPending} onClick={() => sync.mutate()}>
-                  {sync.isPending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} Sync now
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => disconnect.mutate()}>Disconnect</Button>
-              </div>
+              <p className="mt-3 text-sm text-emerald-300">
+                Connected by {rc.connected_by}. {rc.last_sync_at ? `Last sync ${fmtDate(rc.last_sync_at)} — ${rc.last_result}` : rc.last_result}
+              </p>
             ) : (
-              <Button size="sm" disabled={!rc?.configured || connect.isPending} onClick={() => connect.mutate()}>
-                {connect.isPending && <Loader2 className="size-4 animate-spin" />} Connect RingCentral
-              </Button>
+              <p className="mt-3 text-sm text-amber-200/80">
+                {rc?.configured ? "Not connected." : "RingCentral OAuth is not configured on this server. The universal webhook above is the recommended path."}
+              </p>
             )}
-          </div>
-          {rc?.connected ? (
-            <p className="mt-3 text-sm text-emerald-300">
-              Connected by {rc.connected_by}. {rc.last_sync_at ? `Last sync ${fmtDate(rc.last_sync_at)} — ${rc.last_result}` : rc.last_result}
-            </p>
-          ) : (
-            <p className="mt-3 text-sm text-amber-200/80">
-              {rc?.configured ? "Not connected." : "RingCentral OAuth is not configured on this server. The universal webhook above is the recommended path."}
-            </p>
-          )}
-        </Panel>
+          </Panel>
+        )}
       </div>
     </>
   );
