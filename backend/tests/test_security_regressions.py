@@ -1637,8 +1637,21 @@ class TransportSecurityTests(unittest.TestCase):
         response = _client().get("/api/health")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers.get("x-content-type-options"), "nosniff")
-        self.assertEqual(response.headers.get("x-frame-options"), "DENY")
+        # SAMEORIGIN keeps the Delivery Dashboard embed working; third parties
+        # still cannot frame the app.
+        self.assertEqual(response.headers.get("x-frame-options"), "SAMEORIGIN")
+        self.assertIn("frame-ancestors 'self'", response.headers.get("content-security-policy", ""))
+        self.assertIn("frame-src 'self'", response.headers.get("content-security-policy", ""))
         self.assertIn("content-security-policy", response.headers)
+
+    def test_delivery_dashboard_csp_allows_pdf_worker_and_supabase(self):
+        response = _client().get("/delivery-dash/index.html")
+        csp = response.headers.get("content-security-policy", "")
+        self.assertIn("frame-ancestors 'self'", csp)
+        self.assertIn("worker-src 'self' blob:", csp)
+        self.assertIn("https://*.supabase.co", csp)
+        self.assertIn("script-src 'self' 'unsafe-eval'", csp)
+        self.assertEqual(response.headers.get("x-frame-options"), "SAMEORIGIN")
 
     def test_cross_site_post_is_blocked(self):
         response = _client().post(
