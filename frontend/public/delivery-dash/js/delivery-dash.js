@@ -27,6 +27,14 @@ let lastSavedTime = null;
 // database URL or key in the browser.
 const API_BASE = '/api/delivery';
 const SB_CACHE_KEY = 'sp_delivery_parts_cache';
+console.info('[delivery-dash] build 2026-11-07 — platform API');
+
+function apiFailure(err) {
+  if (err && err.name === 'TypeError' && /fetch/i.test(err.message || '')) {
+    return new Error('Could not reach the platform API. Hard-refresh the page; if it persists, the dashboard bundle is stale or the server is offline.');
+  }
+  return err;
+}
 
 // Drop credentials cached by the old Supabase-backed build. They are no longer
 // used, and leaving a database key in localStorage serves no purpose.
@@ -2321,7 +2329,7 @@ async function searchPartRecords(rawTerm) {
   } catch (err) {
     if (seq !== partSearchSeq) return;
     resultsEl.innerHTML = '';
-    setPartsStatus(`${err.message}`, 'error');
+    setPartsStatus(`${apiFailure(err).message}`, 'error');
   }
 }
 
@@ -2485,7 +2493,7 @@ async function deletePartRecord(part, btn) {
     showToast(`Deleted ${part.name} - ${part.id}`);
   } catch (err) {
     console.error('Delete part failed:', err);
-    setPartsStatus(`${err.message}`, 'error');
+    setPartsStatus(`${apiFailure(err).message}`, 'error');
     disarmDelete(btn);
   }
 }
@@ -2588,7 +2596,7 @@ async function searchCustomers(rawTerm) {
   } catch (err) {
     if (seq !== customerSearchSeq) return;
     resultsEl.innerHTML = '';
-    setCustomerStatus(`${err.message}`, 'error');
+    setCustomerStatus(`${apiFailure(err).message}`, 'error');
   }
 }
 
@@ -3100,9 +3108,9 @@ async function loadUploads() {
       uploadRows = pending;
       populateUploadsUserFilter();
       renderUploads();
-      setUploadsStatus(`${pending.length} upload${pending.length === 1 ? '' : 's'} saved in this browser only — ${err.message}`, 'error');
+      setUploadsStatus(`${pending.length} upload${pending.length === 1 ? '' : 's'} saved in this browser only — ${apiFailure(err).message}`, 'error');
     } else {
-      setUploadsStatus(`${err.message}`, 'error');
+      setUploadsStatus(`${apiFailure(err).message}`, 'error');
     }
   } finally {
     uploadsLoading = false;

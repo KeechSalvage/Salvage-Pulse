@@ -353,7 +353,14 @@ if dist_dir:
         # Resolve inside the dist directory only; blocks ../ path traversal.
         direct = os.path.realpath(os.path.join(dist_root, full_path))
         if (direct == dist_root or direct.startswith(dist_root + os.sep)) and os.path.isfile(direct):
-            return FileResponse(direct)
+            # The Delivery Dashboard is a standalone bundle inside the SPA. Its
+            # HTML already asks for no-store, but an old cached JS file would
+            # keep calling the retired Supabase project and fail behind the new
+            # CSP. Force revalidation for every asset under this path.
+            headers = None
+            if full_path.startswith("delivery-dash/"):
+                headers = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+            return FileResponse(direct, headers=headers)
 
         index_file = os.path.join(dist_root, "index.html")
         if os.path.isfile(index_file):
