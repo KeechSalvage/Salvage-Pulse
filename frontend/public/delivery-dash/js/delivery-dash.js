@@ -3,6 +3,24 @@ const EMBED_PARAMS = new URLSearchParams(window.location.search);
 const EMBED_MODE = EMBED_PARAMS.get('embed') === '1';
 const EMBED_USER = (EMBED_PARAMS.get('user') || '').trim();
 const EMBED_ROLE = (EMBED_PARAMS.get('role') || '').trim();
+const EMBED_ORG = (EMBED_PARAMS.get('org') || '').trim();
+
+// Keep an uploaded report per yard/user so leaving the page does not discard
+// it.  The old global key was shared by every login on the browser, so drop it.
+const SAVED_SESSION_KEY = 'sp_saved_deliveries:' + (EMBED_ORG || EMBED_USER || 'standalone');
+try {
+  // Migrate the previous user-scoped key (created before the iframe passed the
+  // org id) and remove the old cross-yard global key.
+  if (EMBED_ORG && EMBED_USER) {
+    const userKey = 'sp_saved_deliveries:' + EMBED_USER;
+    const legacy = localStorage.getItem(userKey);
+    if (legacy && !localStorage.getItem(SAVED_SESSION_KEY)) {
+      localStorage.setItem(SAVED_SESSION_KEY, legacy);
+    }
+    localStorage.removeItem(userKey);
+  }
+  localStorage.removeItem('sp_saved_deliveries');
+} catch (e) {}
 
 if (EMBED_USER) {
   window.PULSE_USER = EMBED_USER;
@@ -452,6 +470,7 @@ async function handleFile(file) {
     hasUnsavedChanges = false;
     lastSavedTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     updateSaveStatusUI();
+    persistReportSession();
 
     if (targetRep) {
       showToast(`Loaded ${allRows.length} delivery items & auto-assigned to ${targetRep.name}!`);
@@ -474,8 +493,8 @@ async function handleFile(file) {
   }
 }
 
-function restoreSavedSession() {
-  const saved = localStorage.getItem('sp_saved_deliveries');
+function restoreSavedSession(options = {}) {
+  const saved = localStorage.getItem(SAVED_SESSION_KEY);
   if (!saved) return;
   try {
     const data = JSON.parse(saved);
@@ -507,15 +526,15 @@ function restoreSavedSession() {
     updateMetrics();
     renderTable();
     updateSaveStatusUI();
-    showToast(`Restored ${allRows.length} saved deliveries!`);
+    if (!options.silent) showToast(`Restored ${allRows.length} saved deliveries!`);
   } catch (e) {
-    alert('Could not restore saved session: ' + e.message);
+    if (!options.silent) alert('Could not restore saved session: ' + e.message);
   }
 }
 
 function resetDropZoneHTML() {
   if (dropZoneContent) {
-    const saved = localStorage.getItem('sp_saved_deliveries');
+    const saved = localStorage.getItem(SAVED_SESSION_KEY);
     let hasSaved = false;
     let savedCount = 0;
     try {
@@ -959,6 +978,7 @@ function findCallMatch(customerName, phone) {
 
     if (normPhone && callPhone && (normPhone === callPhone || normPhone.slice(-7) === callPhone.slice(-7))) {
       return {
+        callId: c.id || '',
         repName: c.rep,
         matchType: 'phone',
         details: `Spoke with ${c.rep} (${c.time}) - ${c.category}: ${c.notes}`
@@ -967,6 +987,7 @@ function findCallMatch(customerName, phone) {
 
     if (cleanCust && callCust && (cleanCust.includes(callCust) || callCust.includes(cleanCust)) && cleanCust.length > 4) {
       return {
+        callId: c.id || '',
         repName: c.rep,
         matchType: 'name',
         details: `Customer matched ${c.rep}'s call (${c.time}) - ${c.category}`
@@ -1328,6 +1349,9 @@ function renderTable() {
         </div>
       `;
     }
+    const callLinkHTML = r.suggestion && r.suggestion.callId
+      ? `<button class="btn btn-outline btn-micro" type="button" data-view-call="${escAttr(r.suggestion.callId)}" title="Open the matched call in the platform" style="margin-top:0.35rem;">View call</button>`
+      : '';
 
     return `
       <tr>
@@ -1338,6 +1362,7 @@ function renderTable() {
         <td class="rep-cell">
           ${repSelectHTML}
           ${suggestionHTML}
+          ${callLinkHTML}
         </td>
         <td style="max-width:300px; color:#e2e8f0; font-weight:500;">
           ${editingRowPartId === r.id ? `
@@ -1514,7 +1539,7 @@ function updateSaveStatusUI(showSavedConfirmation = false) {
   }
 }
 
-function saveChanges(silent = false) {
+function persistReportSession() {
   const payload = {
     savedAt: new Date().toISOString(),
     salespersonName: salespersonName || 'Rich Brauns',
@@ -1522,10 +1547,14 @@ function saveChanges(silent = false) {
     rows: allRows
   };
   try {
-    localStorage.setItem('sp_saved_deliveries', JSON.stringify(payload));
+    localStorage.setItem(SAVED_SESSION_KEY, JSON.stringify(payload));
   } catch (e) {
     console.warn('LocalStorage save error:', e);
   }
+}
+
+function saveChanges(silent = false) {
+  persistReportSession();
   lastSavedSnapshot = JSON.stringify(allRows);
   hasUnsavedChanges = false;
   lastSavedTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -3588,6 +3617,20 @@ function applyEmbeddedRoleUI() {
 }
 applyEmbeddedRoleUI();
 
+// Restore the last report for this yard/user so navigating away from the
+// Delivery Dashboard does not discard an uploaded report.
+try {
+  const savedReport = localStorage.getItem(SAVED_SESSION_KEY);
+  if (savedReport) {
+    const data = JSON.parse(savedReport);
+    if (data && Array.isArray(data.rows) && data.rows.length) {
+      restoreSavedSession({ silent: true });
+    }
+  }
+} catch (e) {
+  console.warn('Saved report could not be restored:', e);
+}
+
 // PDF.js worker is bundled locally so parsing works offline and without CDNs.
 if (typeof pdfjsLib !== 'undefined' && pdfjsLib.GlobalWorkerOptions && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
   pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('js/pdf.worker.min.js', document.baseURI).href;
@@ -3615,6 +3658,20 @@ document.addEventListener('click', event => {
   const acceptBtn = target.closest('[data-accept-suggestion]');
   if (acceptBtn) {
     window.acceptSuggestion(acceptBtn.getAttribute('data-accept-suggestion'), acceptBtn.getAttribute('data-accept-rep'));
+    return;
+  }
+
+  const viewCallBtn = target.closest('[data-view-call]');
+  if (viewCallBtn) {
+    const callId = viewCallBtn.getAttribute('data-view-call');
+    if (callId && window.parent && window.parent !== window) {
+      // Keep the current dispatch board (including unsaved assignments) so it
+      // is still there when the user comes back from the call detail page.
+      if (hasUnsavedChanges) saveChanges(true);
+      window.parent.postMessage({ type: 'sp-open-call', callId }, window.location.origin);
+    } else {
+      showToast('Open this dashboard inside the platform to view the call.');
+    }
     return;
   }
 

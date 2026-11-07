@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/common";
 import { apiGet } from "@/lib/api";
@@ -18,6 +18,7 @@ const DASHBOARD_PATH = "/delivery-dash/index.html";
 const REP_COLORS = ["#38bdf8", "#4ade80", "#a855f7", "#fbbf24", "#f87171", "#818cf8", "#fb7185", "#2dd4bf"];
 
 interface DeliveryCall {
+  id: string;
   phone: string;
   customer: string;
   rep: string;
@@ -49,6 +50,7 @@ function daysAgo(days: number): string {
 
 export default function DeliveryDashboard() {
   const { data: me, isLoading } = useMe();
+  const navigate = useNavigate();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const isStaff = me?.role === "master" || me?.role === "admin";
 
@@ -71,6 +73,7 @@ export default function DeliveryDashboard() {
       (callsQuery.data ?? [])
         .filter((c) => c.customer_name || c.customer_phone)
         .map((c) => ({
+          id: c.id,
           phone: c.customer_phone || "",
           customer: c.customer_name || "",
           rep: c.rep_name || "",
@@ -106,12 +109,18 @@ export default function DeliveryDashboard() {
   useEffect(() => {
     function onMessage(event: MessageEvent) {
       if (event.origin !== window.location.origin) return;
-      const data = event.data as { type?: string } | null;
-      if (data?.type === "sp-delivery-ready") postData();
+      const data = event.data as { type?: string; callId?: unknown } | null;
+      if (data?.type === "sp-delivery-ready") {
+        postData();
+        return;
+      }
+      if (data?.type === "sp-open-call" && typeof data.callId === "string" && data.callId) {
+        navigate(`/calls/${encodeURIComponent(data.callId)}`);
+      }
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [postData]);
+  }, [postData, navigate]);
 
   useEffect(() => {
     postData();
@@ -126,6 +135,7 @@ export default function DeliveryDashboard() {
     embed: "1",
     user: me.name || me.email,
     role: me.role,
+    org: me.org_id || "",
   });
 
   return (
