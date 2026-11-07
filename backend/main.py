@@ -40,7 +40,7 @@ else:
 
 # Initialize database schema and run migrations
 database.init_schema()
-from routers import admin, analytics, auth, billing, calls, delivery, forms, ingest, popups, roleplay, settings, team
+from routers import admin, analytics, assistant, auth, billing, calls, delivery, forms, ingest, popups, roleplay, settings, team
 from security import request_origin_allowed
 
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "development").strip().lower()
@@ -323,6 +323,7 @@ app.include_router(analytics.router)
 app.include_router(roleplay.router)
 app.include_router(team.router)
 app.include_router(delivery.router)
+app.include_router(assistant.router)
 app.include_router(billing.public_router)
 app.include_router(billing.router)
 app.include_router(admin.router)

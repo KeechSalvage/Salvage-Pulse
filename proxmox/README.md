@@ -216,6 +216,10 @@ GEMINI_MODEL=gemini-2.5-flash
 
 Without a key the app falls back to rule-based scoring.
 
+The in-app **Wheelie** assistant uses the same `GEMINI_API_KEY` and the
+signed-in user's title/role to tailor its prompts and answers. Without a key it
+still works in role-aware guided mode backed by the user's live yard snapshot.
+
 ### Call-ingestion transcription (Deepgram / AssemblyAI / OpenAI)
 
 Call recordings need a speech-to-text provider. Add **one** of these to the

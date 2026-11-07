@@ -2965,3 +2965,103 @@ class DeliveryDashboardTests(unittest.TestCase):
 
         rows = client.get("/api/delivery/customers").json()
         self.assertEqual(rows[0]["shop_name"], "Repaired Body")
+
+
+class AssistantTests(unittest.TestCase):
+    """Wheelie is authenticated, title-aware, and yard-scoped."""
+
+    def _create_member(self, owner_client, *, name: str, role: str, title: str | None = None) -> str:
+        email = f"assistant-{uuid.uuid4().hex[:8]}@example.test"
+        payload = {
+            "name": name,
+            "email": email,
+            "password": "MemberPass!234",
+            "role": role,
+        }
+        if title:
+            payload["title"] = title
+        response = owner_client.post("/api/users/reps", json=payload)
+        self.assertEqual(response.status_code, 200, response.text)
+        return email
+
+    def test_owner_context_is_team_focused(self):
+        client = _client()
+        _signup(client, yard="Assistant Owner Yard")
+        response = client.get("/api/assistant/context")
+        self.assertEqual(response.status_code, 200, response.text)
+        context = response.json()
+        self.assertEqual(context["role"], "owner")
+        self.assertIn("team", " ".join(context["suggestions"]).lower())
+        self.assertIn("owner", context["title"].lower())
+
+    def test_rep_context_and_team_question_stay_personal(self):
+        owner = _client()
+        _signup(owner, yard="Assistant Rep Yard")
+        email = self._create_member(owner, name="Alice Assistant", role="rep")
+        rep = _client()
+        _login(rep, email, "MemberPass!234")
+
+        context = rep.get("/api/assistant/context").json()
+        self.assertEqual(context["audience"], "rep")
+        self.assertIn("how am i", " ".join(context["suggestions"]).lower())
+
+        from unittest.mock import patch
+
+        with patch("assistant_service.gemini_service.generate_text_llm", return_value=None):
+            response = rep.post(
+                "/api/assistant/chat",
+                json={
+                    "messages": [
+                        {"role": "user", "content": "How is my team performing this month?"}
+                    ]
+                },
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("only see your own", response.json()["reply"].lower())
+
+    def test_title_can_override_role_for_inventory_prompts(self):
+        owner = _client()
+        _signup(owner, yard="Assistant Inventory Yard")
+        email = self._create_member(
+            owner,
+            name="Ivy Inventory",
+            role="sales_manager",
+            title="Inventory Manager",
+        )
+        member = _client()
+        _login(member, email, "MemberPass!234")
+        context = member.get("/api/assistant/context").json()
+        self.assertEqual(context["audience"], "inventory")
+        self.assertIn("arriv", " ".join(context["suggestions"]).lower())
+
+    def test_owner_team_reply_is_yard_scoped(self):
+        yard_a = _client()
+        _signup(yard_a, yard="Assistant Yard A")
+        self._create_member(yard_a, name="Rep Only A", role="rep")
+
+        yard_b = _client()
+        _signup(yard_b, yard="Assistant Yard B")
+        self._create_member(yard_b, name="Rep Only B", role="rep")
+
+        from unittest.mock import patch
+
+        with patch("assistant_service.gemini_service.generate_text_llm", return_value=None):
+            response = yard_a.post(
+                "/api/assistant/chat",
+                json={"messages": [{"role": "user", "content": "How is my team performing?"}]},
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        reply = response.json()["reply"]
+        self.assertIn("Rep Only A", reply)
+        self.assertNotIn("Rep Only B", reply)
+
+    def test_assistant_requires_authentication(self):
+        anonymous = _client()
+        self.assertEqual(anonymous.get("/api/assistant/context").status_code, 401)
+        self.assertEqual(
+            anonymous.post(
+                "/api/assistant/chat",
+                json={"messages": [{"role": "user", "content": "Hi"}]},
+            ).status_code,
+            401,
+        )

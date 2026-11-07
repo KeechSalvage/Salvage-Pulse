@@ -6,6 +6,7 @@ import PreviewEndingBanner from "@/components/PreviewEndingBanner";
 import EnterpriseTour from "@/components/EnterpriseTour";
 import DemoLimitDialog from "@/components/DemoLimitDialog";
 import ThemeToggle from "@/components/ThemeToggle";
+import WheelieChat from "@/components/WheelieChat";
 import { ContactUsButton } from "@/components/ContactUs";
 import BrandLogo from "@/components/BrandLogo";
 import AppFooter from "@/components/AppFooter";
@@ -217,6 +218,7 @@ export default function AppShell({ managerOnly = false, platform = false }: { ma
       </div>
 
       {isTrialEnded && <TrialExpiredModal isManager={isManagerLike(me.role)} />}
+      {!isTrialEnded && <WheelieChat me={me} />}
     </div>
   );
 }
