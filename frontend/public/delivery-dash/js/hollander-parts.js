@@ -1,5 +1,5 @@
 /* Hollander part number map - generated from "Hollander Parts - CLEAN.xlsx" (399 rows).
-   Source of truth is the Supabase table public.hollander_parts; this bundled copy is the offline fallback. */
+   Source of truth is the yard's part catalog in the platform database; this bundled copy is the offline fallback. */
 window.HOLLANDER_PARTS = [
   { name: "Front End Assembly", id: "100" },
   { name: "Bumper Cover, Fr", id: "101" },

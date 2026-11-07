@@ -40,7 +40,7 @@ else:
 
 # Initialize database schema and run migrations
 database.init_schema()
-from routers import admin, analytics, auth, billing, calls, forms, ingest, popups, roleplay, settings, team
+from routers import admin, analytics, auth, billing, calls, delivery, forms, ingest, popups, roleplay, settings, team
 from security import request_origin_allowed
 
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "development").strip().lower()
@@ -212,10 +212,10 @@ class SecurityHeadersMiddleware:
             "frame-src 'self' https://accounts.google.com; "
             "frame-ancestors 'self'; base-uri 'self'; form-action 'self'",
         ).strip()
-        # The Delivery Dashboard is a standalone static app (PDF.js + Supabase)
-        # embedded as a same-origin iframe by the console. It needs the PDF
-        # worker, inline styles from its templates, and Supabase/announcement
-        # API access that the main SPA does not.
+        # The Delivery Dashboard is a standalone static app (PDF.js) embedded as
+        # a same-origin iframe by the console. It needs the PDF worker, inline
+        # styles from its templates, and the platform's own API. All data now
+        # comes from /api/delivery, so no third-party origin is allowed.
         self.delivery_csp = os.environ.get(
             "DELIVERY_DASH_CONTENT_SECURITY_POLICY",
             "default-src 'self'; "
@@ -223,7 +223,7 @@ class SecurityHeadersMiddleware:
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: blob: https:; "
             "font-src 'self' data:; "
-            "connect-src 'self' https://*.supabase.co https://*.supabase.in; "
+            "connect-src 'self'; "
             "worker-src 'self' blob:; "
             "frame-src 'self'; "
             "frame-ancestors 'self'; base-uri 'self'; form-action 'self'",
@@ -322,6 +322,7 @@ app.include_router(forms.router)
 app.include_router(analytics.router)
 app.include_router(roleplay.router)
 app.include_router(team.router)
+app.include_router(delivery.router)
 app.include_router(billing.public_router)
 app.include_router(billing.router)
 app.include_router(admin.router)

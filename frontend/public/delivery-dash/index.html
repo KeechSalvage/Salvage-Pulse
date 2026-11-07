@@ -522,7 +522,7 @@
     <button class="btn btn-outline btn-sm" id="partsBtn" type="button" title="Search, add, edit and delete Hollander parts">
       🏷️ Parts <span id="partIdsStatusDot" style="color:#64748b;">●</span>
     </button>
-    <button class="btn btn-outline btn-sm" id="customersBtn" type="button" title="Search, add, edit and delete customers in Supabase">
+    <button class="btn btn-outline btn-sm" id="customersBtn" type="button" title="Search, add, edit and delete customers">
       👥 Customers
     </button>
     <button class="btn btn-success btn-sm hidden" id="headerSaveBtn">💾 Save Changes</button>
@@ -580,7 +580,7 @@
         <span id="saveStatusBadge" class="save-status-pill saved">✅ All Changes Saved</span>
       </div>
 
-      <!-- Supabase part-ID lookup status -->
+      <!-- Part-ID lookup status -->
       <div id="partIdStatusBar" class="hidden" style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap; margin-top:0.75rem; padding-top:0.75rem; border-top:1px solid var(--border); font-size:0.8rem; color:var(--text-muted);">
         <span id="partIdStatusText">🏷️ Hollander IDs: loading…</span>
         <span id="customerMatchStatus"></span>
@@ -746,7 +746,7 @@
   </div>
 </div>
 
-<!-- ================= SUPABASE PART-ID SETUP MODAL ================= -->
+<!-- ================= PART-ID SETTINGS MODAL ================= -->
 <div class="modal-overlay hidden" id="partIdsModal" style="z-index: 1100;">
   <div class="modal" style="max-width: 640px;">
     <div class="modal-header">
@@ -755,42 +755,23 @@
     </div>
     <div class="modal-body">
       <p style="font-size:0.85rem; color:var(--text-muted); margin-top:0; line-height:1.5;">
-        The dashboard reads part names and Hollander part numbers from the Supabase table
-        <code>hollander_parts</code>. When a delivery report is uploaded, each part is matched against that table and the
-        number is appended automatically — for example
-        <b style="color:var(--text);">Front End Assembly - 100</b>.
+        The dashboard reads part names and Hollander part numbers from your yard's part catalog in the platform.
+        When a delivery report is uploaded, each part is matched against that catalog and the number is appended
+        automatically — for example <b style="color:var(--text);">Front End Assembly - 100</b>.
       </p>
 
-      <div style="display:grid; gap:0.7rem; margin-bottom:1rem;">
-        <label style="display:flex; flex-direction:column; gap:0.3rem; font-size:0.8rem; color:var(--text-muted);">
-          Supabase project URL
-          <input id="sbUrl" type="text" placeholder="https://your-project.supabase.co" autocomplete="off" spellcheck="false"
-            style="background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
-        </label>
-        <label style="display:flex; flex-direction:column; gap:0.3rem; font-size:0.8rem; color:var(--text-muted);">
-          Publishable / anon key (read-only)
-          <input id="sbKey" type="password" placeholder="sb_publishable_..." autocomplete="off" spellcheck="false"
-            style="background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
-        </label>
-        <label style="display:flex; flex-direction:column; gap:0.3rem; font-size:0.8rem; color:var(--text-muted);">
-          Table name
-          <input id="sbTable" type="text" value="hollander_parts" autocomplete="off" spellcheck="false"
-            style="background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
-        </label>
-      </div>
-
       <div id="sbStatusText" style="background:#090f1d; border:1px solid var(--border); border-radius:8px; padding:0.7rem 0.9rem; font-size:0.82rem; color:var(--text-muted); line-height:1.5;">
-        Not connected yet.
+        Loading catalog status…
       </div>
 
-      <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:0; line-height:1.5;">
-        🔒 Only the publishable/anon key belongs here — never the service_role or secret key. The table is read-only for
-        this key thanks to row level security. Settings are stored in this browser only.
+      <p style="font-size:0.75rem; color:var(--text-muted); margin:0.8rem 0 0; line-height:1.5;">
+        🔒 The catalog is stored in your yard's database and protected by your sign-in. There is no database URL or
+        API key in this browser. Use <b>Use Bundled List</b> only when you need to work offline.
       </p>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline btn-sm" id="useBundledPartsBtn" type="button">Use Bundled List</button>
-      <button class="btn btn-purple btn-sm" id="syncPartIdsBtn" type="button">Save &amp; Sync</button>
+      <button class="btn btn-purple btn-sm" id="syncPartIdsBtn" type="button">Refresh Part IDs</button>
     </div>
   </div>
 </div>
@@ -804,7 +785,7 @@
     </div>
     <div class="modal-body">
       <p style="font-size:0.85rem; color:var(--text-muted); margin-top:0; line-height:1.5;">
-        Search the shared Supabase part list by part name or Hollander number. Add, edit or delete a part here — the
+        Search your yard's part catalog by part name or Hollander number. Add, edit or delete a part here — the
         uploaded report is never touched.
       </p>
 
@@ -812,7 +793,7 @@
         <input id="partSearchInput" type="search" placeholder="Search part name or Hollander number…" autocomplete="off" spellcheck="false"
           style="flex:1 1 260px; background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.5rem 0.7rem; border-radius:6px; font-size:0.9rem;">
         <button class="btn btn-purple btn-sm" id="addPartBtn" type="button">➕ Add Part</button>
-        <button class="btn btn-outline btn-sm" id="partSettingsBtn" type="button" title="Supabase connection settings">⚙️</button>
+        <button class="btn btn-outline btn-sm" id="partSettingsBtn" type="button" title="Part catalog settings">⚙️</button>
       </div>
 
       <div id="partSearchStatus" style="margin-top:0.6rem; font-size:0.8rem; color:var(--text-muted); line-height:1.5;">
@@ -873,7 +854,7 @@
     </div>
     <div class="modal-body">
       <p style="font-size:0.85rem; color:var(--text-muted); margin-top:0; line-height:1.5;">
-        Search the shared Supabase customer list by shop, phone, city or zip. Add, edit or delete a customer here — the
+        Search your yard's customer list by shop, phone, city or zip. Add, edit or delete a customer here — the
         uploaded report is never touched.
       </p>
 
@@ -1005,7 +986,7 @@
     <div class="modal-body">
       <p style="font-size:0.85rem; color:var(--text-muted); margin-top:0; line-height:1.5;">
         Who uploaded delivery reports, when, and how much they covered — use it to see who is using the system and who
-        is not. Activity is read from Supabase, so it is shared across devices.
+        is not. Activity is saved to your yard's database, so it is shared across devices.
       </p>
 
       <div style="display:flex; gap:0.75rem; flex-wrap:wrap; align-items:flex-end;">
@@ -1085,45 +1066,24 @@
     </div>
     <div class="modal-body">
       <p style="font-size:0.82rem; color:var(--text-muted); margin-top:0; line-height:1.5;">
-        These values are used for the spoken message. Calls are placed by the Supabase Edge Function
-        <code>announce-delivery</code> (see <code>supabase/functions/announce-delivery/index.ts</code>) so provider
-        credentials never live in the browser.
+        Calls are placed by the platform server, so the Twilio credentials and spoken script never reach the browser.
+        An administrator controls live versus test mode for the whole yard.
       </p>
 
       <div style="display:grid; gap:0.7rem;">
-        <label style="display:flex; flex-direction:column; gap:0.3rem; font-size:0.8rem; color:var(--text-muted);">
-          Yard name (spoken)
-          <input id="callYardName" type="text" placeholder="Ding's Auto Parts" autocomplete="off"
-            style="background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
-        </label>
-        <label style="display:flex; flex-direction:column; gap:0.3rem; font-size:0.8rem; color:var(--text-muted);">
-          Callback number (spoken)
-          <input id="callCallbackNumber" type="text" placeholder="(860) 555-0100" autocomplete="off"
-            style="background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
-        </label>
-        <label style="display:flex; flex-direction:column; gap:0.3rem; font-size:0.8rem; color:var(--text-muted);">
-          Edge Function URL
-          <input id="callEndpoint" type="url" placeholder="https://your-project.supabase.co/functions/v1/announce-delivery" autocomplete="off" spellcheck="false"
-            style="background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
-        </label>
-        <label style="display:flex; flex-direction:column; gap:0.3rem; font-size:0.8rem; color:var(--text-muted);">
-          Call key (optional shared secret)
-          <input id="callKey" type="password" autocomplete="off" spellcheck="false"
-            style="background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
-        </label>
-        <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.85rem; color:var(--text);">
-          <input id="callTestMode" type="checkbox" checked>
-          Test mode (show what would be called, but place no call)
-        </label>
+        <div id="callSettingsBadge"></div>
+        <div style="background:#090f1d; border:1px solid var(--border); border-radius:8px; padding:0.7rem 0.9rem;">
+          <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:0.35rem;">Spoken script</div>
+          <div id="callSettingsScript" style="font-size:0.85rem; color:var(--text); line-height:1.55;"></div>
+        </div>
       </div>
 
       <div id="callSettingsStatus" style="margin-top:0.8rem; background:#090f1d; border:1px solid var(--border); border-radius:8px; padding:0.7rem 0.9rem; font-size:0.82rem; color:var(--text-muted); line-height:1.5;">
-        Test mode is on by default.
+        Loading call settings…
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-outline btn-sm" id="cancelCallSettingsBtn" type="button">Cancel</button>
-      <button class="btn btn-purple btn-sm" id="saveCallSettingsBtn" type="button">Save settings</button>
+      <button class="btn btn-outline btn-sm" id="cancelCallSettingsBtn" type="button">Close</button>
     </div>
   </div>
 </div>
@@ -1136,7 +1096,7 @@
 <!-- PDF.js Local scripts (ensures instant offline & file:/// execution without CORS/worker blocks) -->
 <script src="js/pdf.min.js"></script>
 <script src="js/pdf.worker.min.js"></script>
-<!-- Hollander part-number map (bundled offline fallback; Supabase is the source of truth) -->
+<!-- Hollander part-number map (bundled offline fallback; the platform catalog is the source of truth) -->
 <script src="js/hollander-parts.js"></script>
 <script src="js/delivery-dash.js"></script>
 </body>

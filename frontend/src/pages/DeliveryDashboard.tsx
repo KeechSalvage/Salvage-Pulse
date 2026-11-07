@@ -10,8 +10,8 @@ import { roleLabel } from "@/lib/types";
 /**
  * Delivery Dashboard: the standalone report/PDF parser and dispatch board from
  * Delivery-Dash, served as a same-origin static app and embedded in an iframe.
- * Keeping it isolated preserves its PDF.js worker and Supabase lookups without
- * porting thousands of lines of vanilla JS into React.
+ * Keeping it isolated preserves its PDF.js worker and platform API lookups
+ * without porting thousands of lines of vanilla JS into React.
  */
 const DASHBOARD_PATH = "/delivery-dash/index.html";
 

@@ -21,30 +21,24 @@ let hasUnsavedChanges = false;
 let lastSavedSnapshot = null;
 let lastSavedTime = null;
 
-// ================= SUPABASE HOLLANDER PART-ID LOOKUP STATE =================
-const SB_CONFIG_KEY = 'sp_supabase_config';
-const SB_CACHE_KEY = 'sp_supabase_parts_cache';
-const SB_DEFAULTS = {
-  url: 'https://ubfupuhthqkvuxbcacok.supabase.co',
-  key: 'sb_publishable_NGMvVzu_JYHS_K7FvYTH5A_xyZv-8Cl',
-  table: 'hollander_parts'
-};
+// ================= PLATFORM API =================
+// All persistence (parts, customers, uploads, announcement calls) now goes
+// through the authenticated same-origin API. The dashboard no longer holds a
+// database URL or key in the browser.
+const API_BASE = '/api/delivery';
+const SB_CACHE_KEY = 'sp_delivery_parts_cache';
 
-let sbConfig = { ...SB_DEFAULTS };
-try {
-  const stored = JSON.parse(localStorage.getItem(SB_CONFIG_KEY) || 'null') || {};
-  sbConfig = {
-    url: stored.url || SB_DEFAULTS.url,
-    key: stored.key || SB_DEFAULTS.key,
-    table: stored.table || SB_DEFAULTS.table
-  };
-} catch (e) {}
+// Drop credentials cached by the old Supabase-backed build. They are no longer
+// used, and leaving a database key in localStorage serves no purpose.
+['sp_supabase_config', 'sp_supabase_parts_cache', 'sp_call_config'].forEach(key => {
+  try { localStorage.removeItem(key); } catch (e) {}
+});
 
 let partRows = [];              // [{ name, id, tokens, norm, sorted }]
 let partIndex = new Map();      // normalized token string -> record
 let partSortedIndex = new Map();// alphabetically sorted tokens -> record
 let partLastSynced = null;
-let partSource = 'bundled';     // 'supabase' | 'cache' | 'bundled'
+let partSource = 'bundled';     // 'server' | 'cache' | 'bundled'
 let partFetching = false;
 
 const PART_ABBREVIATIONS = {
@@ -55,7 +49,7 @@ const PART_ABBREVIATIONS = {
   fr: 'front', fl: 'front left', w: 'with', wo: 'without'
 };
 
-// Last successful Supabase payload, so refreshes survive a reload offline.
+// Last successful server payload, so refreshes survive a reload offline.
 try {
   const cached = JSON.parse(localStorage.getItem(SB_CACHE_KEY) || 'null');
   if (cached && Array.isArray(cached.parts) && cached.parts.length) {
@@ -71,7 +65,7 @@ if (!partRows.length && Array.isArray(window.HOLLANDER_PARTS)) {
   partSource = 'bundled';
 }
 
-// ================= SUPABASE CUSTOMER LOOKUP STATE =================
+// ================= CUSTOMER LOOKUP STATE =================
 const CUST_CACHE_KEY = 'sp_customers_cache_v3';
 const CUST_CACHE_HOURS = 12;
 let dbCustomers = [];        // [{ name, address1, address2, city, state, zip, phone, norm }]
@@ -1347,7 +1341,7 @@ function renderTable() {
           ` : `
             <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:0.4rem;">
               <span>${esc(r.Part)}${r.HollanderID
-                ? ` <span style="color:#34d399; font-weight:700; white-space:nowrap;" title="Hollander part number from Supabase">- ${esc(r.HollanderID)}</span>`
+                ? ` <span style="color:#34d399; font-weight:700; white-space:nowrap;" title="Hollander part number from the part catalog">- ${esc(r.HollanderID)}</span>`
                 : (partRows.length ? ` <span style="color:#64748b; font-size:0.72rem;" title="No Hollander part number matched">(no ID)</span>` : '')}</span>
               <button class="btn btn-outline btn-micro" type="button" title="Edit this part / Hollander number" data-edit-part="${escAttr(r.id)}" style="flex-shrink:0;">✏️</button>
             </div>
@@ -1705,7 +1699,7 @@ function saveCalls() {
   localStorage.setItem('sp_dashboard_calls', JSON.stringify(calls));
 }
 
-// ================= SUPABASE PART-ID LOOKUP =================
+// ================= PART-ID LOOKUP =================
 function normalizePartText(str) {
   return String(str || '')
     .toLowerCase()
@@ -1847,7 +1841,7 @@ function applyPartLookups(rows) {
   return matched;
 }
 
-// ================= CUSTOMER LOOKUP (address + phone from Supabase) =================
+// ================= CUSTOMER LOOKUP (address + phone from the platform) =================
 function normalizeCustomerName(str) {
   return String(str || '')
     .toLowerCase()
@@ -1983,34 +1977,28 @@ function updateCustomerMatchUI() {
   el.innerHTML = `👥 <b style="color:var(--text);">${matched}/${total}</b> customers matched`;
 }
 
-async function syncCustomersFromSupabase(options = {}) {
+async function syncCustomers(options = {}) {
   const silent = !!options.silent;
-  if (customersFetching || !sbConfig.url || !sbConfig.key) return;
+  if (customersFetching) return;
   customersFetching = true;
 
   try {
-    const base = (sbConfig.url || '').replace(/\/+$/, '');
     const pageSize = 1000;
     const collected = [];
     let offset = 0;
 
     while (true) {
       const params = new URLSearchParams();
-      params.set('select', 'shop_name,address1,address2,city,state,zip,phone');
-      params.set('order', 'shop_name.asc');
       params.set('limit', String(pageSize));
       params.set('offset', String(offset));
 
-      const res = await fetch(`${base}/rest/v1/customers?${params.toString()}`, {
-        headers: {
-          apikey: sbConfig.key,
-          Authorization: `Bearer ${sbConfig.key}`,
-          Accept: 'application/json'
-        }
+      const res = await fetch(`${API_BASE}/customers?${params.toString()}`, {
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' }
       });
       if (!res.ok) {
-        if (res.status === 404) throw new Error('The customers table does not exist yet.');
-        if (res.status === 401 || res.status === 403) throw new Error('Supabase rejected the API key.');
+        if (res.status === 401) throw new Error('Your session has expired. Reload the page and sign in again.');
+        if (res.status === 403) throw new Error('Your account does not have access to the customer list.');
         throw new Error(`Customer load failed (${res.status}).`);
       }
 
@@ -2021,8 +2009,6 @@ async function syncCustomersFromSupabase(options = {}) {
       offset += pageSize;
       if (collected.length > 50000) break; // safety valve
     }
-
-    if (!collected.length) throw new Error('The customers table is empty.');
 
     dbCustomers = collected.map(r => ({
       id: r.id,
@@ -2049,7 +2035,9 @@ async function syncCustomersFromSupabase(options = {}) {
     renderTable();
     updateCustomerMatchUI();
 
-    if (!silent) showToast(`Loaded ${dbCustomers.length} customers from Supabase.`);
+    if (!silent) showToast(collected.length
+      ? `Loaded ${dbCustomers.length} customers.`
+      : 'The customer directory is empty. Add customers or run the importer.');
   } catch (err) {
     console.warn('Customer lookup load failed:', err);
     if (!silent) showToast(`Customers: ${err.message}`);
@@ -2058,7 +2046,7 @@ async function syncCustomersFromSupabase(options = {}) {
   }
 }
 
-function setSupabaseStatus(message, tone) {
+function setPartsDbStatus(message, tone) {
   const el = document.getElementById('sbStatusText');
   if (!el) return;
   el.textContent = message;
@@ -2069,9 +2057,8 @@ function updatePartIdStatusUI() {
   const bar = document.getElementById('partIdStatusBar');
   const text = document.getElementById('partIdStatusText');
   const dot = document.getElementById('partIdsStatusDot');
-  const configured = !!(sbConfig.url && sbConfig.key);
 
-  if (dot) dot.style.color = partSource === 'supabase' ? '#34d399' : partRows.length ? '#fbbf24' : '#64748b';
+  if (dot) dot.style.color = partSource === 'server' ? '#34d399' : partRows.length ? '#fbbf24' : '#64748b';
   if (!bar || !text) return;
 
   if (!partRows.length && !allRows.length) {
@@ -2081,9 +2068,7 @@ function updatePartIdStatusUI() {
   bar.classList.remove('hidden');
 
   if (!partRows.length) {
-    text.innerHTML = configured
-      ? '🏷️ Hollander IDs: connected, no parts loaded yet — click Refresh Part IDs'
-      : '🏷️ Hollander IDs: no part list loaded — open 🏷️ Part IDs in the header';
+    text.innerHTML = '🏷️ Hollander IDs: no part list loaded — open 🏷️ Parts in the header';
     return;
   }
 
@@ -2098,75 +2083,38 @@ function updatePartIdStatusUI() {
   text.innerHTML = html;
 }
 
-function fillPartsForm() {
-  const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
-  setVal('sbUrl', sbConfig.url);
-  setVal('sbKey', sbConfig.key);
-  setVal('sbTable', sbConfig.table || SB_DEFAULTS.table);
-}
-
 function openPartIdsModal() {
-  fillPartsForm();
-
-  if (partSource === 'supabase' && partLastSynced) {
-    setSupabaseStatus(`✅ ${partRows.length} part IDs from Supabase. Last synced ${new Date(partLastSynced).toLocaleString()}.`, 'success');
-  } else if (sbConfig.url && sbConfig.key) {
-    setSupabaseStatus(`Connected to ${sbConfig.url}. Click "Save & Sync" to pull the latest part list.`, 'muted');
+  if (partSource === 'server' && partLastSynced) {
+    setPartsDbStatus(`✅ ${partRows.length} part IDs loaded for this yard. Last synced ${new Date(partLastSynced).toLocaleString()}.`, 'success');
   } else if (partRows.length) {
-    setSupabaseStatus(`Using the ${partRows.length}-part bundled list. Enter your Supabase project URL and publishable key to sync live.`, 'muted');
+    setPartsDbStatus(`Using the ${partRows.length}-part bundled list. Click "Refresh Part IDs" to load the yard catalog.`, 'muted');
   } else {
-    setSupabaseStatus('Not connected yet.', 'muted');
+    setPartsDbStatus('No part list loaded yet. Click "Refresh Part IDs".', 'muted');
   }
   document.getElementById('partIdsModal').classList.remove('hidden');
 }
 
-function saveSupabaseConfigFromForm() {
-  const val = id => (document.getElementById(id)?.value || '').trim();
-  sbConfig = {
-    url: val('sbUrl').replace(/\/+$/, ''),
-    key: val('sbKey'),
-    table: val('sbTable') || SB_DEFAULTS.table
-  };
-  localStorage.setItem(SB_CONFIG_KEY, JSON.stringify(sbConfig));
-}
-
-function supabasePartsUrl() {
-  const base = (sbConfig.url || '').replace(/\/+$/, '');
-  const table = sbConfig.table || SB_DEFAULTS.table;
-  return `${base}/rest/v1/${encodeURIComponent(table)}?select=part_name,hollander_id&order=part_name.asc`;
-}
-
-async function syncSupabaseParts(options = {}) {
+async function syncParts(options = {}) {
   const silent = !!options.silent;
   if (partFetching) return;
-
-  if (!sbConfig.url || !sbConfig.key) {
-    setSupabaseStatus('Enter the Supabase project URL and publishable key first.', 'error');
-    if (!silent) { showToast('Supabase: project URL and key are required.'); openPartIdsModal(); }
-    return;
-  }
 
   partFetching = true;
   const syncBtn = document.getElementById('syncPartIdsBtn');
   const refreshBtn = document.getElementById('refreshPartIdsBtn');
   if (syncBtn) { syncBtn.disabled = true; syncBtn.textContent = '⏳ Syncing…'; }
   if (refreshBtn) refreshBtn.disabled = true;
-  setSupabaseStatus(`⏳ Reading ${sbConfig.table} from Supabase…`, 'muted');
+  setPartsDbStatus('⏳ Loading part IDs…', 'muted');
 
   try {
-    const res = await fetch(supabasePartsUrl(), {
-      headers: {
-        apikey: sbConfig.key,
-        Authorization: `Bearer ${sbConfig.key}`,
-        Accept: 'application/json'
-      }
+    const res = await fetch(`${API_BASE}/parts`, {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' }
     });
 
     if (!res.ok) {
-      let msg = `Supabase error ${res.status}`;
-      if (res.status === 401 || res.status === 403) msg = 'Supabase rejected the API key. Use the publishable/anon key from Project Settings → API Keys.';
-      else if (res.status === 404) msg = `Table "${sbConfig.table}" not found. Run supabase/hollander_parts.sql in the SQL Editor.`;
-      else if (res.status === 400) msg = 'Supabase could not read the table. Check that the hollander_id and part_name columns exist.';
+      let msg = `Part lookup failed (${res.status}).`;
+      if (res.status === 401) msg = 'Your session has expired. Reload the page and sign in again.';
+      else if (res.status === 403) msg = 'Your account does not have access to the part catalog.';
       throw new Error(msg);
     }
 
@@ -2178,12 +2126,12 @@ async function syncSupabaseParts(options = {}) {
       }))
       .filter(p => p.name && p.id);
 
-    if (!collected.length) throw new Error('The hollander_parts table is empty. Run supabase/hollander_parts.sql to seed it.');
+    if (!collected.length) throw new Error('The part catalog is empty. Add a part or use the bundled list.');
 
     partRows = collected;
-    partSource = 'supabase';
+    partSource = 'server';
     partLastSynced = Date.now();
-    localStorage.setItem(SB_CACHE_KEY, JSON.stringify({ fetchedAt: partLastSynced, parts: partRows }));
+    persistPartCache();
     buildPartIndex();
 
     const matched = applyDatabaseLookups(allRows);
@@ -2193,22 +2141,20 @@ async function syncSupabaseParts(options = {}) {
     updatePartIdStatusUI();
     updateSaveStatusUI();
 
-    setSupabaseStatus(`✅ Loaded ${partRows.length} part IDs from Supabase. ${matched}/${allRows.length} current deliveries matched.`, 'success');
-    if (!silent) showToast(`Supabase: ${partRows.length} part IDs loaded — ${matched}/${allRows.length} deliveries matched.`);
+    setPartsDbStatus(`✅ Loaded ${partRows.length} part IDs. ${matched}/${allRows.length} current deliveries matched.`, 'success');
+    if (!silent) showToast(`${partRows.length} part IDs loaded — ${matched}/${allRows.length} deliveries matched.`);
   } catch (err) {
-    console.error('Supabase part sync failed:', err);
-    setSupabaseStatus(`❌ ${err.message}`, 'error');
-    if (!silent) showToast(`Supabase: ${err.message}`);
+    console.error('Part sync failed:', err);
+    setPartsDbStatus(`❌ ${err.message}`, 'error');
+    if (!silent) showToast(err.message);
   } finally {
     partFetching = false;
-    if (syncBtn) { syncBtn.disabled = false; syncBtn.textContent = 'Save & Sync'; }
+    if (syncBtn) { syncBtn.disabled = false; syncBtn.textContent = 'Refresh Part IDs'; }
     if (refreshBtn) refreshBtn.disabled = false;
   }
 }
 
 function useBundledParts() {
-  sbConfig = { ...SB_DEFAULTS };
-  localStorage.removeItem(SB_CONFIG_KEY);
   localStorage.removeItem(SB_CACHE_KEY);
   partLastSynced = null;
   partSource = 'bundled';
@@ -2222,17 +2168,11 @@ function useBundledParts() {
   renderTable();
   updatePartIdStatusUI();
   updateSaveStatusUI();
-  const urlEl = document.getElementById('sbUrl');
-  const keyEl = document.getElementById('sbKey');
-  const tableEl = document.getElementById('sbTable');
-  if (urlEl) urlEl.value = '';
-  if (keyEl) keyEl.value = '';
-  if (tableEl) tableEl.value = SB_DEFAULTS.table;
-  setSupabaseStatus(`Using the ${partRows.length}-part bundled list.`, 'muted');
+  setPartsDbStatus(`Using the ${partRows.length}-part bundled list.`, 'muted');
   showToast('Using the bundled part list.');
 }
 
-// ================= PARTS MANAGER (Supabase only) =================
+// ================= PARTS MANAGER =================
 let partSearchTimer = null;
 let partSearchSeq = 0;
 let lastPartTerm = '';
@@ -2305,7 +2245,7 @@ function persistPartCache() {
 
 // Rebuild the lookup index, re-match the open report and refresh every surface.
 function commitPartChange() {
-  partSource = 'supabase';
+  partSource = 'server';
   partLastSynced = Date.now();
   persistPartCache();
   buildPartIndex();
@@ -2349,38 +2289,22 @@ async function searchPartRecords(rawTerm) {
   const term = String(rawTerm || '').trim();
   lastPartTerm = term;
 
-  if (!sbConfig.url || !sbConfig.key) {
-    resultsEl.innerHTML = '';
-    setPartsStatus('Supabase is not configured. Open ⚙️ to add the project URL and publishable key.', 'error');
-    return;
-  }
-
-  // PostgREST filter syntax characters would break the query — strip them.
-  const safe = term.replace(/[(),*%"\\]/g, ' ').replace(/\s+/g, ' ').trim();
   const seq = ++partSearchSeq;
-  setPartsStatus('⏳ Searching Supabase…', 'muted');
+  setPartsStatus('⏳ Searching parts…', 'muted');
 
   try {
-    const base = (sbConfig.url || '').replace(/\/+$/, '');
-    const table = sbConfig.table || SB_DEFAULTS.table;
     const params = new URLSearchParams();
-    params.set('select', 'part_name,hollander_id');
-    params.set('order', 'part_name.asc');
-    params.set('limit', safe ? '40' : '25');
-    if (safe) params.set('or', `(part_name.ilike.*${safe}*,hollander_id.ilike.*${safe}*)`);
+    params.set('limit', term ? '40' : '25');
+    if (term) params.set('q', term);
 
-    const res = await fetch(`${base}/rest/v1/${encodeURIComponent(table)}?${params.toString()}`, {
-      headers: {
-        apikey: sbConfig.key,
-        Authorization: `Bearer ${sbConfig.key}`,
-        Accept: 'application/json'
-      }
+    const res = await fetch(`${API_BASE}/parts?${params.toString()}`, {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' }
     });
 
     if (seq !== partSearchSeq) return;
     if (!res.ok) {
-      if (res.status === 404) throw new Error('The hollander_parts table does not exist yet.');
-      if (res.status === 401 || res.status === 403) throw new Error('Supabase rejected the API key.');
+      if (res.status === 401) throw new Error('Your session has expired. Reload the page and sign in again.');
       throw new Error(`Search failed (${res.status}).`);
     }
 
@@ -2470,11 +2394,6 @@ async function savePartForm() {
     setPartFormStatus('The Hollander number must be digits only, for example 100.', 'error');
     return;
   }
-  if (!sbConfig.url || !sbConfig.key) {
-    setPartFormStatus('Supabase is not configured. Open ⚙️ to add the project URL and publishable key.', 'error');
-    return;
-  }
-
   const editing = editingPartOldId !== null;
   const normName = normalizePartText(name);
   const sameName = partRows.find(p => normalizePartText(p.name) === normName && String(p.id) !== String(editingPartOldId));
@@ -2497,28 +2416,23 @@ async function savePartForm() {
   setPartFormStatus(`⏳ Saving "${name} - ${number}"…`, 'muted');
 
   try {
-    const base = (sbConfig.url || '').replace(/\/+$/, '');
-    const table = sbConfig.table || SB_DEFAULTS.table;
     const url = editing
-      ? `${base}/rest/v1/${encodeURIComponent(table)}?hollander_id=eq.${encodeURIComponent(editingPartOldId)}`
-      : `${base}/rest/v1/${encodeURIComponent(table)}`;
+      ? `${API_BASE}/parts/${encodeURIComponent(editingPartOldId)}`
+      : `${API_BASE}/parts`;
 
     const res = await fetch(url, {
       method: editing ? 'PATCH' : 'POST',
-      headers: {
-        apikey: sbConfig.key,
-        Authorization: `Bearer ${sbConfig.key}`,
-        'Content-Type': 'application/json',
-        Prefer: 'return=minimal'
-      },
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ part_name: name, hollander_id: number })
     });
 
     if (!res.ok) {
-      let msg = `Supabase rejected the part (${res.status}).`;
+      let msg = `The part could not be saved (${res.status}).`;
       if (res.status === 409) msg = 'That part name or Hollander number already exists.';
-      else if (res.status === 401 || res.status === 403) msg = 'Saving parts is not allowed yet. An admin needs to run the latest supabase/hollander_parts.sql.';
-      else if (res.status === 404) msg = 'The hollander_parts table does not exist yet.';
+      else if (res.status === 401) msg = 'Your session has expired. Reload the page and sign in again.';
+      else if (res.status === 403) msg = 'Your account cannot edit the part catalog.';
+      else if (res.status === 400) msg = 'Enter a part name and a 1-6 digit Hollander number.';
       throw new Error(msg);
     }
 
@@ -2540,29 +2454,20 @@ async function savePartForm() {
 }
 
 async function deletePartRecord(part, btn) {
-  if (!sbConfig.url || !sbConfig.key) {
-    setPartsStatus('Supabase is not configured. Open ⚙️ first.', 'error');
-    disarmDelete(btn);
-    return;
-  }
-
   setPartsStatus(`⏳ Deleting "${part.name} - ${part.id}"…`, 'muted');
 
   try {
-    const base = (sbConfig.url || '').replace(/\/+$/, '');
-    const table = sbConfig.table || SB_DEFAULTS.table;
-    const res = await fetch(`${base}/rest/v1/${encodeURIComponent(table)}?hollander_id=eq.${encodeURIComponent(part.id)}`, {
+    const res = await fetch(`${API_BASE}/parts/${encodeURIComponent(part.id)}`, {
       method: 'DELETE',
-      headers: {
-        apikey: sbConfig.key,
-        Authorization: `Bearer ${sbConfig.key}`,
-        Prefer: 'return=minimal'
-      }
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' }
     });
 
     if (!res.ok) {
-      let msg = `Supabase rejected the delete (${res.status}).`;
-      if (res.status === 401 || res.status === 403) msg = 'Deleting is not allowed yet. An admin needs to run the latest supabase/hollander_parts.sql to allow deletes.';
+      let msg = `The part could not be deleted (${res.status}).`;
+      if (res.status === 401) msg = 'Your session has expired. Reload the page and sign in again.';
+      else if (res.status === 403) msg = 'Your account cannot edit the part catalog.';
+      else if (res.status === 404) msg = 'That part no longer exists.';
       throw new Error(msg);
     }
 
@@ -2578,7 +2483,7 @@ async function deletePartRecord(part, btn) {
   }
 }
 
-// ================= CUSTOMERS (Supabase) =================
+// ================= CUSTOMERS =================
 let customerSearchTimer = null;
 let customerSearchSeq = 0;
 let customerResults = [];
@@ -2649,36 +2554,23 @@ async function searchCustomers(rawTerm) {
   const term = String(rawTerm || '').trim();
   lastCustomerTerm = term;
 
-  if (!sbConfig.url || !sbConfig.key) {
-    resultsEl.innerHTML = '';
-    setCustomerStatus('Supabase is not configured. Open 🏷️ Part IDs and add the project URL and publishable key.', 'error');
-    return;
-  }
-
-  const safe = term.replace(/[(),*%"\\]/g, ' ').replace(/\s+/g, ' ').trim();
   const seq = ++customerSearchSeq;
-  setCustomerStatus('⏳ Searching Supabase…', 'muted');
+  setCustomerStatus('⏳ Searching customers…', 'muted');
 
   try {
-    const base = (sbConfig.url || '').replace(/\/+$/, '');
     const params = new URLSearchParams();
-    params.set('select', 'id,shop_name,main_contact,address1,address2,city,state,zip,phone,notes');
-    params.set('order', 'shop_name.asc');
-    params.set('limit', safe ? '40' : '25');
-    if (safe) params.set('or', `(shop_name.ilike.*${safe}*,phone.ilike.*${safe}*,city.ilike.*${safe}*,zip.ilike.*${safe}*)`);
+    params.set('limit', term ? '40' : '25');
+    if (term) params.set('q', term);
 
-    const res = await fetch(`${base}/rest/v1/customers?${params.toString()}`, {
-      headers: {
-        apikey: sbConfig.key,
-        Authorization: `Bearer ${sbConfig.key}`,
-        Accept: 'application/json'
-      }
+    const res = await fetch(`${API_BASE}/customers?${params.toString()}`, {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' }
     });
 
     if (seq !== customerSearchSeq) return;
     if (!res.ok) {
-      if (res.status === 404) throw new Error('The customers table does not exist yet. An admin needs to run supabase/customers.sql.');
-      if (res.status === 401 || res.status === 403) throw new Error('Supabase rejected the API key.');
+      if (res.status === 401) throw new Error('Your session has expired. Reload the page and sign in again.');
+      if (res.status === 403) throw new Error('Your account does not have access to the customer list.');
       throw new Error(`Search failed (${res.status}).`);
     }
 
@@ -2763,10 +2655,6 @@ async function saveCustomer() {
     setCustomerFormStatus('Shop name is required.', 'error');
     return;
   }
-  if (!sbConfig.url || !sbConfig.key) {
-    setCustomerFormStatus('Supabase is not configured. Open 🏷️ Part IDs first.', 'error');
-    return;
-  }
 
   const savingId = editingCustomerId;
 
@@ -2785,32 +2673,28 @@ async function saveCustomer() {
   setCustomerFormStatus(`⏳ Saving "${payload.shop_name}"…`, 'muted');
 
   try {
-    const base = (sbConfig.url || '').replace(/\/+$/, '');
     const url = savingId === null
-      ? `${base}/rest/v1/customers`
-      : `${base}/rest/v1/customers?id=eq.${encodeURIComponent(savingId)}`;
+      ? `${API_BASE}/customers`
+      : `${API_BASE}/customers/${encodeURIComponent(savingId)}`;
 
     const res = await fetch(url, {
       method: savingId === null ? 'POST' : 'PATCH',
-      headers: {
-        apikey: sbConfig.key,
-        Authorization: `Bearer ${sbConfig.key}`,
-        'Content-Type': 'application/json',
-        Prefer: 'return=representation'
-      },
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(payload)
     });
 
     if (!res.ok) {
-      let msg = `Supabase rejected the customer (${res.status}).`;
+      let msg = `The customer could not be saved (${res.status}).`;
       if (res.status === 409) msg = 'A customer with that shop name, address and phone already exists.';
-      else if (res.status === 401 || res.status === 403) msg = 'Saving customers is not allowed yet. An admin needs to run the latest supabase/customers.sql.';
-      else if (res.status === 404) msg = 'The customers table does not exist yet.';
+      else if (res.status === 401) msg = 'Your session has expired. Reload the page and sign in again.';
+      else if (res.status === 403) msg = 'Your account cannot edit the customer list.';
+      else if (res.status === 404) msg = 'That customer no longer exists.';
+      else if (res.status === 400) msg = 'Shop name is required.';
       throw new Error(msg);
     }
 
-    const savedRows = await res.json().catch(() => []);
-    const savedRow = Array.isArray(savedRows) ? savedRows[0] : savedRows;
+    const savedRow = await res.json().catch(() => null);
     const entry = {
       id: savingId === null ? (savedRow ? savedRow.id : 'local-' + Date.now()) : savingId,
       name: payload.shop_name,
@@ -2841,28 +2725,20 @@ async function saveCustomer() {
 }
 
 async function deleteCustomer(customer, btn) {
-  if (!sbConfig.url || !sbConfig.key) {
-    setCustomerStatus('Supabase is not configured.', 'error');
-    disarmDelete(btn);
-    return;
-  }
-
   setCustomerStatus(`⏳ Deleting "${customer.shop_name}"…`, 'muted');
 
   try {
-    const base = (sbConfig.url || '').replace(/\/+$/, '');
-    const res = await fetch(`${base}/rest/v1/customers?id=eq.${encodeURIComponent(customer.id)}`, {
+    const res = await fetch(`${API_BASE}/customers/${encodeURIComponent(customer.id)}`, {
       method: 'DELETE',
-      headers: {
-        apikey: sbConfig.key,
-        Authorization: `Bearer ${sbConfig.key}`,
-        Prefer: 'return=minimal'
-      }
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' }
     });
 
     if (!res.ok) {
-      let msg = `Supabase rejected the delete (${res.status}).`;
-      if (res.status === 401 || res.status === 403) msg = 'Deleting is not allowed yet. An admin needs to run the latest supabase/customers.sql to allow deletes.';
+      let msg = `The customer could not be deleted (${res.status}).`;
+      if (res.status === 401) msg = 'Your session has expired. Reload the page and sign in again.';
+      else if (res.status === 403) msg = 'Your account cannot edit the customer list.';
+      else if (res.status === 404) msg = 'That customer no longer exists.';
       throw new Error(msg);
     }
 
@@ -2971,17 +2847,11 @@ function writePendingUploads(list) {
 }
 
 async function postUploadPayload(payload) {
-  if (!sbConfig.url || !sbConfig.key) return false;
-  const base = (sbConfig.url || '').replace(/\/+$/, '');
   try {
-    const res = await fetch(`${base}/rest/v1/report_uploads`, {
+    const res = await fetch(`${API_BASE}/uploads`, {
       method: 'POST',
-      headers: {
-        apikey: sbConfig.key,
-        Authorization: `Bearer ${sbConfig.key}`,
-        'Content-Type': 'application/json',
-        Prefer: 'return=minimal'
-      },
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(payload)
     });
     if (!res.ok) {
@@ -2995,11 +2865,11 @@ async function postUploadPayload(payload) {
   }
 }
 
-// Uploads that could not reach Supabase are kept locally and retried, so an
-// outage (or the missing table) never loses the record.
+// Uploads that could not reach the server are kept locally and retried, so an
+// outage never loses the record.
 async function flushPendingUploads() {
   const list = readPendingUploads();
-  if (!list.length || !sbConfig.url || !sbConfig.key) return 0;
+  if (!list.length) return 0;
   const remaining = [];
   let sent = 0;
   for (const payload of list) {
@@ -3012,7 +2882,6 @@ async function flushPendingUploads() {
 }
 
 async function recordUpload(uploader, fileName) {
-  if (!sbConfig.url || !sbConfig.key) return;
   const payload = {
     uploader: uploader || 'Unassigned',
     file_name: fileName || '',
@@ -3033,7 +2902,7 @@ async function recordUpload(uploader, fileName) {
   const pending = readPendingUploads();
   pending.push(payload);
   writePendingUploads(pending);
-  console.warn('Upload saved locally; it will be sent to Supabase when the log is reachable.');
+  console.warn('Upload saved locally; it will be sent to the platform when the log is reachable.');
 }
 
 function setUploadsStatus(msg, tone) {
@@ -3173,10 +3042,6 @@ function renderUploads() {
 
 async function loadUploads() {
   if (uploadsLoading) return;
-  if (!sbConfig.url || !sbConfig.key) {
-    setUploadsStatus('Supabase is not configured. Open ⚙️ in Parts first.', 'error');
-    return;
-  }
 
   uploadsLoading = true;
   setUploadsStatus('⏳ Loading upload activity…', 'muted');
@@ -3184,28 +3049,20 @@ async function loadUploads() {
   try {
     await flushPendingUploads();
 
-    const base = (sbConfig.url || '').replace(/\/+$/, '');
     const collected = [];
     let offset = 0;
 
     while (true) {
-      const params = new URLSearchParams();
-      params.set('select', '*');
-      params.set('order', 'uploaded_at.desc');
-      params.set('limit', '1000');
-      params.set('offset', String(offset));
+      const params = new URLSearchParams({ limit: '1000', offset: String(offset) });
 
-      const res = await fetch(`${base}/rest/v1/report_uploads?${params.toString()}`, {
-        headers: {
-          apikey: sbConfig.key,
-          Authorization: `Bearer ${sbConfig.key}`,
-          Accept: 'application/json'
-        }
+      const res = await fetch(`${API_BASE}/uploads?${params.toString()}`, {
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' }
       });
 
       if (!res.ok) {
-        if (res.status === 404) throw new Error('The report_uploads table does not exist yet. Run supabase/report_uploads.sql in the SQL Editor.');
-        if (res.status === 401 || res.status === 403) throw new Error('Supabase rejected the API key.');
+        if (res.status === 401) throw new Error('Your session has expired. Reload the page and sign in again.');
+        if (res.status === 403) throw new Error('Only managers can view upload activity.');
         throw new Error(`Could not load uploads (${res.status}).`);
       }
 
@@ -3226,7 +3083,7 @@ async function loadUploads() {
     renderUploads();
 
     if (pending.length) {
-      setUploadsStatus(`${collected.length} uploaded in Supabase • ${pending.length} waiting to sync from this browser.`, 'muted');
+      setUploadsStatus(`${collected.length} upload${collected.length === 1 ? '' : 's'} on record • ${pending.length} waiting to sync from this browser.`, 'muted');
     }
   } catch (err) {
     console.warn('Upload log load failed:', err);
@@ -3255,19 +3112,36 @@ function closeUploadsModal() {
 }
 
 // ================= DELIVERY ANNOUNCEMENT CALLS =================
-const CALL_CONFIG_KEY = 'sp_call_config';
+// Twilio credentials and the spoken script live on the server. The browser
+// only asks the platform to place the call, so no key or endpoint is exposed.
 const CALL_COOLDOWN_MS = 10 * 60 * 1000;
 
 let callConfig = {
   yardName: '',
   callbackNumber: '',
-  endpoint: 'https://ubfupuhthqkvuxbcacok.supabase.co/functions/v1/announce-delivery',
-  key: '',
-  testMode: true
+  testMode: true,
+  configured: false
 };
-try {
-  callConfig = { ...callConfig, ...(JSON.parse(localStorage.getItem(CALL_CONFIG_KEY) || '{}')) };
-} catch (e) {}
+
+async function loadCallSettings() {
+  try {
+    const res = await fetch(`${API_BASE}/announce/settings`, {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' }
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    callConfig = {
+      yardName: String(data.yard_name || ''),
+      callbackNumber: String(data.callback_number || ''),
+      testMode: data.test_mode !== false,
+      configured: !!data.configured
+    };
+    refreshCallModal();
+  } catch (e) {
+    console.warn('Call settings could not be loaded:', e);
+  }
+}
 
 let currentCall = { phone: '', customer: '' };
 
@@ -3320,10 +3194,8 @@ function refreshCallModal() {
   if (badgeEl) badgeEl.innerHTML = callModeBadge();
   if (callBtn) callBtn.textContent = callConfig.testMode ? '🧪 Simulate call' : '📞 Place call';
 
-  if (!callConfig.testMode && (!callConfig.yardName || !callConfig.callbackNumber)) {
-    setCallStatus('Set the yard name and callback number in Call settings before placing live calls.', 'error');
-  } else if (!callConfig.testMode && !callConfig.endpoint) {
-    setCallStatus('Set the Edge Function URL in Call settings before placing live calls.', 'error');
+  if (!callConfig.testMode && !callConfig.configured) {
+    setCallStatus('Live calling is enabled, but the platform is missing Twilio credentials. Ask an administrator to configure them.', 'error');
   }
 }
 
@@ -3341,34 +3213,24 @@ function closeCallModal() {
 }
 
 function openCallSettings() {
-  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
-  set('callYardName', callConfig.yardName);
-  set('callCallbackNumber', callConfig.callbackNumber);
-  set('callEndpoint', callConfig.endpoint);
-  set('callKey', callConfig.key);
-  const testEl = document.getElementById('callTestMode');
-  if (testEl) testEl.checked = callConfig.testMode;
-  setCallSettingsStatus(callConfig.testMode ? 'Test mode is on — no real calls will be placed.' : 'Live mode — calls will be placed for real.', callConfig.testMode ? 'muted' : 'error');
+  const badge = document.getElementById('callSettingsBadge');
+  if (badge) badge.innerHTML = callModeBadge();
+  const scriptEl = document.getElementById('callSettingsScript');
+  if (scriptEl) scriptEl.textContent = announcementScript();
+  setCallSettingsStatus(
+    callConfig.testMode
+      ? 'Test mode is on. The platform will build the script and log the attempt without placing a call.'
+      : (callConfig.configured
+        ? 'Live mode is on. Pressing the call button places a real automated call.'
+        : 'Live mode is on, but Twilio credentials are missing. Ask an administrator to configure them.'),
+    callConfig.testMode ? 'muted' : (callConfig.configured ? 'error' : 'error')
+  );
   document.getElementById('callSettingsModal').classList.remove('hidden');
+  loadCallSettings();
 }
 
 function closeCallSettings() {
   document.getElementById('callSettingsModal').classList.add('hidden');
-}
-
-function saveCallSettings() {
-  const val = id => (document.getElementById(id)?.value || '').trim();
-  callConfig = {
-    yardName: val('callYardName'),
-    callbackNumber: val('callCallbackNumber'),
-    endpoint: val('callEndpoint'),
-    key: val('callKey'),
-    testMode: !!document.getElementById('callTestMode')?.checked
-  };
-  try { localStorage.setItem(CALL_CONFIG_KEY, JSON.stringify(callConfig)); } catch (e) {}
-  setCallSettingsStatus('✅ Saved.', 'success');
-  refreshCallModal();
-  setTimeout(closeCallSettings, 350);
 }
 
 async function placeAnnouncementCall() {
@@ -3378,42 +3240,22 @@ async function placeAnnouncementCall() {
     return;
   }
 
-  if (!callConfig.testMode) {
-    if (!callConfig.endpoint) {
-      setCallStatus('No Edge Function URL is configured. Open Call settings.', 'error');
-      return;
-    }
-    if (!callConfig.yardName || !callConfig.callbackNumber) {
-      setCallStatus('Set the yard name and callback number in Call settings first.', 'error');
-      return;
-    }
-
-    const cooldownKey = 'sp_call_' + to;
-    const last = Number(localStorage.getItem(cooldownKey) || 0);
-    if (last && Date.now() - last < CALL_COOLDOWN_MS) {
-      const mins = Math.ceil((CALL_COOLDOWN_MS - (Date.now() - last)) / 60000);
-      setCallStatus(`This number was already called recently. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`, 'error');
-      return;
-    }
+  const cooldownKey = 'sp_call_' + to;
+  const last = Number(localStorage.getItem(cooldownKey) || 0);
+  if (last && Date.now() - last < CALL_COOLDOWN_MS) {
+    const mins = Math.ceil((CALL_COOLDOWN_MS - (Date.now() - last)) / 60000);
+    setCallStatus(`This number was already called recently. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`, 'error');
+    return;
   }
 
   const btn = document.getElementById('placeCallBtn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Calling…'; }
 
   try {
-    if (callConfig.testMode) {
-      await new Promise(r => setTimeout(r, 600));
-      setCallStatus('🧪 Test mode — no call was placed. The text above is exactly what the yard would say.', 'success');
-      return;
-    }
-
-    const headers = { 'Content-Type': 'application/json' };
-    if (callConfig.key) headers['x-call-key'] = callConfig.key;
-    if (sbConfig.key) headers.apikey = sbConfig.key;
-
-    const res = await fetch(callConfig.endpoint, {
+    const res = await fetch(`${API_BASE}/announce`, {
       method: 'POST',
-      headers,
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ to })
     });
 
@@ -3421,13 +3263,16 @@ async function placeAnnouncementCall() {
     try { data = await res.json(); } catch (e) {}
 
     if (!res.ok || data.error) {
-      throw new Error(data.error || `Call service rejected the request (${res.status}).`);
+      throw new Error(data.detail || data.error || `Call service rejected the request (${res.status}).`);
     }
 
-    localStorage.setItem('sp_call_' + to, String(Date.now()));
-    setCallStatus(data.test
-      ? '✅ The call service is in test mode — no call was placed.'
-      : `✅ Call placed to ${formatPhoneDisplay(currentCall.phone)}.`, 'success');
+    localStorage.setItem(cooldownKey, String(Date.now()));
+    if (data.test) {
+      callConfig.testMode = true;
+      setCallStatus('🧪 Test mode — no call was placed. The text above is exactly what the yard would say.', 'success');
+    } else {
+      setCallStatus(`✅ Call placed to ${formatPhoneDisplay(currentCall.phone)}.`, 'success');
+    }
   } catch (err) {
     console.error('Announcement call failed:', err);
     setCallStatus(`❌ ${err.message}`, 'error');
@@ -3460,7 +3305,12 @@ function makeTelLink(phone) {
 }
 
 function esc(s) {
-  return String(s || '').replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>');
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function showToast(msg) {
@@ -3474,10 +3324,9 @@ function showToast(msg) {
   }, 2500);
 }
 
-// ================= SUPABASE PART-ID WIRING =================
+// ================= PART-ID WIRING =================
 buildPartIndex();
 buildCustomerIndex();
-fillPartsForm();
 updatePartIdStatusUI();
 updateCustomerMatchUI();
 
@@ -3486,22 +3335,16 @@ if (document.getElementById('closePartIdsModal')) {
   document.getElementById('closePartIdsModal').addEventListener('click', () => partIdsModalEl.classList.add('hidden'));
 }
 if (document.getElementById('syncPartIdsBtn')) {
-  document.getElementById('syncPartIdsBtn').addEventListener('click', () => {
-    saveSupabaseConfigFromForm();
-    syncSupabaseParts();
-  });
+  document.getElementById('syncPartIdsBtn').addEventListener('click', () => syncParts());
 }
 if (document.getElementById('useBundledPartsBtn')) {
   document.getElementById('useBundledPartsBtn').addEventListener('click', useBundledParts);
 }
 if (document.getElementById('refreshPartIdsBtn')) {
-  document.getElementById('refreshPartIdsBtn').addEventListener('click', () => {
-    if (sbConfig.url && sbConfig.key) syncSupabaseParts();
-    else openPartIdsModal();
-  });
+  document.getElementById('refreshPartIdsBtn').addEventListener('click', () => syncParts());
 }
 
-// Parts manager (search/add/edit/delete run against Supabase only)
+// Parts manager
 const partsModalEl = document.getElementById('partsModal');
 const partFormModalEl = document.getElementById('partFormModal');
 if (document.getElementById('partsBtn')) {
@@ -3572,7 +3415,8 @@ if (customerFormModalEl) {
 
 // ================= USER IDENTITY & UPLOAD ACTIVITY WIRING =================
 updateUserButton();
-if (sbConfig.url && sbConfig.key) flushPendingUploads();
+flushPendingUploads();
+loadCallSettings();
 
 const userModalEl = document.getElementById('userModal');
 if (document.getElementById('userBtn')) {
@@ -3630,9 +3474,6 @@ if (document.getElementById('placeCallBtn')) {
   const el = document.getElementById(id);
   if (el) el.addEventListener('click', closeCallSettings);
 });
-if (document.getElementById('saveCallSettingsBtn')) {
-  document.getElementById('saveCallSettingsBtn').addEventListener('click', saveCallSettings);
-}
 if (callModalEl) {
   callModalEl.addEventListener('click', e => { if (e.target === callModalEl) closeCallModal(); });
 }
@@ -3640,14 +3481,13 @@ if (callSettingsModalEl) {
   callSettingsModalEl.addEventListener('click', e => { if (e.target === callSettingsModalEl) closeCallSettings(); });
 }
 
-// Auto-sync from Supabase when configured and the cache is missing or older than 12 hours
-if (sbConfig.url && sbConfig.key) {
-  const partsStale = !partLastSynced || (Date.now() - partLastSynced > 12 * 60 * 60 * 1000);
-  if (partsStale) syncSupabaseParts({ silent: true });
+// Auto-sync from the platform when the cache is missing or older than 12 hours.
+// The bundled part list is the offline fallback while this runs.
+const partsStale = !partLastSynced || (Date.now() - partLastSynced > 12 * 60 * 60 * 1000);
+if (partsStale) syncParts({ silent: true });
 
-  const customersStale = !customersLastSynced || (Date.now() - customersLastSynced > CUST_CACHE_HOURS * 60 * 60 * 1000);
-  if (customersStale) syncCustomersFromSupabase({ silent: true });
-}
+const customersStale = !customersLastSynced || (Date.now() - customersLastSynced > CUST_CACHE_HOURS * 60 * 60 * 1000);
+if (customersStale) syncCustomers({ silent: true });
 
 // ================= EMBEDDED MODE: ROLE-AWARE UI =================
 function applyEmbeddedRoleUI() {

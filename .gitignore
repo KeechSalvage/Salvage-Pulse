@@ -24,6 +24,9 @@ backend/preview_state.json
 backend/data/
 backend/uploads/
 
+# Delivery Dashboard customer export (PII; import it into the DB instead)
+backend/seed/delivery_customers.csv
+
 # OS & IDE
 .DS_Store
 .idea/

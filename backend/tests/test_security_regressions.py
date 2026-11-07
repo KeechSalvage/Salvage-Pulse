@@ -1644,12 +1644,13 @@ class TransportSecurityTests(unittest.TestCase):
         self.assertIn("frame-src 'self'", response.headers.get("content-security-policy", ""))
         self.assertIn("content-security-policy", response.headers)
 
-    def test_delivery_dashboard_csp_allows_pdf_worker_and_supabase(self):
+    def test_delivery_dashboard_csp_allows_pdf_worker_and_platform_api(self):
         response = _client().get("/delivery-dash/index.html")
         csp = response.headers.get("content-security-policy", "")
         self.assertIn("frame-ancestors 'self'", csp)
         self.assertIn("worker-src 'self' blob:", csp)
-        self.assertIn("https://*.supabase.co", csp)
+        self.assertIn("connect-src 'self'", csp)
+        self.assertNotIn("supabase", csp)
         self.assertIn("script-src 'self' 'unsafe-eval'", csp)
         self.assertEqual(response.headers.get("x-frame-options"), "SAMEORIGIN")
 
@@ -2646,3 +2647,162 @@ class IngestPipelineTests(unittest.TestCase):
             rep_client.post("/api/auth/login", json={"email": created.json()["email"], "password": "StrongPass!234"})
             forbidden = rep_client.get("/api/ingest/events")
             self.assertEqual(forbidden.status_code, 403)
+
+
+class DeliveryDashboardTests(unittest.TestCase):
+    """The Delivery Dashboard now persists data in the platform database."""
+
+    def _yard(self, name: str = "Delivery Yard"):
+        client = _client()
+        user, _, _ = _signup(client, yard=name)
+        return client, user
+
+    def test_part_catalog_is_seeded_and_scoped_to_the_yard(self):
+        client, _ = self._yard("Delivery Parts Yard")
+        seeded = client.get("/api/delivery/parts").json()
+        self.assertGreater(len(seeded), 100)
+
+        created = client.post(
+            "/api/delivery/parts",
+            json={"part_name": "Delivery Test Widget", "hollander_id": "12345"},
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+
+        duplicate = client.post(
+            "/api/delivery/parts",
+            json={"part_name": "Delivery Test Widget", "hollander_id": "12346"},
+        )
+        self.assertEqual(duplicate.status_code, 409)
+
+        other, _ = self._yard("Other Delivery Parts Yard")
+        names = {part["part_name"] for part in other.get("/api/delivery/parts").json()}
+        self.assertNotIn("Delivery Test Widget", names)
+
+        moved = client.patch(
+            "/api/delivery/parts/12345",
+            json={"part_name": "Delivery Test Widget v2", "hollander_id": "12346"},
+        )
+        self.assertEqual(moved.status_code, 200, moved.text)
+        self.assertEqual(moved.json()["hollander_id"], "12346")
+
+        self.assertEqual(client.delete("/api/delivery/parts/12346").status_code, 200)
+        self.assertEqual(client.delete("/api/delivery/parts/12346").status_code, 404)
+
+    def test_customer_directory_is_org_scoped_and_deduplicated(self):
+        client, _ = self._yard("Delivery Customer Yard")
+        payload = {
+            "shop_name": "Acme Delivery Body",
+            "main_contact": "Ann",
+            "address1": "1 Main St",
+            "city": "Hartford",
+            "state": "ct",
+            "zip": "06103",
+            "phone": "860-555-0100",
+        }
+        created = client.post("/api/delivery/customers", json=payload)
+        self.assertEqual(created.status_code, 200, created.text)
+        customer_id = created.json()["id"]
+        self.assertEqual(created.json()["state"], "CT")
+
+        self.assertEqual(
+            client.post("/api/delivery/customers", json=payload).status_code, 409
+        )
+
+        found = client.get("/api/delivery/customers", params={"q": "acme"}).json()
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]["shop_name"], "Acme Delivery Body")
+
+        patched = client.patch(
+            f"/api/delivery/customers/{customer_id}", json={"city": "New Haven"}
+        )
+        self.assertEqual(patched.status_code, 200, patched.text)
+        self.assertEqual(patched.json()["city"], "New Haven")
+
+        other, _ = self._yard("Other Delivery Customer Yard")
+        self.assertEqual(
+            other.patch(
+                f"/api/delivery/customers/{customer_id}", json={"city": "Elsewhere"}
+            ).status_code,
+            404,
+        )
+        self.assertEqual(
+            other.delete(f"/api/delivery/customers/{customer_id}").status_code, 404
+        )
+        self.assertEqual(
+            client.delete(f"/api/delivery/customers/{customer_id}").status_code, 200
+        )
+
+    def test_upload_activity_uses_the_session_identity_and_managers_only(self):
+        client, _ = self._yard("Delivery Upload Yard")
+        created = client.post(
+            "/api/delivery/uploads",
+            json={
+                "uploader": "Spoofed Name",
+                "file_name": "report.pdf",
+                "salesperson": "Rich",
+                "report_date": "2026-11-06",
+                "row_count": 4,
+                "matched_customers": 3,
+                "matched_parts": 2,
+            },
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        self.assertEqual(created.json()["uploader"], "Test Owner")
+
+        rows = client.get("/api/delivery/uploads").json()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["file_name"], "report.pdf")
+
+        rep_email = f"delivery-rep-{uuid.uuid4().hex[:8]}@example.test"
+        rep_created = client.post(
+            "/api/users/reps",
+            json={
+                "name": "Delivery Rep",
+                "email": rep_email,
+                "password": "RepPass!234",
+                "role": "rep",
+            },
+        )
+        self.assertEqual(rep_created.status_code, 200, rep_created.text)
+
+        rep = _client()
+        _login(rep, rep_email, "RepPass!234")
+        self.assertEqual(rep.get("/api/delivery/uploads").status_code, 403)
+        self.assertEqual(
+            rep.post(
+                "/api/delivery/uploads",
+                json={"file_name": "rep-report.pdf", "row_count": 1},
+            ).status_code,
+            200,
+        )
+
+    def test_announcement_defaults_to_test_mode(self):
+        client, _ = self._yard("Delivery Call Yard")
+        settings = client.get("/api/delivery/announce/settings").json()
+        self.assertTrue(settings["test_mode"])
+        self.assertFalse(settings["configured"])
+
+        phone = "860555" + f"{uuid.uuid4().int % 10000:04d}"
+        response = client.post("/api/delivery/announce", json={"to": phone})
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertTrue(body["test"])
+        self.assertEqual(body["to"], "+1" + phone)
+        self.assertIn("delivery is expected today", body["message"])
+
+        self.assertEqual(
+            client.post("/api/delivery/announce", json={"to": "123"}).status_code, 400
+        )
+
+    def test_delivery_routes_require_a_yard_session(self):
+        anonymous = _client()
+        self.assertEqual(anonymous.get("/api/delivery/parts").status_code, 401)
+        self.assertEqual(anonymous.get("/api/delivery/customers").status_code, 401)
+        self.assertEqual(anonymous.get("/api/delivery/uploads").status_code, 401)
+        self.assertEqual(
+            anonymous.post("/api/delivery/announce", json={"to": "8605550100"}).status_code,
+            401,
+        )
+
+        master = _master_client()
+        self.assertEqual(master.get("/api/delivery/parts").status_code, 403)
