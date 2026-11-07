@@ -14,6 +14,7 @@ import UploadCall from "@/pages/UploadCall";
 import Team from "@/pages/Team";
 import Keywords from "@/pages/Keywords";
 import Vehicles from "@/pages/Vehicles";
+import DeliveryDashboard from "@/pages/DeliveryDashboard";
 import TagVehicles from "@/pages/TagVehicles";
 import Reports from "@/pages/Reports";
 import Leaderboards from "@/pages/Leaderboards";
@@ -67,6 +68,7 @@ export default function App() {
           <Route path="/settings" element={<Settings />} />
           <Route path="/settings/:tab" element={<Settings />} />
           <Route path="/vehicles" element={<Vehicles />} />
+          <Route path="/delivery" element={<DeliveryDashboard />} />
           <Route path="/tag-vehicles" element={<TagVehicles />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/leaderboards" element={<Leaderboards />} />

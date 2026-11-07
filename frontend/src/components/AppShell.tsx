@@ -6,6 +6,7 @@ import PreviewEndingBanner from "@/components/PreviewEndingBanner";
 import EnterpriseTour from "@/components/EnterpriseTour";
 import DemoLimitDialog from "@/components/DemoLimitDialog";
 import ThemeToggle from "@/components/ThemeToggle";
+import WheelieChat from "@/components/WheelieChat";
 import { ContactUsButton } from "@/components/ContactUs";
 import BrandLogo from "@/components/BrandLogo";
 import AppFooter from "@/components/AppFooter";
@@ -21,6 +22,7 @@ import {
   LogOut,
   PhoneIncoming,
   PhoneMissed,
+  Package,
   Tags,
   Users,
   Car,
@@ -57,6 +59,7 @@ const yardManagerNav = [
   { to: "/dashboard", label: "Team Dashboard", icon: BarChart3, id: "dashboard" },
   { to: "/calls", label: "Call Library", icon: PhoneIncoming, id: "calls" },
   { to: "/callbacks", label: "Callbacks", icon: PhoneMissed, id: "callbacks" },
+  { to: "/delivery", label: "Delivery Dashboard", icon: Package, id: "delivery" },
   { to: "/team", label: "Reps", icon: Users, id: "team" },
   { to: "/vehicles", label: "Vehicles & Stock", icon: Car, id: "vehicles" },
   { to: "/tag-vehicles", label: "Tag Vehicles", icon: CarFront, id: "tag-vehicles" },
@@ -80,6 +83,7 @@ const repNav = [
   { to: "/me", label: "My Performance", icon: Gauge, id: "me" },
   { to: "/calls", label: "My Calls", icon: PhoneIncoming, id: "calls" },
   { to: "/callbacks", label: "Callbacks", icon: PhoneMissed, id: "callbacks" },
+  { to: "/delivery", label: "Delivery Dashboard", icon: Package, id: "delivery" },
   { to: "/vehicles", label: "Vehicle Arrivals", icon: Truck, id: "vehicles" },
   { to: "/tag-vehicles", label: "Tag Vehicles", icon: CarFront, id: "tag-vehicles" },
   { to: "/reports", label: "Reports", icon: FileBarChart, id: "reports" },
@@ -214,6 +218,7 @@ export default function AppShell({ managerOnly = false, platform = false }: { ma
       </div>
 
       {isTrialEnded && <TrialExpiredModal isManager={isManagerLike(me.role)} />}
+      {!isTrialEnded && <WheelieChat me={me} />}
     </div>
   );
 }

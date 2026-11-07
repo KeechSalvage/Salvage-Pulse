@@ -1,0 +1,21 @@
+Tyler Grant | Salesperson Delivery Report for 10/30/2026
+Customer,Type,Reference Numbers,Part,Complete,Order,Invoice,PO,Phone,Assigned Rep
+Mike Hendricks Auto Repair,Delivery,Order: 318421 Invoice: 204191 PO: MIKE,"ENGINE, 3.5L ECOBOOST",Yes,318421,204191,MIKE,1 (512) 555-0141,Tyler Grant
+Sarah Okafor Body Works,Delivery,Order: 318436 Invoice: 204206 PO: SO-7841,"BUMPER COVER, FRONT",Yes,318436,204206,SO-7841,1 (512) 555-0172,Tyler Grant
+Tom Dixon Garage,Delivery,Order: 318448 Invoice: 204218 PO: TD-5510,ENGINE ASSEMBLY,Yes,318448,204218,TD-5510,1 (512) 555-1008,Tyler Grant
+Sophie Webb Auto Body,Delivery,Order: 318452 Invoice: 204222 PO: EQUINOX-15,HEADLAMP ASSEMBLY,Yes,318452,204222,EQUINOX-15,1 (512) 555-4981,Tyler Grant
+Linda Patterson Repair,Delivery,Order: 318464 Invoice: 204234 PO: PATTERSON,ALTERNATOR,Yes,318464,204234,PATTERSON,1 (512) 555-0193,Tyler Grant
+Dave Whitfield Auto Works,Delivery,Order: 318476 Invoice: 204246 PO: WHITFIELD,"HEADLAMP, DRIVER SIDE",Yes,318476,204246,WHITFIELD,1 (512) 555-0204,Tyler Grant
+Tom Grant Auto Service,Delivery,Order: 318478 Invoice: 204248 PO: 55121,STARTER MOTOR,Yes,318478,204248,55121,1 (512) 555-5121,Tyler Grant
+Patricia Norris Collision,Delivery,Order: 318481 Invoice: 204251 PO: NORRIS-RAD,RADIATOR,Yes,318481,204251,NORRIS-RAD,1 (512) 555-8075,Tyler Grant
+Paul Jensen Collision,Delivery,Order: 318483 Invoice: 204253 PO: EQUINOX-BUMP,FRONT BUMPER COVER,Yes,318483,204253,EQUINOX-BUMP,1 (512) 555-1953,Tyler Grant
+Heather Lowe Motors,Delivery,Order: 318485 Invoice: 204255 PO: SORENTO-TL,TAIL LIGHT,Yes,318485,204255,SORENTO-TL,1 (512) 555-1080,Tyler Grant
+Jennifer Cho Auto Repair,Delivery,Order: 318487 Invoice: 204257 PO: CHO-MIRROR,"SIDE VIEW MIRROR, RH",Yes,318487,204257,CHO-MIRROR,1 (512) 555-0247,Tyler Grant
+Patricia Tate Body Shop,Delivery,Order: 318489 Invoice: 204259 PO: BMW-328,HEADLAMP ASSEMBLY,Pending,318489,204259,BMW-328,1 (512) 555-5698,Tyler Grant
+Dave Tate Offroad & 4x4,Delivery,Order: 318484 Invoice: 204254 PO: JEEP-W,TRANSMISSION,Pending,318484,204254,JEEP-W,1 (512) 555-7740,Tyler Grant
+Jennifer Moss Auto Care,Delivery,Order: 318491 Invoice: 204261 PO: ELANTRA-AC,AC COMPRESSOR,Pending,318491,204261,ELANTRA-AC,1 (512) 555-8976,Tyler Grant
+Dave Ellis Truck Center,Delivery,Order: 318488 Invoice: 204258 PO: F150-TAIL,TAIL LIGHT,Pending,318488,204258,F150-TAIL,1 (512) 555-7264,Tyler Grant
+Mike Mayer Collision,Delivery,Order: 318493 Invoice: 204263 PO: SILVERADO-TL,TAIL LIGHT,Pending,318493,204263,SILVERADO-TL,1 (512) 555-2363,Tyler Grant
+Allison Grant Auto Repair,Delivery,Order: 318495 Invoice: 204265 PO: ALTIMA-ENG,ENGINE ASSEMBLY,Pending,318495,204265,ALTIMA-ENG,1 (512) 555-9551,Tyler Grant
+Robert Grant Service,Delivery,Order: 318497 Invoice: 204267 PO: SORENTO-ALT,ALTERNATOR,Pending,318497,204267,SORENTO-ALT,1 (512) 555-8383,Tyler Grant
+Natalie Tate Motors,Delivery,Order: 318499 Invoice: 204269 PO: ESCAPE-DR,"DOOR ASSEMBLY, FRONT",Pending,318499,204269,ESCAPE-DR,1 (512) 555-2126,Tyler Grant

@@ -216,6 +216,10 @@ GEMINI_MODEL=gemini-2.5-flash
 
 Without a key the app falls back to rule-based scoring.
 
+The in-app **Wheelie** assistant uses the same `GEMINI_API_KEY` and the
+signed-in user's title/role to tailor its prompts and answers. Without a key it
+still works in role-aware guided mode backed by the user's live yard snapshot.
+
 ### Call-ingestion transcription (Deepgram / AssemblyAI / OpenAI)
 
 Call recordings need a speech-to-text provider. Add **one** of these to the
@@ -413,6 +417,56 @@ contains API keys and SMTP credentials.
 
 For Proxmox-level backups, use **Datacenter → Backup** with mode **Snapshot**.
 LXC snapshots are fast and can be restored without rebuilding the app.
+
+---
+
+## Delivery Dashboard data
+
+The Delivery Dashboard used to keep its part catalog, customer directory and
+upload log in Supabase. They now live in `salvage_pulse.db` in four tables:
+`delivery_parts`, `delivery_customers`, `delivery_uploads`, and
+`delivery_announcements`. They are covered by the normal data-directory backup,
+are scoped to the signed-in user's yard, and no browser key is needed.
+
+The 399-row Hollander part catalog seeds itself the first time a yard opens the
+dashboard. The customer directory also seeds itself from that yard's call
+history (name and phone only), so every yard starts with its known callers.
+
+Managers can add addresses and contacts by opening **Customers → Import CSV** in
+the dashboard and choosing the Supabase customer export. The same import is
+available from the command line (export the Supabase `customers` table as CSV
+first):
+
+```bash
+# Run on the Proxmox host, replacing <CTID> and the CSV path.
+pct push <CTID> customers.csv /opt/salvage-pulse/backend/seed/delivery_customers.csv
+pct exec <CTID> -- /opt/salvage-pulse/backend/.venv/bin/python \
+  /opt/salvage-pulse/backend/scripts/import_delivery_data.py \
+  --customers /opt/salvage-pulse/backend/seed/delivery_customers.csv
+```
+
+Export the Supabase `report_uploads` table as `delivery_uploads.csv` and add
+`--uploads /path/to/delivery_uploads.csv` if you want to keep the historical
+upload/rep-utilization log. The importer is idempotent. Use `--if-empty` to make
+it a no-op when the yard already has customers. Keep the CSVs out of git:
+`backend/seed/delivery_customers.csv` is listed in `.gitignore` because it
+contains customer contact details.
+
+Announcement calls are placed by the server, never the browser. Configure these
+in `.env` (test mode is on by default):
+
+```text
+DELIVERY_TEST_MODE=true
+DELIVERY_YARD_NAME=Your Yard Name
+DELIVERY_CALLBACK_NUMBER=(860) 555-0100
+DELIVERY_ALLOWED_TO=+18605550100,+18605550101   # optional allowlist
+TWILIO_ACCOUNT_SID=...
+TWILIO_AUTH_TOKEN=...
+TWILIO_FROM_NUMBER=+18605550100
+```
+
+Once the imported data has been verified, retire the old Supabase project (or
+at least revoke its publishable key and the `announce-delivery` function).
 
 ---
 

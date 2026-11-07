@@ -1637,8 +1637,22 @@ class TransportSecurityTests(unittest.TestCase):
         response = _client().get("/api/health")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers.get("x-content-type-options"), "nosniff")
-        self.assertEqual(response.headers.get("x-frame-options"), "DENY")
+        # SAMEORIGIN keeps the Delivery Dashboard embed working; third parties
+        # still cannot frame the app.
+        self.assertEqual(response.headers.get("x-frame-options"), "SAMEORIGIN")
+        self.assertIn("frame-ancestors 'self'", response.headers.get("content-security-policy", ""))
+        self.assertIn("frame-src 'self'", response.headers.get("content-security-policy", ""))
         self.assertIn("content-security-policy", response.headers)
+
+    def test_delivery_dashboard_csp_allows_pdf_worker_and_platform_api(self):
+        response = _client().get("/delivery-dash/index.html")
+        csp = response.headers.get("content-security-policy", "")
+        self.assertIn("frame-ancestors 'self'", csp)
+        self.assertIn("worker-src 'self' blob:", csp)
+        self.assertIn("connect-src 'self'", csp)
+        self.assertNotIn("supabase", csp)
+        self.assertIn("script-src 'self' 'unsafe-eval'", csp)
+        self.assertEqual(response.headers.get("x-frame-options"), "SAMEORIGIN")
 
     def test_cross_site_post_is_blocked(self):
         response = _client().post(
@@ -2633,3 +2647,421 @@ class IngestPipelineTests(unittest.TestCase):
             rep_client.post("/api/auth/login", json={"email": created.json()["email"], "password": "StrongPass!234"})
             forbidden = rep_client.get("/api/ingest/events")
             self.assertEqual(forbidden.status_code, 403)
+
+
+class DeliveryDashboardTests(unittest.TestCase):
+    """The Delivery Dashboard now persists data in the platform database."""
+
+    def _yard(self, name: str = "Delivery Yard"):
+        client = _client()
+        user, _, _ = _signup(client, yard=name)
+        return client, user
+
+    def test_part_catalog_is_seeded_and_scoped_to_the_yard(self):
+        client, _ = self._yard("Delivery Parts Yard")
+        seeded = client.get("/api/delivery/parts").json()
+        self.assertGreater(len(seeded), 100)
+
+        created = client.post(
+            "/api/delivery/parts",
+            json={"part_name": "Delivery Test Widget", "hollander_id": "12345"},
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+
+        duplicate = client.post(
+            "/api/delivery/parts",
+            json={"part_name": "Delivery Test Widget", "hollander_id": "12346"},
+        )
+        self.assertEqual(duplicate.status_code, 409)
+
+        other, _ = self._yard("Other Delivery Parts Yard")
+        names = {part["part_name"] for part in other.get("/api/delivery/parts").json()}
+        self.assertNotIn("Delivery Test Widget", names)
+
+        moved = client.patch(
+            "/api/delivery/parts/12345",
+            json={"part_name": "Delivery Test Widget v2", "hollander_id": "12346"},
+        )
+        self.assertEqual(moved.status_code, 200, moved.text)
+        self.assertEqual(moved.json()["hollander_id"], "12346")
+
+        self.assertEqual(client.delete("/api/delivery/parts/12346").status_code, 200)
+        self.assertEqual(client.delete("/api/delivery/parts/12346").status_code, 404)
+
+    def test_customer_directory_is_org_scoped_and_deduplicated(self):
+        client, _ = self._yard("Delivery Customer Yard")
+        payload = {
+            "shop_name": "Acme Delivery Body",
+            "main_contact": "Ann",
+            "address1": "1 Main St",
+            "city": "Hartford",
+            "state": "ct",
+            "zip": "06103",
+            "phone": "860-555-0100",
+        }
+        created = client.post("/api/delivery/customers", json=payload)
+        self.assertEqual(created.status_code, 200, created.text)
+        customer_id = created.json()["id"]
+        self.assertEqual(created.json()["state"], "CT")
+
+        self.assertEqual(
+            client.post("/api/delivery/customers", json=payload).status_code, 409
+        )
+
+        found = client.get("/api/delivery/customers", params={"q": "acme"}).json()
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]["shop_name"], "Acme Delivery Body")
+
+        patched = client.patch(
+            f"/api/delivery/customers/{customer_id}", json={"city": "New Haven"}
+        )
+        self.assertEqual(patched.status_code, 200, patched.text)
+        self.assertEqual(patched.json()["city"], "New Haven")
+
+        other, _ = self._yard("Other Delivery Customer Yard")
+        self.assertEqual(
+            other.patch(
+                f"/api/delivery/customers/{customer_id}", json={"city": "Elsewhere"}
+            ).status_code,
+            404,
+        )
+        self.assertEqual(
+            other.delete(f"/api/delivery/customers/{customer_id}").status_code, 404
+        )
+        self.assertEqual(
+            client.delete(f"/api/delivery/customers/{customer_id}").status_code, 200
+        )
+
+    def test_upload_activity_uses_the_session_identity_and_managers_only(self):
+        client, _ = self._yard("Delivery Upload Yard")
+        created = client.post(
+            "/api/delivery/uploads",
+            json={
+                "uploader": "Spoofed Name",
+                "file_name": "report.pdf",
+                "salesperson": "Rich",
+                "report_date": "2026-11-06",
+                "row_count": 4,
+                "matched_customers": 3,
+                "matched_parts": 2,
+            },
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        self.assertEqual(created.json()["uploader"], "Test Owner")
+
+        rows = client.get("/api/delivery/uploads").json()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["file_name"], "report.pdf")
+
+        rep_email = f"delivery-rep-{uuid.uuid4().hex[:8]}@example.test"
+        rep_created = client.post(
+            "/api/users/reps",
+            json={
+                "name": "Delivery Rep",
+                "email": rep_email,
+                "password": "RepPass!234",
+                "role": "rep",
+            },
+        )
+        self.assertEqual(rep_created.status_code, 200, rep_created.text)
+
+        rep = _client()
+        _login(rep, rep_email, "RepPass!234")
+        self.assertEqual(rep.get("/api/delivery/uploads").status_code, 403)
+        self.assertEqual(
+            rep.post(
+                "/api/delivery/uploads",
+                json={"file_name": "rep-report.pdf", "row_count": 1},
+            ).status_code,
+            200,
+        )
+
+    def test_announcement_defaults_to_test_mode(self):
+        client, _ = self._yard("Delivery Call Yard")
+        settings = client.get("/api/delivery/announce/settings").json()
+        self.assertTrue(settings["test_mode"])
+        self.assertFalse(settings["configured"])
+
+        phone = "860555" + f"{uuid.uuid4().int % 10000:04d}"
+        response = client.post("/api/delivery/announce", json={"to": phone})
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertTrue(body["test"])
+        self.assertEqual(body["to"], "+1" + phone)
+        self.assertIn("delivery is expected today", body["message"])
+
+        self.assertEqual(
+            client.post("/api/delivery/announce", json={"to": "123"}).status_code, 400
+        )
+
+    def test_delivery_routes_require_a_yard_session(self):
+        anonymous = _client()
+        self.assertEqual(anonymous.get("/api/delivery/parts").status_code, 401)
+        self.assertEqual(anonymous.get("/api/delivery/customers").status_code, 401)
+        self.assertEqual(anonymous.get("/api/delivery/uploads").status_code, 401)
+        self.assertEqual(
+            anonymous.post("/api/delivery/announce", json={"to": "8605550100"}).status_code,
+            401,
+        )
+
+        master = _master_client()
+        self.assertEqual(master.get("/api/delivery/parts").status_code, 403)
+
+    def test_customer_directory_backfills_from_call_history(self):
+        client, user = self._yard("Delivery Backfill Yard")
+        state = store.get_state()
+        now = store.now_iso()
+        for name, phone in (
+            ("Backfill Body", "15550001111"),
+            ("Backfill Garage", "15550002222"),
+        ):
+            state.setdefault("calls", []).append({
+                "id": f"call-{uuid.uuid4().hex}",
+                "org_id": user["org_id"],
+                "customer_name": name,
+                "customer_phone": phone,
+                "created_at": now,
+                "duration_sec": 30,
+                "outcome": "pending",
+                "rep_name": "Rep",
+                "category": "Part Inquiry/Quote",
+            })
+        store.save_state()
+
+        rows = client.get("/api/delivery/customers").json()
+        names = {row["shop_name"] for row in rows}
+        self.assertIn("Backfill Body", names)
+        self.assertIn("Backfill Garage", names)
+
+    def test_customer_csv_import_enriches_the_call_backfill(self):
+        client, user = self._yard("Delivery CSV Yard")
+        state = store.get_state()
+        state.setdefault("calls", []).append({
+            "id": f"call-{uuid.uuid4().hex}",
+            "org_id": user["org_id"],
+            "customer_name": "Imported Body",
+            "customer_phone": "8605550123",
+            "created_at": store.now_iso(),
+            "duration_sec": 30,
+            "outcome": "pending",
+            "rep_name": "Rep",
+            "category": "Part Inquiry/Quote",
+        })
+        store.save_state()
+
+        seeded = client.get("/api/delivery/customers").json()
+        self.assertEqual(len(seeded), 1)
+
+        csv_bytes = (
+            "shop_name,main_contact,address1,city,state,zip,phone,notes\n"
+            "Imported Body,Ann,1 Main St,Hartford,CT,06103,860-555-0123,CSV row\n"
+        ).encode()
+        imported = client.post(
+            "/api/delivery/customers/import",
+            files={"file": ("customers.csv", csv_bytes, "text/csv")},
+        )
+        self.assertEqual(imported.status_code, 200, imported.text)
+        self.assertEqual(imported.json()["added"], 0)
+        self.assertEqual(imported.json()["updated"], 1)
+
+        rows = client.get(
+            "/api/delivery/customers", params={"q": "Imported Body"}
+        ).json()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["address1"], "1 Main St")
+        self.assertEqual(rows[0]["phone"], "860-555-0123")
+
+        again = client.post(
+            "/api/delivery/customers/import",
+            files={"file": ("customers.csv", csv_bytes, "text/csv")},
+        )
+        self.assertEqual(again.json()["added"], 0)
+        self.assertEqual(again.json()["updated"], 1)
+
+    def test_customer_csv_import_is_manager_only(self):
+        client, _ = self._yard("Delivery CSV Role Yard")
+        csv_bytes = b"shop_name\nRep Import\n"
+
+        rep_email = f"csv-rep-{uuid.uuid4().hex[:8]}@example.test"
+        created = client.post(
+            "/api/users/reps",
+            json={
+                "name": "CSV Rep",
+                "email": rep_email,
+                "password": "RepPass!234",
+                "role": "rep",
+            },
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+
+        rep = _client()
+        _login(rep, rep_email, "RepPass!234")
+        forbidden = rep.post(
+            "/api/delivery/customers/import",
+            files={"file": ("customers.csv", csv_bytes, "text/csv")},
+        )
+        self.assertEqual(forbidden.status_code, 403)
+
+        wrong_type = client.post(
+            "/api/delivery/customers/import",
+            files={"file": ("customers.txt", csv_bytes, "text/plain")},
+        )
+        self.assertEqual(wrong_type.status_code, 400)
+
+    def test_backfill_keeps_an_earlier_name_when_later_calls_are_unnamed(self):
+        client, user = self._yard("Delivery Backfill Name Yard")
+        phone = "15550003333"
+        state = store.get_state()
+        state.setdefault("calls", []).extend([
+            {
+                "id": f"call-{uuid.uuid4().hex}",
+                "org_id": user["org_id"],
+                "customer_name": "Named Body",
+                "customer_phone": phone,
+                "created_at": "2026-01-01T12:00:00Z",
+                "duration_sec": 30,
+                "outcome": "pending",
+                "rep_name": "Rep",
+                "category": "Part Inquiry/Quote",
+            },
+            {
+                "id": f"call-{uuid.uuid4().hex}",
+                "org_id": user["org_id"],
+                "customer_name": "",
+                "customer_phone": phone,
+                "created_at": "2026-02-01T12:00:00Z",
+                "duration_sec": 30,
+                "outcome": "pending",
+                "rep_name": "Rep",
+                "category": "Part Inquiry/Quote",
+            },
+        ])
+        store.save_state()
+
+        rows = client.get("/api/delivery/customers").json()
+        self.assertEqual(rows[0]["shop_name"], "Named Body")
+
+    def test_phone_only_rows_are_repaired_from_calls(self):
+        client, user = self._yard("Delivery Repair Yard")
+        phone = "15550004444"
+        created = client.post(
+            "/api/delivery/customers", json={"shop_name": phone, "phone": phone}
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+
+        state = store.get_state()
+        state.setdefault("calls", []).append({
+            "id": f"call-{uuid.uuid4().hex}",
+            "org_id": user["org_id"],
+            "customer_name": "Repaired Body",
+            "customer_phone": phone,
+            "created_at": store.now_iso(),
+            "duration_sec": 30,
+            "outcome": "pending",
+            "rep_name": "Rep",
+            "category": "Part Inquiry/Quote",
+        })
+        store.save_state()
+
+        rows = client.get("/api/delivery/customers").json()
+        self.assertEqual(rows[0]["shop_name"], "Repaired Body")
+
+
+class AssistantTests(unittest.TestCase):
+    """Wheelie is authenticated, title-aware, and yard-scoped."""
+
+    def _create_member(self, owner_client, *, name: str, role: str, title: str | None = None) -> str:
+        email = f"assistant-{uuid.uuid4().hex[:8]}@example.test"
+        payload = {
+            "name": name,
+            "email": email,
+            "password": "MemberPass!234",
+            "role": role,
+        }
+        if title:
+            payload["title"] = title
+        response = owner_client.post("/api/users/reps", json=payload)
+        self.assertEqual(response.status_code, 200, response.text)
+        return email
+
+    def test_owner_context_is_team_focused(self):
+        client = _client()
+        _signup(client, yard="Assistant Owner Yard")
+        response = client.get("/api/assistant/context")
+        self.assertEqual(response.status_code, 200, response.text)
+        context = response.json()
+        self.assertEqual(context["role"], "owner")
+        self.assertIn("team", " ".join(context["suggestions"]).lower())
+        self.assertIn("owner", context["title"].lower())
+
+    def test_rep_context_and_team_question_stay_personal(self):
+        owner = _client()
+        _signup(owner, yard="Assistant Rep Yard")
+        email = self._create_member(owner, name="Alice Assistant", role="rep")
+        rep = _client()
+        _login(rep, email, "MemberPass!234")
+
+        context = rep.get("/api/assistant/context").json()
+        self.assertEqual(context["audience"], "rep")
+        self.assertIn("how am i", " ".join(context["suggestions"]).lower())
+
+        from unittest.mock import patch
+
+        with patch("assistant_service.gemini_service.generate_text_llm", return_value=None):
+            response = rep.post(
+                "/api/assistant/chat",
+                json={
+                    "messages": [
+                        {"role": "user", "content": "How is my team performing this month?"}
+                    ]
+                },
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("only see your own", response.json()["reply"].lower())
+
+    def test_title_can_override_role_for_inventory_prompts(self):
+        owner = _client()
+        _signup(owner, yard="Assistant Inventory Yard")
+        email = self._create_member(
+            owner,
+            name="Ivy Inventory",
+            role="sales_manager",
+            title="Inventory Manager",
+        )
+        member = _client()
+        _login(member, email, "MemberPass!234")
+        context = member.get("/api/assistant/context").json()
+        self.assertEqual(context["audience"], "inventory")
+        self.assertIn("arriv", " ".join(context["suggestions"]).lower())
+
+    def test_owner_team_reply_is_yard_scoped(self):
+        yard_a = _client()
+        _signup(yard_a, yard="Assistant Yard A")
+        self._create_member(yard_a, name="Rep Only A", role="rep")
+
+        yard_b = _client()
+        _signup(yard_b, yard="Assistant Yard B")
+        self._create_member(yard_b, name="Rep Only B", role="rep")
+
+        from unittest.mock import patch
+
+        with patch("assistant_service.gemini_service.generate_text_llm", return_value=None):
+            response = yard_a.post(
+                "/api/assistant/chat",
+                json={"messages": [{"role": "user", "content": "How is my team performing?"}]},
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        reply = response.json()["reply"]
+        self.assertIn("Rep Only A", reply)
+        self.assertNotIn("Rep Only B", reply)
+
+    def test_assistant_requires_authentication(self):
+        anonymous = _client()
+        self.assertEqual(anonymous.get("/api/assistant/context").status_code, 401)
+        self.assertEqual(
+            anonymous.post(
+                "/api/assistant/chat",
+                json={"messages": [{"role": "user", "content": "Hi"}]},
+            ).status_code,
+            401,
+        )

@@ -334,6 +334,21 @@ def make_customer_key(name: Optional[str], phone: Optional[str]) -> str:
     return f"n:{clean_name or 'unknown'}"
 
 
+def delivery_customer_identity(shop_name: str, address1: str, phone: str) -> str:
+    """Stable dedupe key for the Delivery Dashboard customer directory.
+
+    Mirrors the dashboard's client-side guard: ignore case, punctuation and
+    common company suffixes, and compare phone numbers by digits only.  The
+    same key is used by the importer, so re-running an import is idempotent.
+    """
+    def _clean(value: str) -> str:
+        text = re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
+        text = re.sub(r"\b(llc|inc|co|corp|corporation|company|ltd)\b", " ", text)
+        return re.sub(r"\s+", " ", text).strip()
+
+    return f"{_clean(shop_name)}|{_clean(address1)}|{normalize_phone(phone)}"
+
+
 CUSTOMER_TAGS = {
     "body_shop",
     "mechanic",
@@ -788,6 +803,72 @@ def init_schema():
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+
+            -- Delivery Dashboard data.  These live in SQL (not the JSON state
+            -- file) because the catalog is queried by part name and the
+            -- customer directory holds thousands of rows; rewriting the whole
+            -- state blob for every upload/edit would be wasteful.
+            CREATE TABLE IF NOT EXISTS delivery_parts (
+                org_id TEXT NOT NULL,
+                hollander_id TEXT NOT NULL,
+                part_name TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (org_id, hollander_id)
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_delivery_parts_name
+                ON delivery_parts(org_id, lower(part_name));
+
+            CREATE TABLE IF NOT EXISTS delivery_customers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                org_id TEXT NOT NULL,
+                shop_name TEXT NOT NULL,
+                main_contact TEXT NOT NULL DEFAULT '',
+                address1 TEXT NOT NULL DEFAULT '',
+                address2 TEXT NOT NULL DEFAULT '',
+                city TEXT NOT NULL DEFAULT '',
+                state TEXT NOT NULL DEFAULT '',
+                zip TEXT NOT NULL DEFAULT '',
+                phone TEXT NOT NULL DEFAULT '',
+                notes TEXT NOT NULL DEFAULT '',
+                identity_key TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_delivery_customers_identity
+                ON delivery_customers(org_id, identity_key);
+            CREATE INDEX IF NOT EXISTS idx_delivery_customers_name
+                ON delivery_customers(org_id, lower(shop_name));
+
+            CREATE TABLE IF NOT EXISTS delivery_uploads (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                org_id TEXT NOT NULL,
+                user_id TEXT NOT NULL DEFAULT '',
+                uploader TEXT NOT NULL,
+                uploaded_at TEXT NOT NULL,
+                file_name TEXT NOT NULL DEFAULT '',
+                salesperson TEXT NOT NULL DEFAULT '',
+                report_date TEXT NOT NULL DEFAULT '',
+                row_count INTEGER NOT NULL DEFAULT 0,
+                matched_customers INTEGER NOT NULL DEFAULT 0,
+                matched_parts INTEGER NOT NULL DEFAULT 0,
+                source TEXT NOT NULL DEFAULT 'dashboard'
+            );
+            CREATE INDEX IF NOT EXISTS idx_delivery_uploads_org
+                ON delivery_uploads(org_id, uploaded_at DESC);
+
+            CREATE TABLE IF NOT EXISTS delivery_announcements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                org_id TEXT NOT NULL,
+                user_id TEXT NOT NULL DEFAULT '',
+                to_number TEXT NOT NULL,
+                test INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT '',
+                sid TEXT NOT NULL DEFAULT '',
+                error TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_delivery_announcements_org
+                ON delivery_announcements(org_id, created_at DESC);
             """
         )
 

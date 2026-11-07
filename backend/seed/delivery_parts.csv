@@ -1,0 +1,400 @@
+hollander_id,part_name
+100,Front End Assembly
+101,"Bumper Cover, Fr"
+102,Header Panel Assy
+103,"Spoiler/Valance, Fr"
+104,Grille
+105,"Bumper Assy, Front"
+106,"Bumper Guard, Front"
+107,"Bumper Reinf, Front"
+108,Bumper Shock
+109,Radiator Core Supp
+110,Fender
+111,Fender Flare/Ext
+112,Inner Fender
+113,Fender Molding
+114,Headlamp Assembly
+115,formerly cornering lamp moved to PT116
+116,Front Lamp
+117,Hood
+118,Hood Hinge
+119,Cowl
+120,"Door Assembly, Fr"
+121,Hood Strut
+122,Running Board
+123,Cowl Vent Panel
+124,"Door Hinge, Front"
+125,"Door Window Regulator, Fr"
+126,Fr Dr Vent Wdw Reg
+127,"Door Molding, Fr"
+128,Side View Mirror
+129,"Door Handle, Outer"
+130,"Door Assy, Rr Side"
+133,"Door Hinge, Rear"
+135,"Dr Wdw Regulator, Rr"
+137,"Door Molding, Rear"
+139,A-Pillar
+140,"Door Assy, Rr Back"
+145,Bumper End Cap
+146,Liner
+147,Topper/Tonneau
+148,Luggage Rack
+149,Roll Bar
+150,Rear Clip
+151,Rear Top Section
+152,Roof Assembly
+153,Sunroof/Panel Assm.
+154,Pickup Cab (Shell)
+155,Pickup Box Rr
+157,PU Box Front Panel
+158,PU Box Floor Pan
+159,Qtr Repair Panel
+160,Quarter Panel Assy
+161,Quarter Extension
+162,Skirt
+163,"Quarter Window Regulator, Rear"
+164,Cab Clip
+165,Quarter Molding
+166,Tail Lamp
+167,Backup Lamp
+168,"Side Marker Lamp, Rr"
+169,"Spoiler, Rear"
+170,Decklid /Tailgate
+171,Lid/Gate Molding
+172,Hatchback Strut
+173,"Valance, Rear"
+174,Trunk Lid Hinge
+175,License Lamp
+176,High Mtd Stop Lamp
+177,Fuel Filler Door
+178,Fuel Cap
+179,Fuel Filler Neck
+181,Keys/Latches/Locks
+182,Fobs/Remote
+184,Tail Gate Hinge
+185,Tail Gate Window Regulato
+186,Rocker Panel
+187,"Bumper Cover, Rr"
+188,Rr Wdw Washer Motor
+189,Rocker Pnl Molding
+190,"Bumper Assembly, Rear"
+191,"Bumper Reinf, Rear"
+192,Bumper Filler Panel
+193,"Bumper Guard, Rear"
+194,Tail Panel
+195,Tail Finish Panel
+196,Floor Pan
+197,Fuel Tank
+198,Center Pillar
+199,"Body Parts, Misc."
+200,Complete Interior
+202,"Seat, Front"
+203,"Seat Track, Front"
+204,Trim Panel Fr Dr
+205,Trim Panel Rr Dr
+206,Headrest
+210,"Seat Belt Assm, Fr"
+211,Elec Seat Blt Track
+212,"Seat Belt Assm, Rr"
+215,"Seat, Rear"
+220,"Third Seat, (SW or Van)"
+221,Parcel Shelf
+222,"Carpet, Fr"
+223,"Carpet, Rr"
+224,Headliner
+225,Misc Trim Panel
+226,"Door Window Crank, Front"
+227,"Door Window Crank, Rear"
+229,"Door Handle, Inner"
+230,Convertible Boot
+231,Cargo Cover/Shade
+234,Accelerator Parts
+235,Steering Wheel
+237,Steering Shaft
+238,Steering Column
+239,Shift Lever Linkage
+241,Console
+242,Trans Shift Assy
+244,Ashtray/Lighter
+250,Dash Assembly
+251,Dash Panel
+252,Dash Pad
+253,Air Bag
+254,Dash Bezel
+255,Instrument Cluster
+256,Clock
+257,Speedometer Head /Cluster
+258,Tachometer
+259,Fuel Gauge
+260,Glove Box
+261,Clock Spring
+267,Int Rr View Mirror
+268,Sun Visor/Shade
+269,Windshield Frame
+270,Windshield Glass
+275,Back Glass
+277,"Door Glass, Front"
+278,"Door Glass, Rear"
+279,"Door Vent Glass, Rr"
+280,"Door Vent Glass, Fr"
+284,Quarter Glass
+288,Roof Glass
+289,Special Glass
+299,"Interior Parts, Misc."
+300,Engine Assembly
+302,Cylinder Block
+303,Crankshaft
+304,Piston
+305,Camshaft
+306,Cylinder Head
+307,Rocker Arm
+308,Timing Cover
+309,Harmonic Balancer
+310,Belt Tension
+311,Oil Pan
+312,Oil Pump
+313,Connecting Rod
+314,Short Cylinder Block
+315,"Timing Chain, Belt"
+316,Timing Gears
+317,Intercooler
+318,Engine Oil Cooler
+319,Air Cleaner
+320,Carburetor
+321,Turbo/Supercharger
+322,Fuel Injec Parts
+323,Fuel Pump
+324,Coolant Pump
+325,Fan Blade
+326,Fan Clutch
+327,Exhaust Manifold
+328,Exhaust Assembly
+329,Intake Manifold
+330,Exhaust Cross Pipe
+331,Exhaust Pipe
+332,Tail Pipe
+333,Muffler
+334,Exhaust Resonator
+335,Catalytic Converter
+336,Air Flow Meter
+337,Throttle Body Assy
+338,Air Tube/Resonator
+341,Air Injection Pump
+342,"Brackets, Misc."
+343,Engine Mounts
+345,Fuel Lines
+348,Thermostat Housing
+349,Camshaft Housing
+350,Valve Cover
+351,Engine Cover
+372,Vacuum Pump
+373,Exhaust Fluid Tank
+374,Filter/Water Separator
+375,Fuel Vapor Canister
+376,Vacuum/Pressure Tan
+399,"Engine Parts, Misc."
+400,Transmiss/Transaxle
+401,Overdrive Unit
+403,Transaxle Housing
+404,"MT Parts, Misc."
+405,"AT Parts, Misc."
+406,Pressure Plate
+407,Torque Converter
+408,Bell Housing
+409,Flywheel/Flex Plate
+410,Clutch Disc
+411,Transfer Case Adapter
+412,Transfer Case Assy
+413,Transmission Pump
+414,AT Oil Cooler
+416,Automatic Trans Pan
+417,Clutch Master Cyl
+418,Clutch Slave Cyl
+420,Transfer Case Motor
+422,Trans Xmember Mount
+430,"Drive Shaft, Front"
+431,"Drive Shaft, Rear"
+432,Universal Slip Yoke
+434,"Axle Assy, Fr (4WD)"
+435,"Axle Assembly, Rr"
+437,Axle Housing
+438,Axle Flange
+439,Carrier Case
+440,Carrier Assembly
+441,Differential Parts
+442,Differential Flange
+443,Differential Case
+444,Differential Assembly
+445,Ring Gear and Pinion
+446,4x4 Axle Actuator
+447,Axle Shaft
+449,Differential Side Gears
+475,Ind Rr Susp Assy
+476,Loaded Beam Axle
+477,Susp Crossm/K-Frame
+490,"Stub Axle, Rear"
+499,"Axle Parts, Misc."
+500,Frame
+501,"Frame, Front"
+502,"Frame Rails, Up Lwr"
+503,Frame Horn
+504,Spring Hanger
+505,"Upper Cntrl Arm, Rr"
+506,formerly Suspension Locating Arm
+507,formerly Suspension Trailing Arm
+508,Retainer
+509,Knuckle Support
+510,Knee (Front)
+511,"Upper Cntrl Arm, Fr"
+512,"Lower Cntrl Arm, Fr"
+513,"Lower Cntrl Arm, Rr"
+514,"Radius Arm, Front"
+515,"Spindle/Knuckle, Fr"
+516,"Leaf Spring, Front"
+517,Coil/Air Spring
+518,"Leaf Spring, Rear"
+520,Front Axle I-Beam (2WD)
+521,Torsion Bar
+522,Suspension Compressor/Pump
+523,Suspension Trunion Arm
+524,Stabilizer Bar
+525,Track Bar/Watts Linkage
+526,Shock Absorber
+527,Strut
+528,Strut Tower Brace
+530,"Brakes, Front"
+533,"Brakes, Rear"
+534,"Brake Parts, Misc. Fr"
+535,"Brake Parts, Misc. Rr"
+536,Caliper
+537,Locking Hubs
+538,Hub
+539,Brake Proport Valve
+540,Power Brake Booster
+541,Brake Master Cyl
+542,Brake Shoes
+543,"Backing Plate, Front"
+544,"Backing Plate, Rear"
+545,Anti Lock Brake Pts
+546,Brake/Clutch Pedal Box
+547,Emerg Brake Parts
+548,Chassis Sensor
+550,Power Strg Assembly
+551,Steering Gear/Rack
+552,Tie Rod
+553,PS Pump/Motor
+554,Pow Stg Cont Valve
+555,Pow Stg Press Hose
+556,Pow Stg Press Cyl
+557,Pitman Arm
+558,Drive Link
+559,Idler Arm
+560,Wheel
+561,"Wheel Bearing, Front"
+562,"Wheel Bearing, Rear"
+563,Spare Wheel Parts
+564,Jack
+565,Inner Fender Liner
+566,Spare Wheel Carrier
+567,Power Steering Res
+570,Wheel Cover
+575,Trim Ring
+580,Hub Cap
+584,TPMS Sensor
+585,Tires
+586,Hitch/Tow Hook/Winc
+587,Plow/Frame
+590,Eng/Motor Cont Mod
+591,Chassis Cont Mod
+592,"Electronic Parts, Msc."
+593,formerly Ignition Control Module
+594,Info-GPS-TV Screen
+595,Heads Up Display
+596,Camera/Projector
+598,Chassis Mounts
+599,"Steering Susp, Misc."
+600,Battery
+601,Alternator
+602,Voltage Regulator
+603,Generator
+604,Starter Motor
+605,Starter Solenoid
+606,Distributor
+607,Battery Tray
+608,EGR Maintenance Reminder
+609,Fuel Pacer System
+610,Coil
+611,Seat Belt Motor
+612,Seat Motor
+613,Horn
+614,Relay Electrical
+615,Blower Motor
+616,"Window Defogger, Rr"
+617,Power Window Motor
+618,"Wiper Motor, Rear"
+619,Headlamp Motor
+620,"Wiper Motor, Wdsh"
+621,Wiper Transmission
+622,Wdsh Washer Motor
+624,Cruise Speed Reg
+625,Gauges All
+626,Wiper Arm
+627,Washer Reservoir Assy
+628,Roof Motor
+629,Column Switch
+630,Headlamp Door Cover
+631,Headlamp Wipe Motor
+632,Headlamp Wash Motor
+633,Ignition Switch
+634,Conve Top Motor
+635,Conve Top Lift
+636,Auto Headlamp Dim
+637,Fuel Tank Sending Unit
+638,Radio/Audio
+639,Drivetrain Sensors
+640,Lid Motor/Pull Down
+641,Door Electrical Switch
+642,Electric Door Motor
+643,Lock Solenoid
+644,Speaker
+645,Antenna
+646,Fuse Box
+647,Lamp Wire Harness
+648,Engine Wire Harness
+649,Dash Wire Harness
+650,Body Wire Harness
+651,AC Wire Harness
+652,"Circuit Boards, Misc."
+653,Body Sensors
+654,Fob/Remote
+655,Temperature Control
+656,Air Conditioning Selector
+658,"Wire Harness, Trans"
+659,Dash/Interior/Seat Switch
+660,Converter/Inverter/Charger
+661,Amplifier/Speakers
+671,Coolant Reservoir
+673,Radiator Shroud
+674,Rad Cond Fan Motor
+675,Radiator
+676,Heater Core/Element
+677,Heater Assembly
+678,Heater Housing
+679,AC Condenser
+680,AC Evaporator
+681,AC Evaporator Housi
+682,AC Compressor
+683,Air Conditioner Hoses
+684,Air Conditioner Compressor Clutch
+685,Heater AC Parts
+690,Spark Plug
+691,Fasteners
+694,Owner’s Manual
+695,Tools
+696,Solvent or Lubricant
+697,Refrigerant
+698,Accessory Holders
+699,"Electrical Parts, Misc."
+900,Parts Cars or Trucks
+950,Rebuilders
+999,Misc. Parts
