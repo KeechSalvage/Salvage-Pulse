@@ -1,0 +1,21 @@
+Tyler Grant | Salesperson Delivery Report for 10/30/2026
+Customer,Type,Reference Numbers,Part,Complete,Order,Invoice,PO,Phone,Assigned Rep
+Mike Hendricks Auto Repair,Delivery,Order: 318421 Invoice: 204191 PO: MIKE,"ENGINE, 3.5L ECOBOOST",Yes,318421,204191,MIKE,1 (512) 555-0141,Tyler Grant
+Eric Lindgren Speed Shop,Delivery,Order: 318425 Invoice: 204195 PO: CLUTCH-KIT,"ENGINE, 5.0L COYOTE",Yes,318425,204195,CLUTCH-KIT,1 (512) 555-0511,Jake Bradley
+Rachel Nguyen Collision,Delivery,Order: 318428 Invoice: 204198 PO: RAV4-LED,TAIL LIGHT ASSEMBLY,Yes,318428,204198,RAV4-LED,1 (512) 555-0301,Cody Miller
+Kevin Marsh Automotive,Delivery,Order: 318432 Invoice: 204202 PO: 50711,ALTERNATOR,Yes,318432,204202,50711,1 (512) 555-0711,Austin Davis
+Sarah Okafor Body Works,Delivery,Order: 318436 Invoice: 204206 PO: SO-7841,"BUMPER COVER, FRONT",Yes,318436,204206,SO-7841,1 (512) 555-0172,Tyler Grant
+Rachel Irwin Auto Care,Delivery,Order: 318440 Invoice: 204210 PO: ESCAPE-17,AC COMPRESSOR,Yes,318440,204210,ESCAPE-17,1 (512) 555-1349,Cody Miller
+Gary Pruitt Motors,Delivery,Order: 318444 Invoice: 204214 PO: PRUITT-9,RADIATOR,Yes,318444,204214,PRUITT-9,1 (512) 555-0314,Cody Miller
+Tom Dixon Garage,Delivery,Order: 318448 Invoice: 204218 PO: TD-5510,ENGINE ASSEMBLY,Yes,318448,204218,TD-5510,1 (512) 555-1008,Tyler Grant
+Sophie Webb Auto Body,Delivery,Order: 318452 Invoice: 204222 PO: EQUINOX-15,HEADLAMP ASSEMBLY,Yes,318452,204222,EQUINOX-15,1 (512) 555-4981,Tyler Grant
+Walt Henderson Diesel & Auto,Delivery,Order: 318456 Invoice: 204226 PO: WALT-60,"ENGINE, 6.0L POWERSTROKE",Yes,318456,204226,WALT-60,1 (512) 555-0537,Jake Bradley
+Paul Ibarra Collision Center,Delivery,Order: 318460 Invoice: 204230 PO: IBARRA-21,"BUMPER ASSY, FRONT",Yes,318460,204230,IBARRA-21,1 (512) 555-0737,Austin Davis
+Linda Patterson Repair,Delivery,Order: 318464 Invoice: 204234 PO: PATTERSON,ALTERNATOR,Pending,318464,204234,PATTERSON,1 (512) 555-0193,Tyler Grant
+Marcus Delgado Auto Repair,Delivery,Order: 318468 Invoice: 204238 PO: 784821190,"HEADLAMP ASSEMBLY, L",Pending,318468,204238,784821190,1 (512) 555-0338,Cody Miller
+Gloria Vega Body Shop,Delivery,Order: 318472 Invoice: 204242 PO: VEGA-240,"BUMPER COVER, FRONT",Pending,318472,204242,VEGA-240,1 (512) 555-1943,Jake Bradley
+Dave Whitfield Auto Works,Delivery,Order: 318476 Invoice: 204246 PO: WHITFIELD,"HEADLAMP, DRIVER SIDE",Pending,318476,204246,WHITFIELD,1 (512) 555-0204,Tyler Grant
+Carlos Vega Mechanical,Delivery,Order: 318480 Invoice: 204250 PO: VEGA-875,AC COMPRESSOR,Pending,318480,204250,VEGA-875,1 (512) 555-8750,Cody Miller
+Dave Tate Offroad & 4x4,Delivery,Order: 318484 Invoice: 204254 PO: JEEP-W,TRANSMISSION,Pending,318484,204254,JEEP-W,1 (512) 555-7740,Tyler Grant
+Dave Ellis Truck Center,Delivery,Order: 318488 Invoice: 204258 PO: F150-TAIL,TAIL LIGHT,Pending,318488,204258,F150-TAIL,1 (512) 555-7264,Tyler Grant
+Linda Sloan Service Center,Delivery,Order: 318492 Invoice: 204262 PO: DODGE-16,STARTER MOTOR,Pending,318492,204262,DODGE-16,1 (512) 555-1939,Cody Miller

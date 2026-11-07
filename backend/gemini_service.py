@@ -27,6 +27,75 @@ def is_gemini_configured() -> bool:
     return bool(key and not key.startswith("YOUR_") and len(key) > 10)
 
 
+def generate_text_llm(
+    system_prompt: str,
+    messages: List[Dict[str, str]],
+    *,
+    max_tokens: int = 700,
+    temperature: float = 0.3,
+) -> Optional[str]:
+    """Small non-streaming text completion for the in-app assistant.
+
+    Returns ``None`` when Gemini is not configured or every model fails, so
+    callers can fall back to a deterministic, role-aware answer.
+    """
+    if not is_gemini_configured() or not messages:
+        return None
+
+    api_key = get_gemini_api_key()
+    contents = []
+    for message in messages:
+        text = str(message.get("content") or "").strip()
+        if not text:
+            continue
+        contents.append({
+            "role": "user" if message.get("role") == "user" else "model",
+            "parts": [{"text": text}],
+        })
+    if not contents:
+        return None
+
+    payload = {
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
+        "contents": contents,
+        "generationConfig": {
+            "temperature": temperature,
+            "maxOutputTokens": max_tokens,
+        },
+    }
+
+    models_to_try = [DEFAULT_MODEL]
+    for model_name in FALLBACK_MODELS:
+        if model_name not in models_to_try:
+            models_to_try.append(model_name)
+
+    for model_name in models_to_try:
+        try:
+            response = httpx.post(
+                f"{GEMINI_BASE_URL}/models/{model_name}:generateContent?key={api_key}",
+                json=payload,
+                timeout=12.0,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                candidates = data.get("candidates") or []
+                if candidates:
+                    parts = candidates[0].get("content", {}).get("parts") or []
+                    text = "".join(str(part.get("text") or "") for part in parts).strip()
+                    if text:
+                        return text
+            elif response.status_code in (404, 429, 503):
+                logger.info("Assistant model %s returned %s, trying fallback", model_name, response.status_code)
+                continue
+            else:
+                logger.warning("Assistant model %s returned %s", model_name, response.status_code)
+                break
+        except Exception as exc:
+            logger.warning("Assistant LLM error on %s: %s", model_name, exc)
+            break
+    return None
+
+
 def normalize_audio_mime(filename: str, content_type: Optional[str] = None) -> str:
     ext = os.path.splitext(filename or "")[1].lower()
     if ext in (".mp3",):

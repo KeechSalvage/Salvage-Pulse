@@ -40,7 +40,7 @@ else:
 
 # Initialize database schema and run migrations
 database.init_schema()
-from routers import admin, analytics, auth, billing, calls, forms, ingest, popups, roleplay, settings, team
+from routers import admin, analytics, assistant, auth, billing, calls, delivery, forms, ingest, popups, roleplay, settings, team
 from security import request_origin_allowed
 
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "development").strip().lower()
@@ -209,8 +209,24 @@ class SecurityHeadersMiddleware:
             "img-src 'self' data: blob: https:; "
             "font-src 'self' data: https://fonts.gstatic.com; "
             "connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com https://www.googleapis.com https://www.gstatic.com; "
-            "frame-src https://accounts.google.com; "
-            "frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+            "frame-src 'self' https://accounts.google.com; "
+            "frame-ancestors 'self'; base-uri 'self'; form-action 'self'",
+        ).strip()
+        # The Delivery Dashboard is a standalone static app (PDF.js) embedded as
+        # a same-origin iframe by the console. It needs the PDF worker, inline
+        # styles from its templates, and the platform's own API. All data now
+        # comes from /api/delivery, so no third-party origin is allowed.
+        self.delivery_csp = os.environ.get(
+            "DELIVERY_DASH_CONTENT_SECURITY_POLICY",
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-eval'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: blob: https:; "
+            "font-src 'self' data:; "
+            "connect-src 'self'; "
+            "worker-src 'self' blob:; "
+            "frame-src 'self'; "
+            "frame-ancestors 'self'; base-uri 'self'; form-action 'self'",
         ).strip()
 
     async def __call__(self, scope, receive, send):
@@ -218,20 +234,25 @@ class SecurityHeadersMiddleware:
             await self.app(scope, receive, send)
             return
 
+        is_delivery = scope.get("path", "").startswith("/delivery-dash")
+        csp = self.delivery_csp if is_delivery else self.csp
+
         async def send_with_headers(message):
             if message.get("type") == "http.response.start":
                 headers = list(message.get("headers", []))
                 additions = {
                     b"x-content-type-options": b"nosniff",
-                    b"x-frame-options": b"DENY",
+                    # SAMEORIGIN (not DENY) so the console can embed the
+                    # Delivery Dashboard iframe; nothing else may frame us.
+                    b"x-frame-options": b"SAMEORIGIN",
                     b"referrer-policy": b"strict-origin-when-cross-origin",
                     b"permissions-policy": b"camera=(), microphone=(), geolocation=()",
                     # Allow the Google OAuth popup to keep its opener; plain
                     # "same-origin" breaks postMessage-based sign-in flows.
                     b"cross-origin-opener-policy": b"same-origin-allow-popups",
                 }
-                if self.csp:
-                    additions[b"content-security-policy"] = self.csp.encode("utf-8")
+                if csp:
+                    additions[b"content-security-policy"] = csp.encode("utf-8")
                 if IS_PRODUCTION:
                     additions[b"strict-transport-security"] = b"max-age=31536000; includeSubDomains"
                 existing = {k.lower() for k, _ in headers}
@@ -301,6 +322,8 @@ app.include_router(forms.router)
 app.include_router(analytics.router)
 app.include_router(roleplay.router)
 app.include_router(team.router)
+app.include_router(delivery.router)
+app.include_router(assistant.router)
 app.include_router(billing.public_router)
 app.include_router(billing.router)
 app.include_router(admin.router)
@@ -331,7 +354,14 @@ if dist_dir:
         # Resolve inside the dist directory only; blocks ../ path traversal.
         direct = os.path.realpath(os.path.join(dist_root, full_path))
         if (direct == dist_root or direct.startswith(dist_root + os.sep)) and os.path.isfile(direct):
-            return FileResponse(direct)
+            # The Delivery Dashboard is a standalone bundle inside the SPA. Its
+            # HTML already asks for no-store, but an old cached JS file would
+            # keep calling the retired Supabase project and fail behind the new
+            # CSP. Force revalidation for every asset under this path.
+            headers = None
+            if full_path.startswith("delivery-dash/"):
+                headers = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+            return FileResponse(direct, headers=headers)
 
         index_file = os.path.join(dist_root, "index.html")
         if os.path.isfile(index_file):
