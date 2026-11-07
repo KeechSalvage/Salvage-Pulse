@@ -2907,3 +2907,61 @@ class DeliveryDashboardTests(unittest.TestCase):
             files={"file": ("customers.txt", csv_bytes, "text/plain")},
         )
         self.assertEqual(wrong_type.status_code, 400)
+
+    def test_backfill_keeps_an_earlier_name_when_later_calls_are_unnamed(self):
+        client, user = self._yard("Delivery Backfill Name Yard")
+        phone = "15550003333"
+        state = store.get_state()
+        state.setdefault("calls", []).extend([
+            {
+                "id": f"call-{uuid.uuid4().hex}",
+                "org_id": user["org_id"],
+                "customer_name": "Named Body",
+                "customer_phone": phone,
+                "created_at": "2026-01-01T12:00:00Z",
+                "duration_sec": 30,
+                "outcome": "pending",
+                "rep_name": "Rep",
+                "category": "Part Inquiry/Quote",
+            },
+            {
+                "id": f"call-{uuid.uuid4().hex}",
+                "org_id": user["org_id"],
+                "customer_name": "",
+                "customer_phone": phone,
+                "created_at": "2026-02-01T12:00:00Z",
+                "duration_sec": 30,
+                "outcome": "pending",
+                "rep_name": "Rep",
+                "category": "Part Inquiry/Quote",
+            },
+        ])
+        store.save_state()
+
+        rows = client.get("/api/delivery/customers").json()
+        self.assertEqual(rows[0]["shop_name"], "Named Body")
+
+    def test_phone_only_rows_are_repaired_from_calls(self):
+        client, user = self._yard("Delivery Repair Yard")
+        phone = "15550004444"
+        created = client.post(
+            "/api/delivery/customers", json={"shop_name": phone, "phone": phone}
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+
+        state = store.get_state()
+        state.setdefault("calls", []).append({
+            "id": f"call-{uuid.uuid4().hex}",
+            "org_id": user["org_id"],
+            "customer_name": "Repaired Body",
+            "customer_phone": phone,
+            "created_at": store.now_iso(),
+            "duration_sec": 30,
+            "outcome": "pending",
+            "rep_name": "Rep",
+            "category": "Part Inquiry/Quote",
+        })
+        store.save_state()
+
+        rows = client.get("/api/delivery/customers").json()
+        self.assertEqual(rows[0]["shop_name"], "Repaired Body")

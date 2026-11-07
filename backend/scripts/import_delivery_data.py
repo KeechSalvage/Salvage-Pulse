@@ -182,6 +182,9 @@ def main() -> int:
             seeded = delivery_store.backfill_customers_from_calls(conn, org_id)
             if seeded:
                 print(f"  customers: {seeded} seeded from call history")
+            repaired = delivery_store.repair_customer_names(conn, org_id)
+            if repaired:
+                print(f"  customers: {repaired} phone-only names repaired")
             counts = import_customers(conn, org_id, args.customers)
             print(
                 f"  customers: {counts['added']} added, {counts['updated']} updated, "

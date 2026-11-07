@@ -2570,28 +2570,45 @@ async function searchCustomers(rawTerm) {
   lastCustomerTerm = term;
 
   const seq = ++customerSearchSeq;
-  setCustomerStatus('⏳ Searching customers…', 'muted');
+  setCustomerStatus(term ? '⏳ Searching customers…' : '⏳ Loading all customers…', 'muted');
 
   try {
-    const params = new URLSearchParams();
-    params.set('limit', term ? '40' : '25');
-    if (term) params.set('q', term);
+    const fetchPage = async (params) => {
+      const res = await fetch(`${API_BASE}/customers?${params.toString()}`, {
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' }
+      });
+      if (!res.ok) {
+        if (res.status === 401) throw new Error('Your session has expired. Reload the page and sign in again.');
+        if (res.status === 403) throw new Error('Your account does not have access to the customer list.');
+        throw new Error(`Search failed (${res.status}).`);
+      }
+      return await res.json();
+    };
 
-    const res = await fetch(`${API_BASE}/customers?${params.toString()}`, {
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json' }
-    });
-
-    if (seq !== customerSearchSeq) return;
-    if (!res.ok) {
-      if (res.status === 401) throw new Error('Your session has expired. Reload the page and sign in again.');
-      if (res.status === 403) throw new Error('Your account does not have access to the customer list.');
-      throw new Error(`Search failed (${res.status}).`);
+    const collected = [];
+    if (term) {
+      const params = new URLSearchParams({ limit: '40', q: term });
+      const rows = await fetchPage(params);
+      if (seq !== customerSearchSeq) return;
+      collected.push(...(Array.isArray(rows) ? rows : []));
+    } else {
+      // Opening Customers shows the whole directory, not just the first page.
+      const pageSize = 1000;
+      let offset = 0;
+      while (true) {
+        const params = new URLSearchParams({ limit: String(pageSize), offset: String(offset) });
+        const rows = await fetchPage(params);
+        if (seq !== customerSearchSeq) return;
+        if (!Array.isArray(rows) || !rows.length) break;
+        collected.push(...rows);
+        if (rows.length < pageSize) break;
+        offset += pageSize;
+        if (collected.length >= 20000) break;
+      }
     }
 
-    const rows = await res.json();
-    if (seq !== customerSearchSeq) return;
-    customerResults = Array.isArray(rows) ? rows : [];
+    customerResults = collected;
     renderCustomerResults(customerResults, term);
   } catch (err) {
     if (seq !== customerSearchSeq) return;
@@ -2611,7 +2628,7 @@ function renderCustomerResults(rows, term) {
     return;
   }
 
-  setCustomerStatus(`${list.length} customer${list.length === 1 ? '' : 's'} ${term ? 'matching' : 'shown'}.`, 'muted');
+  setCustomerStatus(`${list.length.toLocaleString()} customer${list.length === 1 ? '' : 's'} ${term ? 'matching' : 'shown'}.`, 'muted');
 
   resultsEl.innerHTML = list.map(c => `
     <div class="customer-row" data-id="${escAttr(c.id)}"
@@ -2627,9 +2644,9 @@ function renderCustomerResults(rows, term) {
     </div>
   `).join('');
 
+  const byId = new Map(list.map(c => [String(c.id), c]));
   resultsEl.querySelectorAll('.customer-row').forEach(rowEl => {
-    const id = rowEl.dataset.id;
-    const customer = customerResults.find(c => String(c.id) === String(id));
+    const customer = byId.get(rowEl.dataset.id);
     if (!customer) return;
 
     const editBtn = rowEl.querySelector('.cust-edit-btn');

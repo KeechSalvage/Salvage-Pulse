@@ -17,6 +17,7 @@ from typing import Any, Iterable
 
 import database
 import store
+import yard_analytics as ya
 
 CUSTOMER_FIELDS = (
     "shop_name",
@@ -81,12 +82,72 @@ def _name_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
 
 
+_GENERIC_NAMES = {"customer", "unknown", "wireless caller", "wireless caller 1", "no name", "n/a"}
+
+
+def _looks_like_phone(value: str) -> bool:
+    text = str(value or "").strip()
+    digits = re.sub(r"\D", "", text)
+    letters = re.sub(r"[^A-Za-z]", "", text)
+    return bool(digits) and not letters and len(digits) >= 7
+
+
+def _clean_name(value: Any) -> str:
+    name = str(value or "").strip()
+    if not name or name.lower() in _GENERIC_NAMES or _looks_like_phone(name):
+        return ""
+    return name[:200]
+
+
+def _call_name(call: dict[str, Any]) -> str:
+    for key in ("customer_name", "customer", "caller_name", "name"):
+        name = _clean_name(call.get(key))
+        if name:
+            return name
+    return ""
+
+
+def _full_customer_names(state: dict[str, Any]) -> dict[str, str]:
+    """Phone digits -> name from the legacy full_customers cache."""
+    names: dict[str, str] = {}
+    for key, entry in (state.get("full_customers") or {}).items():
+        stat = entry.get("stat") if isinstance(entry, dict) else None
+        if not isinstance(stat, dict):
+            continue
+        name = _clean_name(stat.get("name"))
+        digits = database.normalize_phone(stat.get("phone") or key)
+        if name and len(digits) >= 10:
+            names.setdefault(digits, name)
+    return names
+
+
+def _profile_name(state: dict[str, Any], org_id: str, digits: str) -> str:
+    if len(digits) < 10:
+        return ""
+    profile = ya._customer_profile(state, org_id, f"p:{digits}") or {}
+    return _clean_name(profile.get("name"))
+
+
+def _latest_call_names(state: dict[str, Any], org_id: str) -> dict[str, str]:
+    names: dict[str, str] = {}
+    for call in state.get("calls", []):
+        if call.get("org_id") != org_id:
+            continue
+        digits = database.normalize_phone(call.get("customer_phone"))
+        name = _call_name(call)
+        if len(digits) >= 10 and name:
+            names[digits] = name
+    return names
+
+
 def backfill_customers_from_calls(conn, org_id: str, state: dict[str, Any] | None = None) -> int:
     """Seed the directory from the yard's call history when it is empty.
 
     Only name and phone are available from calls; address fields stay blank
     until the customer CSV is imported.  Calls with the same phone collapse
-    into one directory entry, matching the platform's customer grouping.
+    into one directory entry, matching the platform's customer grouping.  The
+    latest non-empty name wins, and an existing customer profile outranks the
+    call transcript's parsed name.
     """
     count = conn.execute(
         "SELECT COUNT(*) FROM delivery_customers WHERE org_id = ?", (org_id,)
@@ -98,28 +159,31 @@ def backfill_customers_from_calls(conn, org_id: str, state: dict[str, Any] | Non
     calls = [c for c in state.get("calls", []) if c.get("org_id") == org_id]
     calls.sort(key=lambda c: c.get("created_at") or "")
 
-    by_key: dict[str, dict[str, str]] = {}
+    groups: dict[str, dict[str, str]] = {}
     for call in calls:
-        name = str(call.get("customer_name") or "").strip()[:200]
         phone = str(call.get("customer_phone") or "").strip()[:40]
+        name = _call_name(call)
         if not name and not phone:
             continue
         digits = database.normalize_phone(phone)
         key = f"p:{digits}" if len(digits) >= 10 else f"n:{_name_key(name)}"
-        by_key[key] = {
-            "shop_name": name or phone,
-            "phone": phone,
-        }
+        group = groups.setdefault(key, {"phone": phone, "name": ""})
+        if phone:
+            group["phone"] = phone
+        if name:
+            group["name"] = name  # calls are oldest -> newest, so the latest name wins
 
-    if not by_key:
+    if not groups:
         return 0
 
+    full_names = _full_customer_names(state)
     now = store.now_iso()
     inserted = 0
-    for payload in by_key.values():
-        identity = database.delivery_customer_identity(
-            payload["shop_name"], "", payload["phone"]
-        )
+    for group in groups.values():
+        digits = database.normalize_phone(group["phone"])
+        name = _profile_name(state, org_id, digits) or group["name"] or full_names.get(digits, "")
+        shop_name = name or group["phone"]
+        identity = database.delivery_customer_identity(shop_name, "", group["phone"])
         cursor = conn.execute(
             "INSERT OR IGNORE INTO delivery_customers "
             "(org_id, shop_name, main_contact, address1, address2, city, state, zip, phone, notes, "
@@ -127,8 +191,8 @@ def backfill_customers_from_calls(conn, org_id: str, state: dict[str, Any] | Non
             "VALUES (?, ?, '', '', '', '', '', '', ?, '', ?, ?, ?)",
             (
                 org_id,
-                payload["shop_name"],
-                payload["phone"],
+                shop_name,
+                group["phone"],
                 identity,
                 now,
                 now,
@@ -136,6 +200,51 @@ def backfill_customers_from_calls(conn, org_id: str, state: dict[str, Any] | Non
         )
         inserted += cursor.rowcount
     return inserted
+
+
+def repair_customer_names(conn, org_id: str, state: dict[str, Any] | None = None) -> int:
+    """Replace phone-number display names with a real name from call data.
+
+    Earlier builds could backfill ``shop_name = phone`` when the latest call
+    had no parsed customer name.  This repairs those rows in place without
+    touching names a user or CSV import already provided.
+    """
+    rows = conn.execute(
+        "SELECT id, shop_name, address1, phone FROM delivery_customers WHERE org_id = ? "
+        "AND (trim(shop_name) = '' OR shop_name = phone "
+        "OR (shop_name GLOB '*[0-9]*' AND shop_name NOT GLOB '*[A-Za-z]*'))",
+        (org_id,),
+    ).fetchall()
+    if not rows:
+        return 0
+
+    state = state or store.get_state()
+    latest_names = _latest_call_names(state, org_id)
+    full_names = _full_customer_names(state)
+    updated = 0
+    for row in rows:
+        digits = database.normalize_phone(row["phone"])
+        if len(digits) < 10:
+            continue
+        name = (
+            _profile_name(state, org_id, digits)
+            or latest_names.get(digits, "")
+            or full_names.get(digits, "")
+        )
+        if not name:
+            continue
+        identity = database.delivery_customer_identity(name, row["address1"] or "", row["phone"] or "")
+        try:
+            conn.execute(
+                "UPDATE delivery_customers SET shop_name = ?, identity_key = ?, updated_at = ? "
+                "WHERE id = ? AND org_id = ?",
+                (name, identity, store.now_iso(), row["id"], org_id),
+            )
+            updated += 1
+        except sqlite3.IntegrityError:
+            # A named row already exists for the same identity; leave this one.
+            continue
+    return updated
 
 
 def import_customer_rows(conn, org_id: str, rows: Iterable[dict[str, str]]) -> dict[str, int]:

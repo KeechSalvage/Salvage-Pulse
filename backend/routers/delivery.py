@@ -249,8 +249,10 @@ def list_customers(
 
     with database.get_db() as conn:
         # A brand-new yard gets its callers as a starting directory.  Addresses
-        # arrive later from the customer CSV import.
+        # arrive later from the customer CSV import.  Repair older phone-only
+        # rows created before names were resolved from profiles/calls.
         delivery_store.backfill_customers_from_calls(conn, org_id)
+        delivery_store.repair_customer_names(conn, org_id)
         return [_row(row) for row in conn.execute(sql, params).fetchall()]
 
 
@@ -402,6 +404,7 @@ async def import_customers_csv(
         # Seed callers first so the CSV enriches those rows instead of leaving
         # the yard with only whichever list was imported most recently.
         delivery_store.backfill_customers_from_calls(conn, org_id)
+        delivery_store.repair_customer_names(conn, org_id)
         counts = delivery_store.import_customer_rows(conn, org_id, rows)
     counts["skipped"] += invalid
     return {"ok": True, **counts, "total": len(raw_rows)}
