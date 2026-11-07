@@ -425,8 +425,13 @@ upload log in Supabase. They now live in `salvage_pulse.db` in four tables:
 are scoped to the signed-in user's yard, and no browser key is needed.
 
 The 399-row Hollander part catalog seeds itself the first time a yard opens the
-dashboard. Import the customer directory once after updating (export the
-Supabase `customers` table as CSV first):
+dashboard. The customer directory also seeds itself from that yard's call
+history (name and phone only), so every yard starts with its known callers.
+
+Managers can add addresses and contacts by opening **Customers → Import CSV** in
+the dashboard and choosing the Supabase customer export. The same import is
+available from the command line (export the Supabase `customers` table as CSV
+first):
 
 ```bash
 # Run on the Proxmox host, replacing <CTID> and the CSV path.

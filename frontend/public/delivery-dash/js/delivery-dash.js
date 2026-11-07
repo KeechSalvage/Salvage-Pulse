@@ -2607,7 +2607,7 @@ function renderCustomerResults(rows, term) {
   const list = (rows || []).filter(c => c && c.shop_name);
   if (!list.length) {
     resultsEl.innerHTML = '';
-    setCustomerStatus(term ? `No customers match "${term}".` : 'No customers in the database yet.', 'muted');
+    setCustomerStatus(term ? `No customers match "${term}".` : 'No customers in this yard yet. Add one or import the customer CSV.', 'muted');
     return;
   }
 
@@ -2769,6 +2769,45 @@ async function deleteCustomer(customer, btn) {
     console.error('Delete customer failed:', err);
     setCustomerStatus(`${err.message}`, 'error');
     disarmDelete(btn);
+  }
+}
+
+async function importCustomersCsv(file) {
+  if (!file) return;
+  if (!/\.csv$/i.test(file.name || '')) {
+    setCustomerStatus('Choose a .csv customer export.', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('importCustomersBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Importing…'; }
+  setCustomerStatus(`Importing ${file.name}…`, 'muted');
+
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`${API_BASE}/customers/import`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      body: form
+    });
+    let data = {};
+    try { data = await res.json(); } catch (e) {}
+    if (!res.ok) throw new Error(data.detail || `Import failed (${res.status}).`);
+
+    // Pull the merged list back so report matching sees the new addresses
+    // immediately, then refresh the visible modal results.
+    await syncCustomers({ silent: true });
+    await searchCustomers(lastCustomerTerm);
+
+    const bits = [`${data.added || 0} added`, `${data.updated || 0} updated`];
+    if (data.skipped) bits.push(`${data.skipped} skipped`);
+    setCustomerStatus(`Imported ${file.name}: ${bits.join(', ')}.`, 'success');
+    showToast('Customer import complete.');
+  } catch (err) {
+    setCustomerStatus(`❌ ${apiFailure(err).message}`, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Import CSV'; }
   }
 }
 
@@ -3414,6 +3453,19 @@ if (document.getElementById('customerSearchInput')) {
 if (document.getElementById('addCustomerBtn')) {
   document.getElementById('addCustomerBtn').addEventListener('click', () => openCustomerForm(null));
 }
+if (document.getElementById('importCustomersBtn')) {
+  document.getElementById('importCustomersBtn').addEventListener('click', () => {
+    const input = document.getElementById('customerCsvInput');
+    if (input) input.click();
+  });
+}
+if (document.getElementById('customerCsvInput')) {
+  document.getElementById('customerCsvInput').addEventListener('change', e => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (file) importCustomersCsv(file);
+  });
+}
 ['closeCustomerFormModal', 'cancelCustomerFormBtn'].forEach(id => {
   const el = document.getElementById(id);
   if (el) el.addEventListener('click', closeCustomerForm);
@@ -3511,6 +3563,8 @@ function applyEmbeddedRoleUI() {
   if (!managerRoles.includes(EMBED_ROLE)) {
     const uploadsBtn = document.getElementById('uploadsBtn');
     if (uploadsBtn) uploadsBtn.classList.add('hidden');
+    const importBtn = document.getElementById('importCustomersBtn');
+    if (importBtn) importBtn.classList.add('hidden');
   }
   const userBtn = document.getElementById('userBtn');
   if (userBtn) userBtn.classList.add('hidden');

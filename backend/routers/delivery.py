@@ -8,15 +8,17 @@ longer depends on a publishable key with public write policies.
 from __future__ import annotations
 
 import csv
+import io
 import os
 import re
 import sqlite3
 from typing import Any, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 
 import database
+import delivery_store
 import store
 from security import SlidingWindowLimiter, effective_org, require_authenticated
 
@@ -246,6 +248,9 @@ def list_customers(
     params.extend([limit, offset])
 
     with database.get_db() as conn:
+        # A brand-new yard gets its callers as a starting directory.  Addresses
+        # arrive later from the customer CSV import.
+        delivery_store.backfill_customers_from_calls(conn, org_id)
         return [_row(row) for row in conn.execute(sql, params).fetchall()]
 
 
@@ -343,6 +348,63 @@ def delete_customer(customer_id: int, request: Request) -> dict[str, Any]:
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Customer not found")
     return {"ok": True}
+
+
+@router.post("/api/delivery/customers/import")
+async def import_customers_csv(
+    request: Request, file: UploadFile = File(...)
+) -> dict[str, Any]:
+    """Import a customer CSV export into this yard's directory.
+
+    Managers only.  Re-importing is safe: rows are matched by identity and
+    phone, so a CSV export enriches the call-history backfill instead of
+    duplicating it.
+    """
+    user = _delivery_user(request)
+    if user.get("role") not in DELIVERY_MANAGER_ROLES:
+        raise HTTPException(status_code=403, detail="Manager access required to import customers.")
+    org_id = _org(user)
+
+    filename = (file.filename or "").lower()
+    if not filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Choose a .csv file.")
+
+    limit = int(os.environ.get("MAX_UPLOAD_MB", "25")) * 1024 * 1024
+    content = await file.read(limit + 1)
+    if len(content) > limit:
+        raise HTTPException(
+            status_code=413, detail=f"CSV is too large (max {limit // (1024 * 1024)} MB)."
+        )
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="The CSV must be UTF-8 encoded.") from None
+
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        raise HTTPException(status_code=400, detail="The CSV has no header row.")
+
+    raw_rows = list(reader)
+    rows = []
+    invalid = 0
+    for raw in raw_rows:
+        payload = delivery_store.customer_from_csv_row(raw)
+        if payload:
+            rows.append(payload)
+        else:
+            invalid += 1
+    if not rows:
+        raise HTTPException(
+            status_code=400, detail="No customer rows with a shop name were found."
+        )
+
+    with database.get_db() as conn:
+        # Seed callers first so the CSV enriches those rows instead of leaving
+        # the yard with only whichever list was imported most recently.
+        delivery_store.backfill_customers_from_calls(conn, org_id)
+        counts = delivery_store.import_customer_rows(conn, org_id, rows)
+    counts["skipped"] += invalid
+    return {"ok": True, **counts, "total": len(raw_rows)}
 
 
 # ---------------------------------------------------------------------------

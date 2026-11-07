@@ -3,7 +3,9 @@
 The dashboard previously stored its Hollander part catalog, customer directory
 and upload log in Supabase.  This script copies the exported parts/customers
 into the platform's SQLite database for one yard.  It is idempotent, so it is
-safe to run again after adding rows.
+safe to run again after adding rows.  When the customer table is empty, call
+history is used to seed name/phone entries first; the CSV then fills in
+addresses and contacts without creating duplicates.
 
 Run from the ``backend`` directory:
 
@@ -28,6 +30,7 @@ BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BACKEND_DIR)
 
 import database  # noqa: E402
+import delivery_store  # noqa: E402
 import store  # noqa: E402
 
 DEFAULT_CUSTOMERS = os.path.join(BACKEND_DIR, "seed", "delivery_customers.csv")
@@ -40,44 +43,19 @@ def _default_org() -> str:
     return (state.get("org") or {}).get("id") or store.KEECH_ORG_ID
 
 
-def import_customers(conn, org_id: str, path: str) -> tuple[int, int]:
-    inserted = skipped = 0
-    now = store.now_iso()
+def import_customers(conn, org_id: str, path: str) -> dict[str, int]:
+    rows = []
+    invalid = 0
     with open(path, newline="", encoding="utf-8-sig") as fh:
-        for row in csv.DictReader(fh):
-            shop_name = (row.get("shop_name") or "").strip()
-            if not shop_name:
-                skipped += 1
-                continue
-            address1 = (row.get("address1") or "").strip()
-            phone = (row.get("phone") or "").strip()
-            identity = database.delivery_customer_identity(shop_name, address1, phone)
-            cursor = conn.execute(
-                "INSERT OR IGNORE INTO delivery_customers "
-                "(org_id, shop_name, main_contact, address1, address2, city, state, zip, phone, notes, "
-                "identity_key, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    org_id,
-                    shop_name,
-                    (row.get("main_contact") or "").strip(),
-                    address1,
-                    (row.get("address2") or "").strip(),
-                    (row.get("city") or "").strip(),
-                    (row.get("state") or "").strip().upper(),
-                    (row.get("zip") or "").strip(),
-                    phone,
-                    (row.get("notes") or "").strip(),
-                    identity,
-                    now,
-                    now,
-                ),
-            )
-            if cursor.rowcount:
-                inserted += 1
+        for raw in csv.DictReader(fh):
+            payload = delivery_store.customer_from_csv_row(raw)
+            if payload:
+                rows.append(payload)
             else:
-                skipped += 1
-    return inserted, skipped
+                invalid += 1
+    counts = delivery_store.import_customer_rows(conn, org_id, rows)
+    counts["skipped"] += invalid
+    return counts
 
 
 def import_parts(conn, org_id: str, path: str) -> tuple[int, int]:
@@ -201,8 +179,14 @@ def main() -> int:
             if not os.path.exists(args.customers):
                 print(f"Customers file not found: {args.customers}", file=sys.stderr)
                 return 2
-            inserted, skipped = import_customers(conn, org_id, args.customers)
-            print(f"  customers: {inserted} added, {skipped} already present/invalid")
+            seeded = delivery_store.backfill_customers_from_calls(conn, org_id)
+            if seeded:
+                print(f"  customers: {seeded} seeded from call history")
+            counts = import_customers(conn, org_id, args.customers)
+            print(
+                f"  customers: {counts['added']} added, {counts['updated']} updated, "
+                f"{counts['skipped']} skipped"
+            )
         if not args.skip_uploads and os.path.exists(args.uploads):
             inserted = import_uploads(conn, org_id, args.uploads)
             print(f"  uploads: {inserted} historical rows added")

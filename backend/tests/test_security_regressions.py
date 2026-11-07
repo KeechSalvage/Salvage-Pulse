@@ -2806,3 +2806,104 @@ class DeliveryDashboardTests(unittest.TestCase):
 
         master = _master_client()
         self.assertEqual(master.get("/api/delivery/parts").status_code, 403)
+
+    def test_customer_directory_backfills_from_call_history(self):
+        client, user = self._yard("Delivery Backfill Yard")
+        state = store.get_state()
+        now = store.now_iso()
+        for name, phone in (
+            ("Backfill Body", "15550001111"),
+            ("Backfill Garage", "15550002222"),
+        ):
+            state.setdefault("calls", []).append({
+                "id": f"call-{uuid.uuid4().hex}",
+                "org_id": user["org_id"],
+                "customer_name": name,
+                "customer_phone": phone,
+                "created_at": now,
+                "duration_sec": 30,
+                "outcome": "pending",
+                "rep_name": "Rep",
+                "category": "Part Inquiry/Quote",
+            })
+        store.save_state()
+
+        rows = client.get("/api/delivery/customers").json()
+        names = {row["shop_name"] for row in rows}
+        self.assertIn("Backfill Body", names)
+        self.assertIn("Backfill Garage", names)
+
+    def test_customer_csv_import_enriches_the_call_backfill(self):
+        client, user = self._yard("Delivery CSV Yard")
+        state = store.get_state()
+        state.setdefault("calls", []).append({
+            "id": f"call-{uuid.uuid4().hex}",
+            "org_id": user["org_id"],
+            "customer_name": "Imported Body",
+            "customer_phone": "8605550123",
+            "created_at": store.now_iso(),
+            "duration_sec": 30,
+            "outcome": "pending",
+            "rep_name": "Rep",
+            "category": "Part Inquiry/Quote",
+        })
+        store.save_state()
+
+        seeded = client.get("/api/delivery/customers").json()
+        self.assertEqual(len(seeded), 1)
+
+        csv_bytes = (
+            "shop_name,main_contact,address1,city,state,zip,phone,notes\n"
+            "Imported Body,Ann,1 Main St,Hartford,CT,06103,860-555-0123,CSV row\n"
+        ).encode()
+        imported = client.post(
+            "/api/delivery/customers/import",
+            files={"file": ("customers.csv", csv_bytes, "text/csv")},
+        )
+        self.assertEqual(imported.status_code, 200, imported.text)
+        self.assertEqual(imported.json()["added"], 0)
+        self.assertEqual(imported.json()["updated"], 1)
+
+        rows = client.get(
+            "/api/delivery/customers", params={"q": "Imported Body"}
+        ).json()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["address1"], "1 Main St")
+        self.assertEqual(rows[0]["phone"], "860-555-0123")
+
+        again = client.post(
+            "/api/delivery/customers/import",
+            files={"file": ("customers.csv", csv_bytes, "text/csv")},
+        )
+        self.assertEqual(again.json()["added"], 0)
+        self.assertEqual(again.json()["updated"], 1)
+
+    def test_customer_csv_import_is_manager_only(self):
+        client, _ = self._yard("Delivery CSV Role Yard")
+        csv_bytes = b"shop_name\nRep Import\n"
+
+        rep_email = f"csv-rep-{uuid.uuid4().hex[:8]}@example.test"
+        created = client.post(
+            "/api/users/reps",
+            json={
+                "name": "CSV Rep",
+                "email": rep_email,
+                "password": "RepPass!234",
+                "role": "rep",
+            },
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+
+        rep = _client()
+        _login(rep, rep_email, "RepPass!234")
+        forbidden = rep.post(
+            "/api/delivery/customers/import",
+            files={"file": ("customers.csv", csv_bytes, "text/csv")},
+        )
+        self.assertEqual(forbidden.status_code, 403)
+
+        wrong_type = client.post(
+            "/api/delivery/customers/import",
+            files={"file": ("customers.txt", csv_bytes, "text/plain")},
+        )
+        self.assertEqual(wrong_type.status_code, 400)
