@@ -8,30 +8,48 @@
 <title>Delivery Dashboard</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
+  @font-face { font-family: 'IBM Plex Sans'; font-style: normal; font-weight: 400; font-display: swap; src: url('fonts/ibm-plex-sans-latin-400-normal.woff2') format('woff2'); }
+  @font-face { font-family: 'IBM Plex Sans'; font-style: normal; font-weight: 500; font-display: swap; src: url('fonts/ibm-plex-sans-latin-500-normal.woff2') format('woff2'); }
+  @font-face { font-family: 'IBM Plex Sans'; font-style: normal; font-weight: 600; font-display: swap; src: url('fonts/ibm-plex-sans-latin-600-normal.woff2') format('woff2'); }
+  @font-face { font-family: 'IBM Plex Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url('fonts/ibm-plex-mono-latin-400-normal.woff2') format('woff2'); }
+  @font-face { font-family: 'IBM Plex Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url('fonts/ibm-plex-mono-latin-500-normal.woff2') format('woff2'); }
+  @font-face { font-family: 'Manrope Variable'; font-style: normal; font-weight: 200 800; font-display: swap; src: url('fonts/manrope-latin-wght-normal.woff2') format('woff2'); }
+
   :root {
-    --bg: #0f172a;
-    --card: #1e293b;
-    --card-hover: #243248;
-    --border: #334155;
-    --text: #e2e8f0;
-    --text-muted: #94a3b8;
-    --accent: #38bdf8;
-    --accent-dark: #0284c7;
-    --success: #4ade80;
-    --warning: #fbbf24;
-    --danger: #f87171;
-    --purple: #a855f7;
+    --bg: #0B0F19;
+    --card: #111827;
+    --card-hover: #161F30;
+    --surface: #0D1424;
+    --surface-2: #131C2E;
+    --border: #1F2A3C;
+    --input: #283548;
+    --text: #F8FAFC;
+    --text-muted: #94A3B8;
+    --accent: #3A6AF0;
+    --accent-dark: #1C45C0;
+    --accent-soft: #6E93F8;
+    --success: #34D399;
+    --warning: #FBBF24;
+    --danger: #EF4444;
+    --purple: #3A6AF0;
+    --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-heading: 'Manrope Variable', sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
   }
   * { box-sizing: border-box; }
+  html { background: var(--bg); }
   body {
     margin: 0;
-    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    font-family: var(--font-sans);
+    font-size: 15px;
     background: var(--bg);
     color: var(--text);
     line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
   }
+  h1, h2, h3, h4 { font-family: var(--font-heading); letter-spacing: -0.02em; }
   header {
-    background: #020617;
+    background: var(--bg);
     padding: 1.15rem 2rem;
     border-bottom: 1px solid var(--border);
     display: flex;
@@ -40,46 +58,68 @@
     flex-wrap: wrap;
     gap: 1rem;
   }
-  h1 { margin: 0; font-size: 1.35rem; display: flex; align-items: center; gap: 0.5rem; }
+  h1 { margin: 0; font-size: 1.5rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem; }
   .subtitle { color: var(--text-muted); font-size: 0.85rem; margin-top: 0.15rem; }
-  .header-actions { display: flex; gap: 0.65rem; align-items: center; flex-wrap: wrap; }
-  .container { max-width: 1550px; margin: 0 auto; padding: 1.5rem; }
+  .header-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+  .container { max-width: 1400px; margin: 0 auto; padding: 1.5rem; }
 
   /* Upload Area */
   .upload-area {
     background: var(--card);
-    border: 2px dashed var(--border);
+    border: 1.5px dashed var(--border);
     border-radius: 12px;
-    padding: 2.25rem;
+    padding: 2.5rem 2rem;
     text-align: center;
-    margin-bottom: 1.5rem;
-    transition: all 0.2s;
+    margin-bottom: 1.25rem;
+    transition: border-color 0.18s ease, background-color 0.18s ease;
   }
-  .upload-area.dragover { border-color: var(--accent); background: rgba(56, 189, 248, 0.05); }
+  .upload-area.dragover { border-color: var(--accent); background: rgba(58,106,240,0.06); }
+  .upload-area h3 { font-size: 1.05rem; font-weight: 600; }
+  .spinner {
+    width: 28px;
+    height: 28px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    margin: 0 auto 0.75rem;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
   input[type="file"] { display: none; }
 
   /* Buttons */
   .btn {
     background: var(--accent);
-    color: #0f172a;
-    border: none;
-    padding: 0.55rem 1.1rem;
+    color: #fff;
+    border: 1px solid transparent;
+    padding: 0.5rem 0.9rem;
     border-radius: 8px;
-    font-weight: 600;
+    font-family: var(--font-sans);
+    font-weight: 500;
     cursor: pointer;
-    font-size: 0.9rem;
+    font-size: 0.84rem;
     display: inline-flex;
     align-items: center;
-    gap: 0.45rem;
+    justify-content: center;
+    gap: 0.4rem;
     text-decoration: none;
-    transition: filter 0.15s, transform 0.1s, border-color 0.15s;
+    white-space: nowrap;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
   }
-  .btn:hover { filter: brightness(1.1); }
-  .btn:active { transform: scale(0.98); }
-  .btn-primary { background: var(--accent); color: #0f172a; }
-  .btn-secondary { background: #334155; color: var(--text); }
-  .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
-  .btn-outline:hover { background: rgba(255,255,255,0.05); border-color: var(--accent); }
+  .btn:hover { background: var(--accent-dark); }
+  .btn:active { transform: translateY(1px); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-secondary { background: #1E293B; color: #F1F5F9; border-color: #283548; }
+  .btn-secondary:hover { background: #283548; }
+  .btn-outline { background: transparent; border: 1px solid var(--border); color: #E2E8F0; }
+  .btn-outline:hover { background: var(--card-hover); border-color: #2B3A52; color: #fff; }
+  .btn-success { background: var(--accent); color: #fff; }
+  .btn-success:hover { background: var(--accent-dark); }
+  .btn-purple { background: var(--accent); color: #fff; }
+  .btn-purple:hover { background: var(--accent-dark); }
+  .btn-sm { padding: 0.32rem 0.7rem; font-size: 0.78rem; border-radius: 7px; }
+  .btn-micro { padding: 0.2rem 0.5rem; font-size: 0.72rem; border-radius: 6px; }
 
   /* Phone numbers trigger the delivery announcement call */
   .phone-call-btn {
@@ -87,20 +127,16 @@
     border: none;
     padding: 0;
     margin: 0;
-    color: var(--accent);
+    color: var(--accent-soft);
     font: inherit;
-    font-weight: 600;
+    font-weight: 500;
     cursor: pointer;
     text-align: left;
     text-decoration: underline;
     text-underline-offset: 2px;
   }
-  .phone-call-btn:hover { color: #7dd3fc; }
+  .phone-call-btn:hover { color: #93B0FD; }
   .phone-call-btn:disabled { color: var(--text-muted); cursor: default; text-decoration: none; }
-  .btn-success { background: #16a34a; color: #fff; }
-  .btn-purple { background: var(--purple); color: #fff; }
-  .btn-sm { padding: 0.35rem 0.75rem; font-size: 0.82rem; border-radius: 6px; }
-  .btn-micro { padding: 0.22rem 0.55rem; font-size: 0.76rem; border-radius: 5px; }
 
   /* Clickable Metrics Grid */
   .metrics {
@@ -111,8 +147,8 @@
   }
   .metric {
     background: var(--card);
-    padding: 1rem 1.25rem;
-    border-radius: 10px;
+    padding: 1.1rem 1.25rem;
+    border-radius: 12px;
     border: 1px solid var(--border);
     position: relative;
     overflow: hidden;
@@ -121,32 +157,32 @@
     user-select: none;
   }
   .metric:hover {
-    transform: translateY(-2px);
-    border-color: var(--accent);
-    box-shadow: 0 10px 25px -5px rgba(56, 189, 248, 0.15);
+    transform: translateY(-1px);
+    border-color: #2B3A52;
+    box-shadow: 0 10px 25px -14px rgba(0, 0, 0, 0.7);
   }
   .metric.is-active-filter {
     border-color: var(--accent);
-    background: #132238;
+    background: rgba(58,106,240,0.12);
     box-shadow: 0 0 0 1px var(--accent);
   }
-  .metric .value { font-size: 1.85rem; font-weight: 700; line-height: 1.2; }
-  .metric .label { color: var(--text-muted); font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.6px; margin-top: 0.3rem; }
+  .metric .value { font-family: var(--font-heading); font-size: 1.7rem; font-weight: 700; line-height: 1.2; }
+  .metric .label { color: var(--text-muted); font-family: var(--font-mono); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 0.3rem; }
   .metric .subtext { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.25rem; }
   .metric .click-hint {
     display: flex;
     align-items: center;
     gap: 0.3rem;
     font-size: 0.72rem;
-    color: var(--accent);
+    color: var(--accent-soft);
     margin-top: 0.5rem;
-    font-weight: 600;
+    font-weight: 500;
   }
 
   /* Active Filter Indicator Bar */
   .active-filter-banner {
-    background: rgba(56, 189, 248, 0.1);
-    border: 1px solid rgba(56, 189, 248, 0.3);
+    background: rgba(58, 106, 240, 0.1);
+    border: 1px solid rgba(58, 106, 240, 0.3);
     padding: 0.5rem 1rem;
     border-radius: 8px;
     margin-bottom: 1rem;
@@ -161,13 +197,13 @@
     display: inline-flex;
     align-items: center;
     gap: 0.45rem;
-    background: rgba(56, 189, 248, 0.12);
-    border: 1px solid rgba(56, 189, 248, 0.3);
-    color: #e0f2fe;
+    background: rgba(58, 106, 240, 0.12);
+    border: 1px solid rgba(58, 106, 240, 0.3);
+    color: #DBE5FF;
     padding: 0.3rem 0.65rem;
     border-radius: 6px;
     font-size: 0.8rem;
-    font-weight: 600;
+    font-weight: 500;
     margin-bottom: 1rem;
   }
 
@@ -175,7 +211,7 @@
   .control-card {
     background: var(--card);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 12px;
     padding: 1rem 1.25rem;
     margin-bottom: 1rem;
     display: flex;
@@ -189,15 +225,20 @@
     align-items: center;
   }
   .filters input, .filters select {
-    background: #0f172a;
-    border: 1px solid var(--border);
+    background: var(--surface);
+    border: 1px solid var(--input);
     color: var(--text);
     padding: 0.5rem 0.75rem;
-    border-radius: 6px;
-    font-size: 0.88rem;
+    border-radius: 8px;
+    font-family: var(--font-sans);
+    font-size: 0.85rem;
     outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
   }
-  .filters input:focus, .filters select:focus { border-color: var(--accent); }
+  .filters input:focus, .filters select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(58, 106, 240, 0.15);
+  }
 
   .bulk-bar {
     display: flex;
@@ -206,7 +247,7 @@
     flex-wrap: wrap;
     gap: 0.75rem;
     padding-top: 0.65rem;
-    border-top: 1px solid rgba(255,255,255,0.06);
+    border-top: 1px solid var(--border);
     font-size: 0.85rem;
   }
   .bulk-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
@@ -215,14 +256,14 @@
   .table-wrapper {
     background: var(--card);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 12px;
     overflow-x: auto;
     margin-bottom: 1rem;
   }
   table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.865rem;
+    font-size: 0.82rem;
   }
   th, td {
     padding: 0.7rem 0.85rem;
@@ -231,35 +272,41 @@
     vertical-align: middle;
   }
   th {
-    background: #090f1d;
-    font-weight: 600;
+    background: var(--surface);
+    font-weight: 500;
     color: var(--text-muted);
-    font-size: 0.74rem;
+    font-size: 0.7rem;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.08em;
     white-space: nowrap;
   }
-  tr:hover td { background: rgba(56, 189, 248, 0.04); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(58, 106, 240, 0.04); }
 
   /* Rep Selector & Suggestion */
   .rep-cell { min-width: 210px; }
   .rep-select {
     width: 100%;
-    background: #090f1d;
-    border: 1px solid var(--border);
+    background: var(--surface);
+    border: 1px solid var(--input);
     color: var(--text);
     padding: 0.38rem 0.55rem;
-    border-radius: 6px;
-    font-size: 0.84rem;
+    border-radius: 8px;
+    font-family: var(--font-sans);
+    font-size: 0.82rem;
     font-weight: 500;
     cursor: pointer;
     outline: none;
   }
+  .rep-select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(58, 106, 240, 0.15);
+  }
   .rep-select.is-assigned {
-    border-color: #0284c7;
-    background: #0e1e38;
-    color: #e0f2fe;
-    font-weight: 600;
+    border-color: var(--accent);
+    background: rgba(58,106,240,0.12);
+    color: #DBE5FF;
+    font-weight: 500;
   }
   .smart-suggestion-pill {
     display: inline-flex;
@@ -288,6 +335,16 @@
 
   .hidden { display: none !important; }
 
+  input, select, textarea, button { font-family: inherit; }
+  .modal input, .modal select, .modal textarea { border-radius: 8px !important; }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
+  select:focus,
+  textarea:focus {
+    outline: none;
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 3px rgba(58, 106, 240, 0.15);
+  }
+
   /* Modals */
   .modal-overlay {
     position: fixed;
@@ -303,24 +360,24 @@
   .modal {
     background: var(--card);
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: 12px;
     width: 100%;
     max-width: 860px;
     max-height: 90vh;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.65);
     overflow: hidden;
   }
   .modal-header {
-    padding: 1.15rem 1.5rem;
+    padding: 1rem 1.25rem;
     border-bottom: 1px solid var(--border);
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: #090f1d;
+    background: var(--surface);
   }
-  .modal-header h2 { margin: 0; font-size: 1.15rem; }
+  .modal-header h2 { margin: 0; font-size: 1.05rem; font-weight: 600; }
   .modal-close {
     background: transparent;
     border: none;
@@ -331,17 +388,17 @@
   }
   .modal-close:hover { color: var(--text); }
   .modal-body {
-    padding: 1.5rem;
+    padding: 1.25rem;
     overflow-y: auto;
     flex: 1;
   }
   .modal-footer {
-    padding: 1rem 1.5rem;
+    padding: 0.9rem 1.25rem;
     border-top: 1px solid var(--border);
     display: flex;
     justify-content: flex-end;
-    gap: 0.75rem;
-    background: #090f1d;
+    gap: 0.6rem;
+    background: var(--surface);
   }
 
   /* Modal Tabs */
@@ -358,36 +415,36 @@
     border-bottom: 2px solid transparent;
     color: var(--text-muted);
     padding: 0.5rem 1rem;
-    font-weight: 600;
-    font-size: 0.88rem;
+    font-weight: 500;
+    font-size: 0.84rem;
     cursor: pointer;
     white-space: nowrap;
   }
   .tab-btn:hover { color: var(--text); }
   .tab-btn.active {
-    color: var(--accent);
+    color: var(--accent-soft);
     border-bottom-color: var(--accent);
   }
 
   .payload-box {
-    background: #090f1d;
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 1rem;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.8rem;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
     max-height: 320px;
     overflow-y: auto;
     white-space: pre-wrap;
     word-break: break-all;
-    color: #cbd5e1;
+    color: #CBD5E1;
   }
 
   .target-url-bar {
     display: flex;
     gap: 0.5rem;
     align-items: center;
-    background: #0f172a;
+    background: var(--surface);
     border: 1px solid var(--border);
     padding: 0.75rem 1rem;
     border-radius: 8px;
@@ -395,16 +452,17 @@
   }
   .target-url-bar input {
     flex: 1;
-    background: #020617;
-    border: 1px solid var(--border);
+    background: var(--bg);
+    border: 1px solid var(--input);
     color: #fff;
     padding: 0.45rem 0.75rem;
-    border-radius: 6px;
+    border-radius: 8px;
+    font-family: var(--font-sans);
     font-size: 0.85rem;
   }
 
   .progress-track {
-    background: #090f1d;
+    background: var(--surface);
     border-radius: 9999px;
     height: 10px;
     overflow: hidden;
@@ -418,19 +476,22 @@
     position: fixed;
     bottom: 1.5rem;
     right: 1.5rem;
-    background: #10b981;
-    color: #022c22;
-    font-weight: 600;
-    padding: 0.75rem 1.25rem;
+    background: var(--card);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--success);
+    font-weight: 500;
+    padding: 0.7rem 1.1rem;
     border-radius: 8px;
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 12px 30px -12px rgba(0, 0, 0, 0.7);
     z-index: 2000;
     transition: opacity 0.3s, transform 0.3s;
-    font-size: 0.88rem;
+    font-size: 0.84rem;
     display: flex;
     align-items: center;
     gap: 0.5rem;
   }
+  .toast > span:first-child { color: var(--success); font-weight: 700; }
 
   /* Sticky Save Bar & Save Status */
   .sticky-save-bar {
@@ -439,11 +500,11 @@
     left: 50%;
     transform: translateX(-50%);
     z-index: 1500;
-    background: #090f1d;
-    border: 1px solid #f59e0b;
+    background: var(--card);
+    border: 1px solid rgba(251, 191, 36, 0.4);
     border-radius: 12px;
-    box-shadow: 0 10px 25px -5px rgba(0,0,0,0.7), 0 0 15px rgba(245, 158, 11, 0.25);
-    padding: 0.85rem 1.4rem;
+    box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.8);
+    padding: 0.8rem 1.2rem;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -453,28 +514,29 @@
     transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   }
   .sticky-save-bar.is-saved {
-    border-color: #10b981;
-    box-shadow: 0 10px 25px -5px rgba(0,0,0,0.7), 0 0 15px rgba(16, 185, 129, 0.25);
+    border-color: rgba(52, 211, 153, 0.4);
+    box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.8);
   }
   .save-status-pill {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
-    font-size: 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
     padding: 3px 9px;
-    border-radius: 12px;
-    font-weight: 600;
+    border-radius: 9999px;
+    font-weight: 500;
     white-space: nowrap;
   }
   .save-status-pill.saved {
-    background: rgba(16, 185, 129, 0.15);
-    color: #34d399;
-    border: 1px solid rgba(16, 185, 129, 0.35);
+    background: rgba(52, 211, 153, 0.12);
+    color: #34D399;
+    border: 1px solid rgba(52, 211, 153, 0.3);
   }
   .save-status-pill.unsaved {
-    background: rgba(245, 158, 11, 0.15);
-    color: #fbbf24;
-    border: 1px solid rgba(245, 158, 11, 0.4);
+    background: rgba(251, 191, 36, 0.12);
+    color: #FBBF24;
+    border: 1px solid rgba(251, 191, 36, 0.35);
     animation: pulse-unsaved 2s infinite;
   }
   @keyframes pulse-unsaved {
@@ -482,16 +544,16 @@
     50% { opacity: 0.7; }
   }
   @keyframes pulse-save-btn {
-    0% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.7); }
-    70% { box-shadow: 0 0 0 8px rgba(74, 222, 128, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+    0% { box-shadow: 0 0 0 0 rgba(58, 106, 240, 0.55); }
+    70% { box-shadow: 0 0 0 8px rgba(58, 106, 240, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(58, 106, 240, 0); }
   }
   .btn-save-dirty {
     animation: pulse-save-btn 1.8s infinite;
-    background: #16a34a !important;
+    background: var(--accent) !important;
     color: #fff !important;
-    font-weight: 700 !important;
-    border: 1px solid #4ade80 !important;
+    font-weight: 600 !important;
+    border: 1px solid var(--accent) !important;
   }
   .modal-review-table th, .modal-review-table td {
     padding: 0.6rem 0.75rem;
@@ -501,10 +563,19 @@
     background: rgba(255, 255, 255, 0.03);
   }
 
-  /* Salvage Pulse embed: the app shell already provides the page frame. */
-  body.embedded header { background: transparent; border-bottom: 1px solid var(--border); padding: 0 0 1rem; justify-content: flex-end; }
+  /* Salvage Pulse embed: the app shell already provides the page frame, so the
+     dashboard header becomes a compact panel toolbar. */
+  body.embedded header {
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 0.7rem 1rem;
+    justify-content: flex-end;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
   body.embedded header > div:first-child { display: none; }
-  body.embedded .container { padding: 0; max-width: none; }
+  body.embedded .container { padding: 1.25rem 1.5rem 1.5rem; max-width: none; }
 </style>
 </head>
 <body>
@@ -512,20 +583,25 @@
 <header>
   <div>
     <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">
-      <h1 style="margin:0;">📦 Delivery Dashboard</h1>
-      <span style="background:#059669; color:#ffffff; padding:3px 10px; border-radius:12px; font-weight:700; font-size:0.75rem; letter-spacing:0.5px; border:1px solid #10b981;">BUILD v2.9</span>
+      <h1 style="margin:0;">Delivery Dashboard</h1>
+      <span style="background:rgba(58,106,240,0.15); color:#93B0FD; padding:2px 8px; border-radius:6px; font-family:var(--font-mono); font-weight:500; font-size:0.65rem; letter-spacing:0.08em; text-transform:uppercase; border:1px solid rgba(58,106,240,0.3);">Build v2.9</span>
     </div>
   </div>
   <div class="header-actions">
-    <button class="btn btn-outline btn-sm" id="userBtn" type="button" title="Set who is uploading reports">👤 Set user</button>
-    <button class="btn btn-outline btn-sm" id="uploadsBtn" type="button" title="Upload activity and rep utilization">📊 Uploads</button>
+    <button class="btn btn-outline btn-sm" id="userBtn" type="button" title="Set who is uploading reports">Set user</button>
+    <button class="btn btn-outline btn-sm" id="uploadsBtn" type="button" title="Upload activity and rep utilization">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
+      Uploads
+    </button>
     <button class="btn btn-outline btn-sm" id="partsBtn" type="button" title="Search, add, edit and delete Hollander parts">
-      🏷️ Parts <span id="partIdsStatusDot" style="color:#64748b;">●</span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82Z"/><circle cx="7" cy="7" r="1"/></svg>
+      Parts <span id="partIdsStatusDot" style="color:#64748b;">●</span>
     </button>
     <button class="btn btn-outline btn-sm" id="customersBtn" type="button" title="Search, add, edit and delete customers">
-      👥 Customers
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      Customers
     </button>
-    <button class="btn btn-success btn-sm hidden" id="headerSaveBtn">💾 Save Changes</button>
+    <button class="btn btn-success btn-sm hidden" id="headerSaveBtn">Save Changes</button>
   </div>
 </header>
 
@@ -534,8 +610,13 @@
   <!-- Upload Area -->
   <div class="upload-area" id="dropZone">
     <div id="dropZoneContent">
-      <div style="font-size:2.5rem; margin-bottom:0.5rem;">📄</div>
-      <h3 style="margin:0 0 1rem 0; font-size:1.15rem;">Upload Files</h3>
+      <div style="display:flex; justify-content:center; margin-bottom:0.75rem; color:var(--text-muted);">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 16V4m0 0L7 9m5-5 5 5"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+        </svg>
+      </div>
+      <h3 style="margin:0 0 0.35rem 0; font-size:1.05rem; font-weight:600;">Upload a delivery report</h3>
+      <p style="margin:0 0 1rem; color:var(--text-muted); font-size:0.84rem;">Drop a PDF or CSV here, or choose a file.</p>
       <div style="display:flex; justify-content:center; gap:0.5rem;">
         <button class="btn" id="chooseReportBtn" type="button">Choose Report File</button>
       </div>
@@ -548,7 +629,7 @@
 
     <!-- Report Metadata Banner if found in PDF -->
     <div class="report-meta-tag hidden" id="reportMetaTag">
-      <span id="reportMetaText">📄 Salesperson Delivery Report</span>
+      <span id="reportMetaText">Salesperson Delivery Report</span>
     </div>
 
     <!-- Interactive Top Metrics (Click to view deep data & drilldown) -->
@@ -561,7 +642,7 @@
         <strong id="activeFilterName" style="color:var(--accent); margin-left:0.35rem;">All Deliveries</strong>
         <span id="activeFilterCount" style="color:var(--text-muted); margin-left:0.35rem;">(Showing 0 of 0)</span>
       </div>
-      <button class="btn btn-outline btn-micro" id="clearActiveFilterBtn">✕ Clear Filter</button>
+      <button class="btn btn-outline btn-micro" id="clearActiveFilterBtn">Clear Filter</button>
     </div>
 
     <!-- Controls & Filters -->
@@ -571,30 +652,30 @@
         
         <select id="repFilter">
           <option value="">All Reps</option>
-          <option value="__unassigned__">⚠️ Unassigned Only</option>
-          <option value="__assigned__">✅ Assigned Only</option>
+          <option value="__unassigned__">Unassigned Only</option>
+          <option value="__assigned__">Assigned Only</option>
         </select>
 
         <button class="btn btn-primary btn-sm" id="applyFiltersBtn" style="font-weight:600;">Apply Filter</button>
         <button class="btn btn-secondary btn-sm" id="resetFilters">Reset Filters</button>
-        <span id="saveStatusBadge" class="save-status-pill saved">✅ All Changes Saved</span>
+        <span id="saveStatusBadge" class="save-status-pill saved">All Changes Saved</span>
       </div>
 
       <!-- Part-ID lookup status -->
       <div id="partIdStatusBar" class="hidden" style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap; margin-top:0.75rem; padding-top:0.75rem; border-top:1px solid var(--border); font-size:0.8rem; color:var(--text-muted);">
-        <span id="partIdStatusText">🏷️ Hollander IDs: loading…</span>
+        <span id="partIdStatusText">Hollander IDs: loading…</span>
         <span id="customerMatchStatus"></span>
-        <button class="btn btn-outline btn-micro" id="refreshPartIdsBtn" type="button">↻ Refresh Part IDs</button>
+        <button class="btn btn-outline btn-micro" id="refreshPartIdsBtn" type="button">Refresh Part IDs</button>
       </div>
 
       <!-- Bulk Actions Bar -->
       <div class="bulk-bar">
         <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
-          <button class="btn btn-sm btn-outline" id="autoAssignAllBtn">⚡ Auto-Assign Calls</button>
+          <button class="btn btn-sm btn-outline" id="autoAssignAllBtn">Auto-Assign Calls</button>
           <span id="callMatchesFoundCount" style="color:#fbbf24; font-size:0.8rem; font-weight:600;"></span>
         </div>
         <div class="bulk-actions" style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
-          <button class="btn btn-success btn-sm" id="bulkSaveBtn">💾 Save Changes</button>
+          <button class="btn btn-success btn-sm" id="bulkSaveBtn">Save Changes</button>
         </div>
       </div>
     </div>
@@ -621,8 +702,8 @@
     <!-- Bottom Actions -->
     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-top:1.5rem;">
       <div style="display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap;">
-        <button class="btn btn-success" id="bottomSaveBtn">💾 Save Changes</button>
-        <button class="btn btn-secondary" id="downloadCsv">⬇️ Download CSV</button>
+        <button class="btn btn-success" id="bottomSaveBtn">Save Changes</button>
+        <button class="btn btn-secondary" id="downloadCsv">Download CSV</button>
       </div>
       <div>
         <button class="btn btn-outline btn-sm" id="newFile">Upload Another Report</button>
@@ -635,7 +716,7 @@
 <!-- Floating Sticky Save Bar (Shown when unsaved changes exist or right after save) -->
 <div id="stickySaveBar" class="sticky-save-bar hidden">
   <div style="display:flex; align-items:center; gap:0.75rem;">
-    <span id="stickySaveIcon" style="font-size:1.3rem;">⚠️</span>
+    <span id="stickySaveIcon" style="font-size:1.3rem; font-weight:700; color:var(--warning);">!</span>
     <div>
       <div id="stickySaveTitle" style="font-weight:700; color:#fbbf24; font-size:0.92rem;">Unsaved Changes Pending</div>
       <div id="stickySaveSubtitle" style="font-size:0.78rem; color:#94a3b8;">You modified rep assignments. Click Save Changes to lock them in.</div>
@@ -643,7 +724,7 @@
   </div>
   <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
     <button class="btn btn-outline btn-sm" id="stickyDiscardBtn">Discard Changes</button>
-    <button class="btn btn-success btn-sm" id="stickySaveBtn">💾 Save Changes</button>
+    <button class="btn btn-success btn-sm" id="stickySaveBtn">Save Changes</button>
     <button class="btn btn-outline btn-micro hidden" id="stickyDismissBtn" style="border-radius:50%; width:24px; height:24px; padding:0; line-height:22px;">&times;</button>
   </div>
 </div>
@@ -652,31 +733,31 @@
 <div class="modal-overlay hidden" id="metricDetailModal">
   <div class="modal" style="max-width: 940px;">
     <div class="modal-header">
-      <h2 id="metricDetailTitle">📊 Section Details & Deep Breakdown</h2>
+      <h2 id="metricDetailTitle">Section Details & Deep Breakdown</h2>
       <button class="modal-close" id="closeMetricDetailModal">&times;</button>
     </div>
     <div class="modal-body">
       
       <!-- Drilldown Tabs -->
       <div class="tab-nav">
-        <button class="tab-btn active" data-metric-tab="tab-metric-deliveries">📦 All Deliveries (<span id="tabCountDeliveries">0</span>)</button>
-        <button class="tab-btn" data-metric-tab="tab-metric-assigned">👤 Assigned Reps (<span id="tabCountAssigned">0</span>)</button>
-        <button class="tab-btn" data-metric-tab="tab-metric-unassigned">⚠️ Unassigned (<span id="tabCountUnassigned">0</span>)</button>
-        <button class="tab-btn" data-metric-tab="tab-metric-matches">💡 Call Matches (<span id="tabCountMatches">0</span>)</button>
+        <button class="tab-btn active" data-metric-tab="tab-metric-deliveries">All Deliveries (<span id="tabCountDeliveries">0</span>)</button>
+        <button class="tab-btn" data-metric-tab="tab-metric-assigned">Assigned Reps (<span id="tabCountAssigned">0</span>)</button>
+        <button class="tab-btn" data-metric-tab="tab-metric-unassigned">Unassigned (<span id="tabCountUnassigned">0</span>)</button>
+        <button class="tab-btn" data-metric-tab="tab-metric-matches">Call Matches (<span id="tabCountMatches">0</span>)</button>
       </div>
 
       <!-- Tab 1: All Deliveries Details -->
       <div class="tab-content" id="tab-metric-deliveries">
         <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:1rem; margin-bottom:1.25rem;">
-          <div style="background:#090f1d; border:1px solid var(--border); border-radius:8px; padding:0.9rem;">
+          <div style="background:#0D1424; border:1px solid var(--border); border-radius:8px; padding:0.9rem;">
             <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Total Orders Loaded</div>
             <div style="font-size:1.3rem; font-weight:700; margin-top:0.25rem;" id="modalDeliveryTotalSummary">—</div>
           </div>
-          <div style="background:#090f1d; border:1px solid var(--border); border-radius:8px; padding:0.9rem;">
+          <div style="background:#0D1424; border:1px solid var(--border); border-radius:8px; padding:0.9rem;">
             <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Assignment Coverage</div>
             <div style="font-size:1.3rem; font-weight:700; margin-top:0.25rem;" id="modalCoverageSummary">—</div>
           </div>
-          <div style="background:#090f1d; border:1px solid var(--border); border-radius:8px; padding:0.9rem;">
+          <div style="background:#0D1424; border:1px solid var(--border); border-radius:8px; padding:0.9rem;">
             <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Call Connection Rate</div>
             <div style="font-size:1.3rem; font-weight:700; margin-top:0.25rem;" id="modalCallMatchSummary">—</div>
           </div>
@@ -726,7 +807,7 @@
       <div class="tab-content hidden" id="tab-metric-matches">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
           <h4 style="margin:0; font-size:0.95rem;">Caller History Matches & Transcripts</h4>
-          <button class="btn btn-sm btn-outline" id="modalAutoAssignAllMatchesBtn">⚡ Accept All Suggestions</button>
+          <button class="btn btn-sm btn-outline" id="modalAutoAssignAllMatchesBtn">Accept All Suggestions</button>
         </div>
         <p style="font-size:0.8rem; color:var(--text-muted); margin:0 0 0.75rem 0;">
           Matched customer phone numbers and names from recent rep calls.
@@ -750,7 +831,7 @@
 <div class="modal-overlay hidden" id="partIdsModal" style="z-index: 1100;">
   <div class="modal" style="max-width: 640px;">
     <div class="modal-header">
-      <h2>⚙️ Part Database Settings</h2>
+      <h2>Part Database Settings</h2>
       <button class="modal-close" id="closePartIdsModal">&times;</button>
     </div>
     <div class="modal-body">
@@ -760,12 +841,12 @@
         automatically — for example <b style="color:var(--text);">Front End Assembly - 100</b>.
       </p>
 
-      <div id="sbStatusText" style="background:#090f1d; border:1px solid var(--border); border-radius:8px; padding:0.7rem 0.9rem; font-size:0.82rem; color:var(--text-muted); line-height:1.5;">
+      <div id="sbStatusText" style="background:#0D1424; border:1px solid var(--border); border-radius:8px; padding:0.7rem 0.9rem; font-size:0.82rem; color:var(--text-muted); line-height:1.5;">
         Loading catalog status…
       </div>
 
       <p style="font-size:0.75rem; color:var(--text-muted); margin:0.8rem 0 0; line-height:1.5;">
-        🔒 The catalog is stored in your yard's database and protected by your sign-in. There is no database URL or
+        The catalog is stored in your yard's database and protected by your sign-in. There is no database URL or
         API key in this browser. Use <b>Use Bundled List</b> only when you need to work offline.
       </p>
     </div>
@@ -780,7 +861,7 @@
 <div class="modal-overlay hidden" id="partsModal">
   <div class="modal" style="max-width: 760px;">
     <div class="modal-header">
-      <h2>🏷️ Parts</h2>
+      <h2>Parts</h2>
       <button class="modal-close" id="closePartsModal">&times;</button>
     </div>
     <div class="modal-body">
@@ -791,9 +872,11 @@
 
       <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
         <input id="partSearchInput" type="search" placeholder="Search part name or Hollander number…" autocomplete="off" spellcheck="false"
-          style="flex:1 1 260px; background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.5rem 0.7rem; border-radius:6px; font-size:0.9rem;">
-        <button class="btn btn-purple btn-sm" id="addPartBtn" type="button">➕ Add Part</button>
-        <button class="btn btn-outline btn-sm" id="partSettingsBtn" type="button" title="Part catalog settings">⚙️</button>
+          style="flex:1 1 260px; background:#0D1424; border:1px solid var(--border); color:var(--text); padding:0.5rem 0.7rem; border-radius:6px; font-size:0.9rem;">
+        <button class="btn btn-purple btn-sm" id="addPartBtn" type="button">Add Part</button>
+        <button class="btn btn-outline btn-sm" id="partSettingsBtn" type="button" title="Part catalog settings">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
       </div>
 
       <div id="partSearchStatus" style="margin-top:0.6rem; font-size:0.8rem; color:var(--text-muted); line-height:1.5;">
@@ -825,16 +908,16 @@
         <label style="display:flex; flex-direction:column; gap:0.3rem; font-size:0.8rem; color:var(--text-muted);">
           Part name <span style="color:#f87171;">*</span>
           <input id="partFormName" type="text" placeholder="Front End Assembly" autocomplete="off" spellcheck="false" required
-            style="background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
+            style="background:#0D1424; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
         </label>
         <label style="display:flex; flex-direction:column; gap:0.3rem; font-size:0.8rem; color:var(--text-muted);">
           Hollander part number <span style="color:#f87171;">*</span>
           <input id="partFormNumber" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="100" autocomplete="off" spellcheck="false" required
-            style="background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
+            style="background:#0D1424; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
         </label>
       </div>
 
-      <div id="partFormStatus" style="background:#090f1d; border:1px solid var(--border); border-radius:8px; padding:0.7rem 0.9rem; font-size:0.82rem; color:var(--text-muted); line-height:1.5;">
+      <div id="partFormStatus" style="background:#0D1424; border:1px solid var(--border); border-radius:8px; padding:0.7rem 0.9rem; font-size:0.82rem; color:var(--text-muted); line-height:1.5;">
         Enter a part name and its Hollander number.
       </div>
     </div>
@@ -849,7 +932,7 @@
 <div class="modal-overlay hidden" id="customersModal">
   <div class="modal" style="max-width: 820px;">
     <div class="modal-header">
-      <h2>👥 Customers</h2>
+      <h2>Customers</h2>
       <button class="modal-close" id="closeCustomersModal">&times;</button>
     </div>
     <div class="modal-body">
@@ -860,8 +943,8 @@
 
       <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
         <input id="customerSearchInput" type="search" placeholder="Search shop, phone, city or zip…" autocomplete="off" spellcheck="false"
-          style="flex:1 1 260px; background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.5rem 0.7rem; border-radius:6px; font-size:0.9rem;">
-        <button class="btn btn-purple btn-sm" id="addCustomerBtn" type="button">➕ Add Customer</button>
+          style="flex:1 1 260px; background:#0D1424; border:1px solid var(--border); color:var(--text); padding:0.5rem 0.7rem; border-radius:6px; font-size:0.9rem;">
+        <button class="btn btn-purple btn-sm" id="addCustomerBtn" type="button">Add Customer</button>
       </div>
 
       <div id="customerSearchStatus" style="margin-top:0.6rem; font-size:0.8rem; color:var(--text-muted); line-height:1.5;">
@@ -888,53 +971,53 @@
         <label style="grid-column:1 / -1; display:flex; flex-direction:column; gap:0.3rem; font-size:0.8rem; color:var(--text-muted);">
           Shop name <span style="color:#f87171;">*</span>
           <input id="custShopName" type="text" placeholder="1 Stop Auto" autocomplete="off" spellcheck="false" required
-            style="background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
+            style="background:#0D1424; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
         </label>
         <label style="display:flex; flex-direction:column; gap:0.3rem; font-size:0.8rem; color:var(--text-muted);">
           Main contact
           <input id="custContact" type="text" autocomplete="off"
-            style="background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
+            style="background:#0D1424; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
         </label>
         <label style="display:flex; flex-direction:column; gap:0.3rem; font-size:0.8rem; color:var(--text-muted);">
           Phone
           <input id="custPhone" type="text" placeholder="203-808-0476" autocomplete="off"
-            style="background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
+            style="background:#0D1424; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
         </label>
         <label style="grid-column:1 / -1; display:flex; flex-direction:column; gap:0.3rem; font-size:0.8rem; color:var(--text-muted);">
           Address 1
           <input id="custAddress1" type="text" autocomplete="off"
-            style="background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
+            style="background:#0D1424; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
         </label>
         <label style="grid-column:1 / -1; display:flex; flex-direction:column; gap:0.3rem; font-size:0.8rem; color:var(--text-muted);">
           Address 2
           <input id="custAddress2" type="text" autocomplete="off"
-            style="background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
+            style="background:#0D1424; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
         </label>
         <label style="display:flex; flex-direction:column; gap:0.3rem; font-size:0.8rem; color:var(--text-muted);">
           City
           <input id="custCity" type="text" autocomplete="off"
-            style="background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
+            style="background:#0D1424; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
         </label>
         <div style="display:grid; grid-template-columns:80px 1fr; gap:0.7rem;">
           <label style="display:flex; flex-direction:column; gap:0.3rem; font-size:0.8rem; color:var(--text-muted);">
             State
             <input id="custState" type="text" maxlength="2" placeholder="CT" autocomplete="off"
-              style="background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem; text-transform:uppercase;">
+              style="background:#0D1424; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem; text-transform:uppercase;">
           </label>
           <label style="display:flex; flex-direction:column; gap:0.3rem; font-size:0.8rem; color:var(--text-muted);">
             Zip
             <input id="custZip" type="text" placeholder="06770" autocomplete="off"
-              style="background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
+              style="background:#0D1424; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem;">
           </label>
         </div>
         <label style="grid-column:1 / -1; display:flex; flex-direction:column; gap:0.3rem; font-size:0.8rem; color:var(--text-muted);">
           Notes
           <textarea id="custNotes" rows="2" autocomplete="off"
-            style="background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem; resize:vertical;"></textarea>
+            style="background:#0D1424; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.85rem; resize:vertical;"></textarea>
         </label>
       </div>
 
-      <div id="customerFormStatus" style="margin-top:0.75rem; background:#090f1d; border:1px solid var(--border); border-radius:8px; padding:0.7rem 0.9rem; font-size:0.82rem; color:var(--text-muted); line-height:1.5;">
+      <div id="customerFormStatus" style="margin-top:0.75rem; background:#0D1424; border:1px solid var(--border); border-radius:8px; padding:0.7rem 0.9rem; font-size:0.82rem; color:var(--text-muted); line-height:1.5;">
         Shop name is required.
       </div>
     </div>
@@ -949,7 +1032,7 @@
 <div class="modal-overlay hidden" id="userModal" style="z-index: 1100;">
   <div class="modal" style="max-width: 460px;">
     <div class="modal-header">
-      <h2 id="userModalTitle">👤 Who is uploading?</h2>
+      <h2 id="userModalTitle">Who is uploading?</h2>
       <button class="modal-close" id="closeUserModal">&times;</button>
     </div>
     <div class="modal-body">
@@ -961,11 +1044,11 @@
       <label style="display:flex; flex-direction:column; gap:0.3rem; font-size:0.8rem; color:var(--text-muted);">
         Name or email
         <input id="userNameInput" type="text" list="userNameOptions" placeholder="e.g. Jake Martinez" autocomplete="off" spellcheck="false"
-          style="background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.9rem;">
+          style="background:#0D1424; border:1px solid var(--border); color:var(--text); padding:0.45rem 0.6rem; border-radius:6px; font-size:0.9rem;">
         <datalist id="userNameOptions"></datalist>
       </label>
 
-      <div id="userModalStatus" style="margin-top:0.75rem; background:#090f1d; border:1px solid var(--border); border-radius:8px; padding:0.7rem 0.9rem; font-size:0.82rem; color:var(--text-muted); line-height:1.5;">
+      <div id="userModalStatus" style="margin-top:0.75rem; background:#0D1424; border:1px solid var(--border); border-radius:8px; padding:0.7rem 0.9rem; font-size:0.82rem; color:var(--text-muted); line-height:1.5;">
         Choose the person uploading, then press Save.
       </div>
     </div>
@@ -980,7 +1063,7 @@
 <div class="modal-overlay hidden" id="uploadsModal">
   <div class="modal" style="max-width: 940px;">
     <div class="modal-header">
-      <h2>📊 Upload Activity</h2>
+      <h2>Upload Activity</h2>
       <button class="modal-close" id="closeUploadsModal">&times;</button>
     </div>
     <div class="modal-body">
@@ -992,7 +1075,7 @@
       <div style="display:flex; gap:0.75rem; flex-wrap:wrap; align-items:flex-end;">
         <label style="display:flex; flex-direction:column; gap:0.3rem; font-size:0.78rem; color:var(--text-muted);">
           Time range
-          <select id="uploadsRange" style="background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.35rem 0.55rem; border-radius:6px; font-size:0.82rem;">
+          <select id="uploadsRange" style="background:#0D1424; border:1px solid var(--border); color:var(--text); padding:0.35rem 0.55rem; border-radius:6px; font-size:0.82rem;">
             <option value="7">Last 7 days</option>
             <option value="30" selected>Last 30 days</option>
             <option value="90">Last 90 days</option>
@@ -1001,11 +1084,11 @@
         </label>
         <label style="display:flex; flex-direction:column; gap:0.3rem; font-size:0.78rem; color:var(--text-muted);">
           User
-          <select id="uploadsUser" style="background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.35rem 0.55rem; border-radius:6px; font-size:0.82rem;">
+          <select id="uploadsUser" style="background:#0D1424; border:1px solid var(--border); color:var(--text); padding:0.35rem 0.55rem; border-radius:6px; font-size:0.82rem;">
             <option value="">All users</option>
           </select>
         </label>
-        <button class="btn btn-outline btn-sm" id="refreshUploadsBtn" type="button">↻ Refresh</button>
+        <button class="btn btn-outline btn-sm" id="refreshUploadsBtn" type="button">Refresh</button>
       </div>
 
       <div id="uploadsSummary" style="display:flex; gap:0.6rem; flex-wrap:wrap; margin-top:0.85rem;"></div>
@@ -1028,7 +1111,7 @@
 <div class="modal-overlay hidden" id="callModal" style="z-index: 1100;">
   <div class="modal" style="max-width: 540px;">
     <div class="modal-header">
-      <h2>📞 Delivery Announcement Call</h2>
+      <h2>Delivery Announcement Call</h2>
       <button class="modal-close" id="closeCallModal">&times;</button>
     </div>
     <div class="modal-body">
@@ -1050,9 +1133,9 @@
       </p>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-outline btn-sm" id="openCallSettingsBtn" type="button">⚙️ Call settings</button>
+      <button class="btn btn-outline btn-sm" id="openCallSettingsBtn" type="button">Call settings</button>
       <button class="btn btn-outline btn-sm" id="cancelCallBtn" type="button">Cancel</button>
-      <button class="btn btn-purple btn-sm" id="placeCallBtn" type="button">📞 Place call</button>
+      <button class="btn btn-purple btn-sm" id="placeCallBtn" type="button">Place call</button>
     </div>
   </div>
 </div>
@@ -1061,7 +1144,7 @@
 <div class="modal-overlay hidden" id="callSettingsModal" style="z-index: 1200;">
   <div class="modal" style="max-width: 560px;">
     <div class="modal-header">
-      <h2>⚙️ Call Announcement Settings</h2>
+      <h2>Call Announcement Settings</h2>
       <button class="modal-close" id="closeCallSettingsModal">&times;</button>
     </div>
     <div class="modal-body">
@@ -1072,13 +1155,13 @@
 
       <div style="display:grid; gap:0.7rem;">
         <div id="callSettingsBadge"></div>
-        <div style="background:#090f1d; border:1px solid var(--border); border-radius:8px; padding:0.7rem 0.9rem;">
+        <div style="background:#0D1424; border:1px solid var(--border); border-radius:8px; padding:0.7rem 0.9rem;">
           <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:0.35rem;">Spoken script</div>
           <div id="callSettingsScript" style="font-size:0.85rem; color:var(--text); line-height:1.55;"></div>
         </div>
       </div>
 
-      <div id="callSettingsStatus" style="margin-top:0.8rem; background:#090f1d; border:1px solid var(--border); border-radius:8px; padding:0.7rem 0.9rem; font-size:0.82rem; color:var(--text-muted); line-height:1.5;">
+      <div id="callSettingsStatus" style="margin-top:0.8rem; background:#0D1424; border:1px solid var(--border); border-radius:8px; padding:0.7rem 0.9rem; font-size:0.82rem; color:var(--text-muted); line-height:1.5;">
         Loading call settings…
       </div>
     </div>

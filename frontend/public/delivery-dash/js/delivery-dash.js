@@ -85,9 +85,9 @@ try {
 
 // Team Reps (Rich Brauns is included as active salesperson)
 const DEFAULT_REPS = [
-  { id: "rich", name: "Rich Brauns", desk: "Desk #1", role: "Sales Counter", color: "#38bdf8" },
-  { id: "jake", name: "Jake Martinez", desk: "Desk #4", role: "Counter Sales Rep", color: "#4ade80" },
-  { id: "sarah", name: "Sarah Jenkins", desk: "Desk #2", role: "Commercial Accounts", color: "#a855f7" },
+  { id: "rich", name: "Rich Brauns", desk: "Desk #1", role: "Sales Counter", color: "#3A6AF0" },
+  { id: "jake", name: "Jake Martinez", desk: "Desk #4", role: "Counter Sales Rep", color: "#34D399" },
+  { id: "sarah", name: "Sarah Jenkins", desk: "Desk #2", role: "Commercial Accounts", color: "#A78BFA" },
   { id: "mike", name: "Mike Ross", desk: "Desk #3", role: "Drivetrain Specialist", color: "#fbbf24" },
   { id: "dave", name: "Dave Miller", desk: "Desk #5", role: "Sheet Metal & Collision", color: "#f87171" }
 ];
@@ -142,7 +142,7 @@ function getOrAddRep(name) {
       name: cleanName,
       desk: `Desk #${nextDeskNum}`,
       role: 'Sales Rep',
-      color: '#38bdf8'
+      color: '#3A6AF0'
     };
     reps.push(rep);
     saveReps();
@@ -367,11 +367,11 @@ if (callCsvInput) callCsvInput.addEventListener('change', e => {
 async function handleFile(file) {
   if (!file) return;
   const name = (file.name || '').toLowerCase();
-  
+
   if (dropZoneContent) {
     dropZoneContent.innerHTML = `
-      <div style="font-size:2rem; margin-bottom:0.5rem;">⏳</div>
-      <h3 style="margin:0 0 0.4rem 0; font-size:1.15rem;">Reading delivery report…</h3>
+      <div class="spinner" aria-hidden="true"></div>
+      <h3 style="margin:0 0 0.4rem 0; font-size:1.05rem; font-weight:600;">Reading delivery report…</h3>
       <p style="color:var(--text-muted); font-size:0.85rem; margin:0;">
         Extracting customer deliveries, reference numbers, and parts...
       </p>
@@ -430,8 +430,8 @@ async function handleFile(file) {
     if (salespersonName) {
       document.getElementById('reportMetaTag').classList.remove('hidden');
       document.getElementById('reportMetaText').innerHTML = `
-        👤 Report for: <b>${esc(salespersonName)}</b> 
-        &bull; ⚡ <span style="color:var(--success); font-weight:700;">Auto-Assigned to ${esc(targetRep ? targetRep.name : salespersonName)}</span> 
+        Report for: <b>${esc(salespersonName)}</b>
+        &bull; <span style="color:var(--success); font-weight:700;">Auto-Assigned to ${esc(targetRep ? targetRep.name : salespersonName)}</span>
         &bull; Date: ${esc(reportDate || 'Today')}
       `;
     }
@@ -491,7 +491,7 @@ function restoreSavedSession() {
 
     document.getElementById('reportMetaTag').classList.remove('hidden');
     document.getElementById('reportMetaText').innerHTML = `
-      👤 Restored Saved Session &bull; Salesperson: <b>${esc(salespersonName)}</b> 
+      Restored Saved Session &bull; Salesperson: <b>${esc(salespersonName)}</b>
       &bull; Date: ${esc(reportDate)} &bull; Saved: ${esc(lastSavedTime)}
     `;
 
@@ -521,11 +521,16 @@ function resetDropZoneHTML() {
     } catch (e) {}
 
     dropZoneContent.innerHTML = `
-      <div style="font-size:2.5rem; margin-bottom:0.5rem;">📄</div>
-      <h3 style="margin:0 0 1rem 0; font-size:1.15rem;">Upload Files</h3>
+      <div style="display:flex; justify-content:center; margin-bottom:0.75rem; color:var(--text-muted);">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 16V4m0 0L7 9m5-5 5 5"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+        </svg>
+      </div>
+      <h3 style="margin:0 0 0.35rem 0; font-size:1.05rem; font-weight:600;">Upload a delivery report</h3>
+      <p style="margin:0 0 1rem; color:var(--text-muted); font-size:0.84rem;">Drop a PDF or CSV here, or choose a file.</p>
       <div style="display:flex; justify-content:center; gap:0.5rem; flex-wrap:wrap;">
         <button class="btn" id="chooseReportBtnInner" type="button">Choose Report File</button>
-        ${hasSaved ? `<button class="btn btn-purple" id="restoreSavedBtnInner" type="button">📦 Restore Saved Session (${savedCount})</button>` : ''}
+        ${hasSaved ? `<button class="btn btn-outline" id="restoreSavedBtnInner" type="button">Restore Saved Session (${savedCount})</button>` : ''}
       </div>
     `;
     const btnInner = document.getElementById('chooseReportBtnInner');
@@ -1044,34 +1049,34 @@ function updateMetrics() {
   document.getElementById('metrics').innerHTML = `
     <div class="metric ${activeMetricFilter === 'deliveries' ? 'is-active-filter' : ''}" data-card="deliveries">
       <div class="value">${total}</div>
-      <div class="label">📦 Total Deliveries</div>
+      <div class="label">Total Deliveries</div>
       <div class="subtext">Uploaded report items</div>
-      <div class="click-hint">👆 Click to view data & breakdown &rarr;</div>
+      <div class="click-hint">Click to view data & breakdown &rarr;</div>
     </div>
-    
+
     <div class="metric ${activeMetricFilter === 'assigned' ? 'is-active-filter' : ''}" data-card="assigned">
       <div class="value" style="color:${assigned === total && total > 0 ? 'var(--success)' : 'var(--accent)'}">${assigned}</div>
-      <div class="label">👤 Assigned Reps</div>
+      <div class="label">Assigned Reps</div>
       <div class="subtext">${reps.length} active team reps</div>
-      <div class="click-hint">👆 Click to view workload &rarr;</div>
+      <div class="click-hint">Click to view workload &rarr;</div>
     </div>
 
     <div class="metric ${activeMetricFilter === 'unassigned' ? 'is-active-filter' : ''}" data-card="unassigned">
       <div class="value" style="color:${unassigned > 0 ? 'var(--warning)' : 'var(--success)'}">${unassigned}</div>
-      <div class="label">⚠️ Unassigned</div>
+      <div class="label">Unassigned</div>
       <div class="subtext">${unassigned > 0 ? 'Awaiting rep dispatch' : 'All dispatched'}</div>
-      <div class="click-hint">👆 Click to assign items &rarr;</div>
+      <div class="click-hint">Click to assign items &rarr;</div>
     </div>
 
     <div class="metric ${activeMetricFilter === 'matches' ? 'is-active-filter' : ''}" data-card="matches">
       <div class="value" style="color:#fbbf24">${callMatches}</div>
-      <div class="label">💡 Call Matches</div>
+      <div class="label">Call Matches</div>
       <div class="subtext">Matched from customer calls</div>
-      <div class="click-hint">👆 Click to review call notes &rarr;</div>
+      <div class="click-hint">Click to review call notes &rarr;</div>
     </div>
   `;
 
-  document.getElementById('callMatchesFoundCount').textContent = 
+  document.getElementById('callMatchesFoundCount').textContent =
     callMatches > 0 ? `(${callMatches} call matches detected)` : '';
 }
 
@@ -1125,7 +1130,7 @@ function renderMetricDetailModal(sectionKey) {
   const custGroupEl = document.getElementById('modalCustomerGroupList');
   if (custGroupEl) {
     custGroupEl.innerHTML = Object.entries(custMap).map(([cust, items]) => `
-      <div style="background:#090f1d; border:1px solid var(--border); border-radius:6px; padding:0.5rem 0.75rem; font-size:0.82rem; display:flex; justify-content:space-between; align-items:center;">
+      <div style="background:#0D1424; border:1px solid var(--border); border-radius:6px; padding:0.5rem 0.75rem; font-size:0.82rem; display:flex; justify-content:space-between; align-items:center;">
         <div>
           <span style="font-weight:600; color:#e2e8f0;">${esc(cust)}</span>
           <span style="color:var(--text-muted); margin-left:0.5rem;">(${items.length} ${items.length === 1 ? 'item' : 'items'})</span>
@@ -1166,8 +1171,8 @@ function renderMetricDetailModal(sectionKey) {
   }).join('');
 
   // 3. Unassigned Tab
-  document.getElementById('modalUnassignedAlert').textContent = 
-    unassigned > 0 ? `⚠️ ${unassigned} unassigned deliveries` : '✅ All deliveries assigned!';
+  document.getElementById('modalUnassignedAlert').textContent =
+    unassigned > 0 ? `${unassigned} unassigned deliveries` : 'All deliveries assigned!';
 
   const unassignedListEl = document.getElementById('modalUnassignedItemsList');
   const unassignedRows = allRows.filter(r => !r.assignedRep);
@@ -1175,14 +1180,14 @@ function renderMetricDetailModal(sectionKey) {
     unassignedListEl.innerHTML = `<div style="color:var(--success); font-size:0.85rem; padding:1.5rem; text-align:center;">Great job! All deliveries have been assigned to sales reps.</div>`;
   } else {
     unassignedListEl.innerHTML = unassignedRows.map(r => `
-      <div style="background:#090f1d; border:1px solid var(--border); border-radius:6px; padding:0.6rem 0.85rem; display:flex; justify-content:space-between; align-items:center; font-size:0.82rem;">
+      <div style="background:#0D1424; border:1px solid var(--border); border-radius:6px; padding:0.6rem 0.85rem; display:flex; justify-content:space-between; align-items:center; font-size:0.82rem;">
         <div>
           <div style="font-weight:600; font-size:0.88rem;">${esc(r.Customer)}</div>
           <div style="color:#cbd5e1; font-size:0.78rem; margin-top:2px;"><b>Part:</b> ${esc(r.Part)} &bull; Order #${esc(r.Order || '—')}</div>
-          <div style="color:var(--accent); font-size:0.75rem;">📞 ${esc(r.Phone || 'No Phone')}</div>
+          <div style="color:var(--accent); font-size:0.75rem;">${esc(r.Phone || 'No Phone')}</div>
         </div>
         <div>
-          <select data-assign-select="${escAttr(r.id)}" style="background:#020617; border:1px solid var(--border); color:#fff; font-size:0.8rem; padding:0.3rem 0.5rem; border-radius:5px;">
+          <select data-assign-select="${escAttr(r.id)}" style="background:#0B0F19; border:1px solid var(--border); color:#fff; font-size:0.8rem; padding:0.3rem 0.5rem; border-radius:5px;">
             <option value="">Assign to...</option>
             ${reps.map(rep => `<option value="${esc(rep.name)}">${esc(rep.name)}</option>`).join('')}
           </select>
@@ -1198,14 +1203,14 @@ function renderMetricDetailModal(sectionKey) {
     matchesListEl.innerHTML = `<div style="color:var(--text-muted); font-size:0.85rem; padding:1.5rem; text-align:center;">No call matches found. Try uploading a Call Log CSV.</div>`;
   } else {
     matchesListEl.innerHTML = matchedRows.map(r => `
-      <div style="background:#090f1d; border:1px solid rgba(251, 191, 36, 0.3); border-radius:8px; padding:0.75rem 0.9rem; font-size:0.82rem;">
+      <div style="background:#0D1424; border:1px solid rgba(251, 191, 36, 0.3); border-radius:8px; padding:0.75rem 0.9rem; font-size:0.82rem;">
         <div style="display:flex; justify-content:space-between; align-items:flex-start;">
           <div>
             <span style="font-weight:700; font-size:0.88rem; color:#fde68a;">${esc(r.Customer)}</span>
-            <span style="color:var(--accent); margin-left:0.5rem;">📞 ${esc(r.Phone)}</span>
+            <span style="color:var(--accent); margin-left:0.5rem;">${esc(r.Phone)}</span>
           </div>
           <div>
-            ${r.assignedRep === r.suggestion.repName ? 
+            ${r.assignedRep === r.suggestion.repName ?
               `<span style="color:var(--success); font-weight:600; font-size:0.76rem;">✓ Assigned to ${esc(r.assignedRep)}</span>` :
               `<button class="btn btn-sm btn-outline" data-assign-button="${escAttr(r.id)}" data-assign-rep="${escAttr(r.suggestion.repName)}" style="color:#fbbf24; border-color:#fbbf24; padding:0.2rem 0.5rem; font-size:0.74rem;">Accept & Assign to ${esc(r.suggestion.repName)}</button>`
             }
@@ -1215,7 +1220,7 @@ function renderMetricDetailModal(sectionKey) {
           <b>Part:</b> ${esc(r.Part)} &bull; Order #${esc(r.Order || '—')} &bull; Invoice #${esc(r.Invoice || '—')}
         </div>
         <div style="background:rgba(251,191,36,0.08); border-radius:4px; padding:0.35rem 0.55rem; margin-top:0.35rem; font-size:0.76rem; color:#fef08a;">
-          📞 <b>Call Match:</b> ${esc(r.suggestion.details)}
+          <b>Call Match:</b> ${esc(r.suggestion.details)}
         </div>
       </div>
     `).join('');
@@ -1245,8 +1250,8 @@ function updateRepDropdowns() {
   if (repFilterEl) {
     repFilterEl.innerHTML = `
       <option value="">All Reps</option>
-      <option value="__unassigned__">⚠️ Unassigned Only</option>
-      <option value="__assigned__">✅ Assigned Only</option>
+      <option value="__unassigned__">Unassigned Only</option>
+      <option value="__assigned__">Assigned Only</option>
       ${reps.map(r => `<option value="${esc(r.name)}">${esc(r.name)} (${esc(r.desk)})</option>`).join('')}
     `;
     repFilterEl.value = curFilter;
@@ -1310,7 +1315,7 @@ function renderTable() {
     if (!r.assignedRep && r.suggestion) {
       suggestionHTML = `
         <div class="smart-suggestion-pill" title="${esc(r.suggestion.details)}">
-          <span>💡 Match: <b>${esc(r.suggestion.repName)}</b></span>
+          <span>Match: <b>${esc(r.suggestion.repName)}</b></span>
           <button data-accept-suggestion="${escAttr(r.id)}" data-accept-rep="${escAttr(r.suggestion.repName)}">Accept</button>
         </div>
       `;
@@ -1330,10 +1335,10 @@ function renderTable() {
           ${editingRowPartId === r.id ? `
             <div style="display:flex; flex-direction:column; gap:0.3rem;">
               <input id="rowPartName_${escAttr(r.id)}" type="text" value="${escAttr(r.Part)}" spellcheck="false"
-                style="background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.3rem 0.45rem; border-radius:6px; font-size:0.8rem; width:100%;">
+                style="background:#0D1424; border:1px solid var(--border); color:var(--text); padding:0.3rem 0.45rem; border-radius:6px; font-size:0.8rem; width:100%;">
               <div style="display:flex; gap:0.3rem; align-items:center;">
                 <input id="rowPartNum_${escAttr(r.id)}" type="text" inputmode="numeric" value="${escAttr(r.HollanderID)}" placeholder="ID" spellcheck="false"
-                  style="background:#090f1d; border:1px solid var(--border); color:var(--text); padding:0.3rem 0.45rem; border-radius:6px; font-size:0.8rem; width:74px;">
+                  style="background:#0D1424; border:1px solid var(--border); color:var(--text); padding:0.3rem 0.45rem; border-radius:6px; font-size:0.8rem; width:74px;">
                 <button class="btn btn-outline btn-micro" type="button" data-save-part="${escAttr(r.id)}">Save</button>
                 <button class="btn btn-outline btn-micro" type="button" data-cancel-part="1">Cancel</button>
               </div>
@@ -1343,7 +1348,7 @@ function renderTable() {
               <span>${esc(r.Part)}${r.HollanderID
                 ? ` <span style="color:#34d399; font-weight:700; white-space:nowrap;" title="Hollander part number from the part catalog">- ${esc(r.HollanderID)}</span>`
                 : (partRows.length ? ` <span style="color:#64748b; font-size:0.72rem;" title="No Hollander part number matched">(no ID)</span>` : '')}</span>
-              <button class="btn btn-outline btn-micro" type="button" title="Edit this part / Hollander number" data-edit-part="${escAttr(r.id)}" style="flex-shrink:0;">✏️</button>
+              <button class="btn btn-outline btn-micro" type="button" title="Edit this part / Hollander number" data-edit-part="${escAttr(r.id)}" style="flex-shrink:0;">Edit</button>
             </div>
           `}
         </td>
@@ -1431,25 +1436,26 @@ function updateSaveStatusUI(showSavedConfirmation = false) {
   if (hasUnsavedChanges) {
     if (badge) {
       badge.className = 'save-status-pill unsaved';
-      badge.innerHTML = '⚠️ Unsaved Changes Pending';
+      badge.innerHTML = 'Unsaved Changes Pending';
     }
     if (headerBtn) {
       headerBtn.classList.remove('hidden');
       headerBtn.classList.add('btn-save-dirty');
-      headerBtn.textContent = '💾 Save Changes *';
+      headerBtn.textContent = 'Save Changes *';
     }
     if (bulkBtn) {
       bulkBtn.classList.add('btn-save-dirty');
-      bulkBtn.textContent = '💾 Save Changes *';
+      bulkBtn.textContent = 'Save Changes *';
     }
     if (bottomBtn) {
       bottomBtn.classList.add('btn-save-dirty');
-      bottomBtn.textContent = '💾 Save Changes *';
+      bottomBtn.textContent = 'Save Changes *';
     }
     if (stickyBar) {
       stickyBar.classList.remove('hidden');
       stickyBar.classList.remove('is-saved');
-      document.getElementById('stickySaveIcon').textContent = '⚠️';
+      document.getElementById('stickySaveIcon').textContent = '!';
+      document.getElementById('stickySaveIcon').style.color = 'var(--warning)';
       document.getElementById('stickySaveTitle').textContent = 'Unsaved Changes Pending';
       document.getElementById('stickySaveTitle').style.color = '#fbbf24';
       document.getElementById('stickySaveSubtitle').textContent = 'You modified rep assignments. Click Save Changes to lock them in.';
@@ -1458,31 +1464,32 @@ function updateSaveStatusUI(showSavedConfirmation = false) {
       document.getElementById('stickyDismissBtn').classList.add('hidden');
     }
     if (modalTag) {
-      modalTag.innerHTML = `<span style="color:var(--warning); font-weight:600;">⚠️ Unsaved Changes Auto-Saved</span>`;
+      modalTag.innerHTML = `<span style="color:var(--warning); font-weight:600;">Unsaved Changes Auto-Saved</span>`;
     }
   } else {
     const timeLabel = lastSavedTime ? `(${lastSavedTime})` : '';
     if (badge) {
       badge.className = 'save-status-pill saved';
-      badge.innerHTML = `✅ All Changes Saved ${timeLabel}`;
+      badge.innerHTML = `All Changes Saved ${timeLabel}`;
     }
     if (headerBtn) {
       headerBtn.classList.remove('btn-save-dirty');
-      headerBtn.textContent = '✅ Saved';
+      headerBtn.textContent = 'Saved';
     }
     if (bulkBtn) {
       bulkBtn.classList.remove('btn-save-dirty');
-      bulkBtn.textContent = '✅ Saved';
+      bulkBtn.textContent = 'Saved';
     }
     if (bottomBtn) {
       bottomBtn.classList.remove('btn-save-dirty');
-      bottomBtn.textContent = '✅ Saved';
+      bottomBtn.textContent = 'Saved';
     }
     if (stickyBar) {
       if (showSavedConfirmation && lastSavedTime) {
         stickyBar.classList.remove('hidden');
         stickyBar.classList.add('is-saved');
-        document.getElementById('stickySaveIcon').textContent = '✅';
+        document.getElementById('stickySaveIcon').textContent = '✓';
+        document.getElementById('stickySaveIcon').style.color = 'var(--success)';
         document.getElementById('stickySaveTitle').textContent = 'All Changes Saved!';
         document.getElementById('stickySaveTitle').style.color = '#34d399';
         document.getElementById('stickySaveSubtitle').textContent = `Saved at ${lastSavedTime}.`;
@@ -1494,7 +1501,7 @@ function updateSaveStatusUI(showSavedConfirmation = false) {
       }
     }
     if (modalTag) {
-      modalTag.innerHTML = `<span style="color:var(--success); font-weight:600;">✅ Changes Saved</span>`;
+      modalTag.innerHTML = `<span style="color:var(--success); font-weight:600;">Changes Saved</span>`;
     }
   }
 }
@@ -1516,7 +1523,7 @@ function saveChanges(silent = false) {
   lastSavedTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   updateSaveStatusUI(true);
   if (!silent) {
-    showToast(`✅ All changes saved at ${lastSavedTime}!`);
+    showToast(`All changes saved at ${lastSavedTime}!`);
   }
 }
 
@@ -1587,7 +1594,7 @@ function renderTeamModal() {
   const repsListEl = document.getElementById('repsList');
   if (repsListEl) {
     repsListEl.innerHTML = reps.map((r, idx) => `
-      <div style="background:#090f1d; border:1px solid var(--border); border-radius:8px; padding:0.6rem 0.85rem; display:flex; justify-content:space-between; align-items:center;">
+      <div style="background:#0D1424; border:1px solid var(--border); border-radius:8px; padding:0.6rem 0.85rem; display:flex; justify-content:space-between; align-items:center;">
         <div>
           <div style="font-weight:600; font-size:0.88rem; color:${r.color || 'var(--accent)'};">${esc(r.name)}</div>
           <div style="font-size:0.75rem; color:var(--text-muted);">${esc(r.desk)} &bull; ${esc(r.role || 'Sales Rep')}</div>
@@ -1602,7 +1609,7 @@ function renderTeamModal() {
   const callsListEl = document.getElementById('callsList');
   if (callsListEl) {
     callsListEl.innerHTML = calls.map(c => `
-      <div style="background:#090f1d; border:1px solid var(--border); border-radius:6px; padding:0.45rem 0.65rem; font-size:0.78rem;">
+      <div style="background:#0D1424; border:1px solid var(--border); border-radius:6px; padding:0.45rem 0.65rem; font-size:0.78rem;">
         <div style="display:flex; justify-content:space-between; font-weight:600;">
           <span>${esc(c.customer)}</span>
           <span style="color:var(--accent);">${esc(c.rep)}</span>
@@ -1638,7 +1645,7 @@ function promptAddNewRep() {
     name: name.trim(),
     desk: desk.trim(),
     role: role.trim(),
-    color: '#38bdf8'
+    color: '#3A6AF0'
   });
   saveReps();
   renderTeamModal();
@@ -1974,7 +1981,7 @@ function updateCustomerMatchUI() {
   if (!dbCustomers.length) { el.textContent = ''; return; }
   const total = allRows.length;
   const matched = allRows.filter(r => r.CustomerPhone || r.CustomerAddress).length;
-  el.innerHTML = `👥 <b style="color:var(--text);">${matched}/${total}</b> customers matched`;
+  el.innerHTML = `<b style="color:var(--text);">${matched}/${total}</b> customers matched`;
 }
 
 async function syncCustomers(options = {}) {
@@ -2068,7 +2075,7 @@ function updatePartIdStatusUI() {
   bar.classList.remove('hidden');
 
   if (!partRows.length) {
-    text.innerHTML = '🏷️ Hollander IDs: no part list loaded — open 🏷️ Parts in the header';
+    text.innerHTML = 'Hollander IDs: no part list loaded — open Parts in the header';
     return;
   }
 
@@ -2077,7 +2084,7 @@ function updatePartIdStatusUI() {
   const missing = total - matched;
   const synced = partLastSynced ? new Date(partLastSynced).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
 
-  let html = `🏷️ Hollander IDs: <b style="color:var(--text);">${matched}/${total}</b> deliveries matched`;
+  let html = `Hollander IDs: <b style="color:var(--text);">${matched}/${total}</b> deliveries matched`;
   if (missing > 0) html += ` &bull; <span style="color:var(--warning); font-weight:600;">${missing} missing</span>`;
   html += ` &bull; Last Synced: ${synced ? esc(synced) : '—'}`;
   text.innerHTML = html;
@@ -2085,7 +2092,7 @@ function updatePartIdStatusUI() {
 
 function openPartIdsModal() {
   if (partSource === 'server' && partLastSynced) {
-    setPartsDbStatus(`✅ ${partRows.length} part IDs loaded for this yard. Last synced ${new Date(partLastSynced).toLocaleString()}.`, 'success');
+    setPartsDbStatus(`${partRows.length} part IDs loaded for this yard. Last synced ${new Date(partLastSynced).toLocaleString()}.`, 'success');
   } else if (partRows.length) {
     setPartsDbStatus(`Using the ${partRows.length}-part bundled list. Click "Refresh Part IDs" to load the yard catalog.`, 'muted');
   } else {
@@ -2141,11 +2148,11 @@ async function syncParts(options = {}) {
     updatePartIdStatusUI();
     updateSaveStatusUI();
 
-    setPartsDbStatus(`✅ Loaded ${partRows.length} part IDs. ${matched}/${allRows.length} current deliveries matched.`, 'success');
+    setPartsDbStatus(`Loaded ${partRows.length} part IDs. ${matched}/${allRows.length} current deliveries matched.`, 'success');
     if (!silent) showToast(`${partRows.length} part IDs loaded — ${matched}/${allRows.length} deliveries matched.`);
   } catch (err) {
     console.error('Part sync failed:', err);
-    setPartsDbStatus(`❌ ${err.message}`, 'error');
+    setPartsDbStatus(`${err.message}`, 'error');
     if (!silent) showToast(err.message);
   } finally {
     partFetching = false;
@@ -2314,7 +2321,7 @@ async function searchPartRecords(rawTerm) {
   } catch (err) {
     if (seq !== partSearchSeq) return;
     resultsEl.innerHTML = '';
-    setPartsStatus(`❌ ${err.message}`, 'error');
+    setPartsStatus(`${err.message}`, 'error');
   }
 }
 
@@ -2443,11 +2450,11 @@ async function savePartForm() {
     const wasEditing = editing;
     closePartFormModal();
     await searchPartRecords(lastPartTerm);
-    setPartsStatus(`✅ ${wasEditing ? 'Updated' : 'Added'} "${name} - ${number}". ${matched}/${allRows.length} deliveries matched.`, 'success');
+    setPartsStatus(`${wasEditing ? 'Updated' : 'Added'} "${name} - ${number}". ${matched}/${allRows.length} deliveries matched.`, 'success');
     showToast(`${wasEditing ? 'Updated' : 'Added'} ${name} - ${number}`);
   } catch (err) {
     console.error('Save part failed:', err);
-    setPartFormStatus(`❌ ${err.message}`, 'error');
+    setPartFormStatus(`${err.message}`, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Save Part'; }
   }
@@ -2474,11 +2481,11 @@ async function deletePartRecord(part, btn) {
     partRows = partRows.filter(p => String(p.id) !== String(part.id));
     const matched = commitPartChange();
     await searchPartRecords(lastPartTerm);
-    setPartsStatus(`✅ Deleted "${part.name} - ${part.id}". ${matched}/${allRows.length} deliveries matched.`, 'success');
+    setPartsStatus(`Deleted "${part.name} - ${part.id}". ${matched}/${allRows.length} deliveries matched.`, 'success');
     showToast(`Deleted ${part.name} - ${part.id}`);
   } catch (err) {
     console.error('Delete part failed:', err);
-    setPartsStatus(`❌ ${err.message}`, 'error');
+    setPartsStatus(`${err.message}`, 'error');
     disarmDelete(btn);
   }
 }
@@ -2581,7 +2588,7 @@ async function searchCustomers(rawTerm) {
   } catch (err) {
     if (seq !== customerSearchSeq) return;
     resultsEl.innerHTML = '';
-    setCustomerStatus(`❌ ${err.message}`, 'error');
+    setCustomerStatus(`${err.message}`, 'error');
   }
 }
 
@@ -2714,11 +2721,11 @@ async function saveCustomer() {
 
     closeCustomerForm();
     await searchCustomers(lastCustomerTerm);
-    setCustomerStatus(`✅ ${savingId === null ? 'Added' : 'Updated'} "${payload.shop_name}".`, 'success');
+    setCustomerStatus(`${savingId === null ? 'Added' : 'Updated'} "${payload.shop_name}".`, 'success');
     showToast(`${savingId === null ? 'Added' : 'Updated'} ${payload.shop_name}`);
   } catch (err) {
     console.error('Save customer failed:', err);
-    setCustomerFormStatus(`❌ ${err.message}`, 'error');
+    setCustomerFormStatus(`${err.message}`, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Save Customer'; }
   }
@@ -2748,11 +2755,11 @@ async function deleteCustomer(customer, btn) {
     applyCustomerLookups(allRows);
     renderTable();
     renderCustomerResults(customerResults, lastCustomerTerm);
-    setCustomerStatus(`✅ Deleted "${customer.shop_name}".`, 'success');
+    setCustomerStatus(`Deleted "${customer.shop_name}".`, 'success');
     showToast(`Deleted ${customer.shop_name}`);
   } catch (err) {
     console.error('Delete customer failed:', err);
-    setCustomerStatus(`❌ ${err.message}`, 'error');
+    setCustomerStatus(`${err.message}`, 'error');
     disarmDelete(btn);
   }
 }
@@ -2781,7 +2788,7 @@ function updateUserButton() {
     return;
   }
   const name = getCurrentUser();
-  btn.textContent = name ? `👤 ${name}` : '👤 Set user';
+  btn.textContent = name ? `${name}` : 'Set user';
 }
 
 function populateUserOptions() {
@@ -2806,7 +2813,7 @@ function openUserModal(forUpload) {
   const input = document.getElementById('userNameInput');
   const title = document.getElementById('userModalTitle');
   if (input) input.value = getCurrentUser();
-  if (title) title.textContent = forUpload ? '👤 Who is uploading this report?' : '👤 Set current user';
+  if (title) title.textContent = forUpload ? 'Who is uploading this report?' : 'Set current user';
   setUserModalStatus(forUpload
     ? 'This upload will be recorded under this name so managers can track usage.'
     : 'Choose the person using this browser. Accounts will replace this later.', 'muted');
@@ -2965,7 +2972,7 @@ function renderUploads() {
   const summary = document.getElementById('uploadsSummary');
   if (summary) {
     const card = (label, value, color) => `
-      <div style="flex:1 1 150px; background:#090f1d; border:1px solid var(--border); border-radius:8px; padding:0.6rem 0.8rem;">
+      <div style="flex:1 1 150px; background:#0D1424; border:1px solid var(--border); border-radius:8px; padding:0.6rem 0.8rem;">
         <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em;">${label}</div>
         <div style="font-size:1.25rem; font-weight:700; color:${color || 'var(--text)'};">${value}</div>
       </div>`;
@@ -2999,7 +3006,7 @@ function renderUploads() {
   const utilEl = document.getElementById('uploadsUtilization');
   if (utilEl) {
     const header = `
-      <div style="display:grid; grid-template-columns:1.5fr 90px 1.3fr 110px; gap:0.5rem; padding:0.45rem 0.75rem; background:#090f1d; font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em;">
+      <div style="display:grid; grid-template-columns:1.5fr 90px 1.3fr 110px; gap:0.5rem; padding:0.45rem 0.75rem; background:#0D1424; font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em;">
         <span>User</span><span>Uploads</span><span>Last upload</span><span>Status</span>
       </div>`;
     const rowsHtml = utilisation.map(u => {
@@ -3023,7 +3030,7 @@ function renderUploads() {
       listEl.innerHTML = '<div style="padding:0.8rem; color:var(--text-muted); font-size:0.8rem;">No uploads to show.</div>';
     } else {
       const header = `
-        <div style="display:grid; grid-template-columns:1.1fr 1fr 1.4fr 1.1fr 60px 90px; gap:0.5rem; padding:0.45rem 0.75rem; background:#090f1d; font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; position:sticky; top:0;">
+        <div style="display:grid; grid-template-columns:1.1fr 1fr 1.4fr 1.1fr 60px 90px; gap:0.5rem; padding:0.45rem 0.75rem; background:#0D1424; font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; position:sticky; top:0;">
           <span>When</span><span>User</span><span>File</span><span>Report for</span><span>Rows</span><span>Matched</span>
         </div>`;
       const rowsHtml = recent.map(u => `
@@ -3093,9 +3100,9 @@ async function loadUploads() {
       uploadRows = pending;
       populateUploadsUserFilter();
       renderUploads();
-      setUploadsStatus(`⚠️ ${pending.length} upload${pending.length === 1 ? '' : 's'} saved in this browser only — ${err.message}`, 'error');
+      setUploadsStatus(`${pending.length} upload${pending.length === 1 ? '' : 's'} saved in this browser only — ${err.message}`, 'error');
     } else {
-      setUploadsStatus(`❌ ${err.message}`, 'error');
+      setUploadsStatus(`${err.message}`, 'error');
     }
   } finally {
     uploadsLoading = false;
@@ -3177,8 +3184,8 @@ function setCallSettingsStatus(message, tone) {
 
 function callModeBadge() {
   return callConfig.testMode
-    ? '<span style="background:rgba(251,191,36,0.15); color:#fbbf24; border:1px solid rgba(251,191,36,0.35); padding:3px 10px; border-radius:12px; font-size:0.72rem; font-weight:700;">🧪 TEST MODE — NO CALL WILL BE PLACED</span>'
-    : '<span style="background:rgba(248,113,113,0.15); color:#f87171; border:1px solid rgba(248,113,113,0.4); padding:3px 10px; border-radius:12px; font-size:0.72rem; font-weight:700;">🔴 LIVE — THIS PLACES A REAL PHONE CALL</span>';
+    ? '<span style="background:rgba(251,191,36,0.15); color:#fbbf24; border:1px solid rgba(251,191,36,0.35); padding:3px 10px; border-radius:12px; font-size:0.72rem; font-weight:700;">TEST MODE — NO CALL WILL BE PLACED</span>'
+    : '<span style="background:rgba(248,113,113,0.15); color:#f87171; border:1px solid rgba(248,113,113,0.4); padding:3px 10px; border-radius:12px; font-size:0.72rem; font-weight:700;">LIVE — THIS PLACES A REAL PHONE CALL</span>';
 }
 
 function refreshCallModal() {
@@ -3192,7 +3199,7 @@ function refreshCallModal() {
   if (customerEl) customerEl.textContent = currentCall.customer || 'this customer';
   if (scriptEl) scriptEl.textContent = announcementScript();
   if (badgeEl) badgeEl.innerHTML = callModeBadge();
-  if (callBtn) callBtn.textContent = callConfig.testMode ? '🧪 Simulate call' : '📞 Place call';
+  if (callBtn) callBtn.textContent = callConfig.testMode ? 'Simulate call' : 'Place call';
 
   if (!callConfig.testMode && !callConfig.configured) {
     setCallStatus('Live calling is enabled, but the platform is missing Twilio credentials. Ask an administrator to configure them.', 'error');
@@ -3269,17 +3276,17 @@ async function placeAnnouncementCall() {
     localStorage.setItem(cooldownKey, String(Date.now()));
     if (data.test) {
       callConfig.testMode = true;
-      setCallStatus('🧪 Test mode — no call was placed. The text above is exactly what the yard would say.', 'success');
+      setCallStatus('Test mode — no call was placed. The text above is exactly what the yard would say.', 'success');
     } else {
-      setCallStatus(`✅ Call placed to ${formatPhoneDisplay(currentCall.phone)}.`, 'success');
+      setCallStatus(`Call placed to ${formatPhoneDisplay(currentCall.phone)}.`, 'success');
     }
   } catch (err) {
     console.error('Announcement call failed:', err);
-    setCallStatus(`❌ ${err.message}`, 'error');
+    setCallStatus(`${err.message}`, 'error');
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.textContent = callConfig.testMode ? '🧪 Simulate call' : '📞 Place call';
+      btn.textContent = callConfig.testMode ? 'Simulate call' : 'Place call';
     }
   }
 }

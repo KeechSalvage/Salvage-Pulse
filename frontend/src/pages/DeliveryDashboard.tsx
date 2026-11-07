@@ -131,7 +131,7 @@ export default function DeliveryDashboard() {
   return (
     <div className="flex flex-1 flex-col">
       <PageHeader overline="Dispatch" title="Delivery Dashboard" />
-      <div className="flex-1 overflow-hidden rounded-xl border border-border bg-[#0f172a]">
+      <div className="flex-1 overflow-hidden rounded-xl border border-border bg-background">
         <iframe
           ref={iframeRef}
           src={`${DASHBOARD_PATH}?${params.toString()}`}
